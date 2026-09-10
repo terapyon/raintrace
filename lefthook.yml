@@ -1,4 +1,5 @@
-# ローカルの品質ゲート（tech-spec §12.2）。重い検査は pre-push に置く
+# ローカルの品質ゲート（tech-spec §12.2）。重い検査は pre-push に置く。
+# コマンドの定義は package.json の scripts に一本化する（CI と同じものを呼ぶ）
 pre-commit:
   commands:
     biome:
@@ -6,8 +7,9 @@ pre-commit:
       run: pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
       stage_fixed: true
 pre-push:
+  parallel: true
   commands:
     typecheck:
-      run: pnpm exec tsc -b
+      run: pnpm typecheck
     unit:
-      run: pnpm exec vitest run
+      run: pnpm test

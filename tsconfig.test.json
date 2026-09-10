@@ -4,9 +4,7 @@
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsc/test.tsbuildinfo",
     "lib": ["ES2023", "DOM"],
-    "types": ["node", "vitest"],
-    "noUncheckedIndexedAccess": true,
-    "allowImportingTsExtensions": true
+    "types": ["node", "vitest"]
   },
   "include": ["src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.sim.json" }, { "path": "./tsconfig.core.json" }]

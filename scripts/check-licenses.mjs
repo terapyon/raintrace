@@ -2,7 +2,11 @@
 import { execFileSync } from 'node:child_process'
 import { evaluateLicenses } from './lib/licensePolicy.mjs'
 
-const output = execFileSync('pnpm', ['licenses', 'list', '--json', '--prod'], { encoding: 'utf8' })
+// Windows では pnpm が pnpm.cmd なので、シェル経由で解決する
+const output = execFileSync('pnpm', ['licenses', 'list', '--json', '--prod'], {
+  encoding: 'utf8',
+  shell: process.platform === 'win32',
+})
 const report = JSON.parse(output)
 const { forbidden, unknown } = evaluateLicenses(report)
 

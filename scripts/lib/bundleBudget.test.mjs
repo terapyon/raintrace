@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { duplicatedModules, evaluateBudget, initialFiles } from './bundleBudget.mjs'
+import { evaluateBudget, initialFiles, packagesIn, sharedModules } from './bundleBudget.mjs'
 
 const manifest = {
   'index.html': { file: 'assets/index-a.js', isEntry: true, imports: ['_ui-b.js', '_map-c.js'] },
@@ -16,6 +16,10 @@ describe('initialFiles', () => {
       'assets/map-c.js',
       'assets/ui-b.js',
     ])
+  })
+
+  it('エントリがマニフェストに無ければ例外（予算の検査が初期ロード 0KB で空振りしないように）', () => {
+    expect(() => initialFiles(manifest, 'missing.html')).toThrow('missing.html')
   })
 })
 
@@ -45,13 +49,30 @@ describe('evaluateBudget', () => {
   })
 })
 
-describe('duplicatedModules', () => {
-  it('複数のチャンクに含まれるモジュールだけを返す', () => {
+describe('packagesIn', () => {
+  it('node_modules のモジュールからパッケージ名を重複なく取り出す（scoped のものを含む）', () => {
     expect(
-      duplicatedModules({
-        'assets/a.js': ['src/x.ts', 'src/y.ts'],
-        'assets/b.js': ['src/y.ts'],
-      }),
-    ).toEqual([{ id: 'src/y.ts', chunks: ['assets/a.js', 'assets/b.js'] }])
+      packagesIn([
+        'src/main.tsx',
+        'node_modules/.pnpm/react@19.2.8/node_modules/react/index.js',
+        'node_modules/.pnpm/react@19.2.8/node_modules/react/cjs/react.production.js',
+        'node_modules/.pnpm/@mui+material@9.4.0/node_modules/@mui/material/Box/Box.js',
+      ]),
+    ).toEqual(['react', '@mui/material'])
+  })
+
+  it('自作のモジュールだけなら空', () => {
+    expect(packagesIn(['src/main.tsx', 'src/ui/App.tsx'])).toEqual([])
+  })
+})
+
+describe('sharedModules', () => {
+  it('Worker のチャンクとメインのチャンクで共通するモジュールを、組ごとに返す', () => {
+    expect(
+      sharedModules(
+        { 'assets/map.js': ['a', 'b', 'c'], 'assets/index.js': ['x'] },
+        { 'assets/worker.js': ['b', 'c', 'w'] },
+      ),
+    ).toEqual([{ worker: 'assets/worker.js', main: 'assets/map.js', modules: ['b', 'c'] }])
   })
 })

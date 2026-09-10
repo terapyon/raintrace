@@ -17,15 +17,18 @@ function detectMissingFeatures(): MissingFeature[] {
 /** 起動時に Worker と ping を往復させ、結果をルート要素に記す（spec 01 §4.4、§6） */
 function checkWorker(): void {
   const root = document.documentElement
-  new SimulationClient().ping().then(
-    () => {
+  const fail = (error: unknown): void => {
+    console.error(error)
+    root.dataset.workerReady = 'false'
+  }
+  try {
+    // Worker の生成は、CSP で塞がれた場合などに同期的に例外を投げる
+    new SimulationClient().ping().then(() => {
       root.dataset.workerReady = 'true'
-    },
-    (error: unknown) => {
-      console.error(error)
-      root.dataset.workerReady = 'false'
-    },
-  )
+    }, fail)
+  } catch (error) {
+    fail(error)
+  }
 }
 
 const container = document.getElementById('root')

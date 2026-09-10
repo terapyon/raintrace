@@ -26,6 +26,7 @@ pnpm dev
 | `pnpm test` | ユニットテスト |
 | `pnpm test:e2e` | 本番ビルドに対する E2E |
 | `pnpm size` | バンドル予算の検査（`pnpm build` の後） |
+| `pnpm deploy:production` | 手元から本番へ出す（通常のリリースは `v*` のタグの push。`pnpm deploy` は pnpm の組み込みのコマンドと同名なので避けた） |
 | `pnpm run licenses` | 本番の依存のライセンスの検査（`pnpm licenses` は pnpm の組み込みのコマンドと同名なので `run` を付ける） |
 
 ## 出典

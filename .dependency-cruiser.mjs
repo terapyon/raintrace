@@ -48,18 +48,27 @@ export default {
     {
       name: 'no-orphans',
       comment:
-        'どこからも参照されないモジュールを禁止する。エントリポイント、Worker のエントリ（new URL で起動するため依存として辿れない）、テスト、型宣言は除く',
+        '依存も被依存も無いモジュールを禁止する。テストと型宣言は除く（エントリポイントと Worker のエントリは import を持つので orphan にならない）',
       severity: 'error',
-      from: {
-        orphan: true,
+      from: { orphan: true, pathNot: ['\\.(test|spec)\\.tsx?$', '\\.d\\.ts$'] },
+      to: {},
+    },
+    {
+      name: 'not-reachable-from-entry',
+      comment:
+        'エントリ（main.tsx、Worker のエントリ）とテストのどれからも到達できないモジュールを禁止する。orphan は依存も被依存も無いものだけなので、import を持つ死んだモジュールはこの規則で捕まえる（tech-spec §4.2）',
+      severity: 'error',
+      from: { path: ['^src/main\\.tsx$', '^src/workers/[^/]+\\.worker\\.ts$', '\\.test\\.tsx?$'] },
+      to: {
+        path: '^src/',
         pathNot: [
           '\\.(test|spec)\\.tsx?$',
           '\\.d\\.ts$',
           '^src/main\\.tsx$',
           '^src/workers/[^/]+\\.worker\\.ts$',
         ],
+        reachable: false,
       },
-      to: {},
     },
   ],
   options: {

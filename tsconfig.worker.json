@@ -4,8 +4,7 @@
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsc/worker.tsbuildinfo",
     // DOM と WebWorker の lib を同じコンパイル単位に置かない（tech-spec §10.3）
-    "lib": ["ES2023", "WebWorker"],
-    "noUncheckedIndexedAccess": true
+    "lib": ["ES2023", "WebWorker"]
   },
   "include": ["src/workers"],
   "exclude": ["src/**/*.test.ts"],

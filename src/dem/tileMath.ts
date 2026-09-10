@@ -57,7 +57,10 @@ export function groundResolutionM(lat: number, z: number): number {
   return (2 * Math.PI * EARTH_RADIUS_M * Math.cos((lat * Math.PI) / 180)) / worldSizePx(z)
 }
 
-/** 矩形に少しでもかかるタイルを、行優先（北から、西から）で返す */
+/**
+ * 矩形に少しでもかかるタイルを、行優先（北から、西から）で返す。
+ * 世界の範囲（0 ≤ x, y < 256 × 2^z）の外はクランプしない。日本国内の範囲だけを扱う前提
+ */
 export function tilesInPixelRect(rect: PixelRect, z: number): TileCoord[] {
   if (rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return []
   const tx0 = Math.floor(rect.x0 / TILE_SIZE)

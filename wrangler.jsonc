@@ -1,8 +1,9 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "raintrace",
-  // spec 01 §4.11 は「実装した日」（2026-09-10）とするが、手元と CI の workerd（wrangler 4.127.1）が
-  // サポートする最新の日付がこれなので合わせる。wrangler を上げたら更新する
+  // 固定した wrangler（4.127.1）の workerd が対応する最新の日付。spec 01 §4.11 は「実装した日」
+  // （2026-09-10）とするが、それより新しい日付では preview が起動しない。互換性フラグが必要になったときに、
+  // wrangler とあわせて進める
   "compatibility_date": "2026-09-04",
   "workers_dev": true,
   "preview_urls": true,

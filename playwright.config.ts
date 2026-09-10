@@ -11,7 +11,9 @@ export default defineConfig({
   webServer: {
     command: `pnpm preview --port ${port} --strictPort`,
     url: `http://localhost:${port}`,
-    reuseExistingServer: !process.env.CI,
+    // 既存のサーバーは使い回さない。途中で終わった実行が残した古い preview（起動時のビルドの資産表を持つ）を
+    // 黙って使うと、新しいビルドの JS が見つからず全件が失敗する。残っていればポートの使用中として明示的に失敗する
+    reuseExistingServer: false,
     timeout: 60_000,
   },
   // R01-4: Chromium で全件、WebKit は @webkit タグのテストのみ

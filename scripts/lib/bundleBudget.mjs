@@ -13,6 +13,10 @@ export const kb = (bytes) => (bytes / 1000).toFixed(1)
  * @returns {Set<string>} dist からの相対パス
  */
 export function initialFiles(manifest, entryKey = 'index.html') {
+  // エントリが無いまま空の集合を返すと、予算の検査が初期ロード 0KB で通ってしまう
+  if (manifest[entryKey] === undefined) {
+    throw new Error(`マニフェストにエントリ ${entryKey} がありません`)
+  }
   const result = new Set()
   const visit = (key) => {
     const chunk = manifest[key]
@@ -48,15 +52,36 @@ export function evaluateBudget(files, initial, budget = BUDGET) {
 }
 
 /**
- * 複数のチャンクに含まれるモジュールを返す
- * @param {Record<string, string[]>} chunkModules チャンクのファイル名 → モジュール ID の一覧
+ * モジュール ID の一覧から、node_modules のパッケージ名を重複なく取り出す（出てきた順）
+ * @param {string[]} moduleIds
+ * @returns {string[]}
  */
-export function duplicatedModules(chunkModules) {
-  const owners = new Map()
-  for (const [chunk, ids] of Object.entries(chunkModules)) {
-    for (const id of ids) owners.set(id, [...(owners.get(id) ?? []), chunk])
+export function packagesIn(moduleIds) {
+  const names = new Set()
+  for (const id of moduleIds) {
+    const index = id.lastIndexOf('node_modules/')
+    if (index === -1) continue
+    const parts = id.slice(index + 'node_modules/'.length).split('/')
+    names.add(parts[0]?.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0])
   }
-  return [...owners]
-    .filter(([, chunks]) => chunks.length > 1)
-    .map(([id, chunks]) => ({ id, chunks }))
+  return [...names]
+}
+
+/**
+ * Worker のチャンクとメインのチャンクで共通するモジュールを、組ごとに返す。
+ * 1 回のビルドの中ではモジュールは 1 つのチャンクにしか入らないので、重複は別のビルドである Worker との間で起きる
+ * @param {Record<string, string[]>} mainChunks メインのチャンク → モジュール ID
+ * @param {Record<string, string[]>} workerChunks Worker のチャンク → モジュール ID
+ * @returns {{ worker: string, main: string, modules: string[] }[]}
+ */
+export function sharedModules(mainChunks, workerChunks) {
+  const result = []
+  for (const [worker, workerIds] of Object.entries(workerChunks)) {
+    const inWorker = new Set(workerIds)
+    for (const [main, mainIds] of Object.entries(mainChunks)) {
+      const modules = mainIds.filter((id) => inWorker.has(id))
+      if (modules.length > 0) result.push({ worker, main, modules })
+    }
+  }
+  return result
 }

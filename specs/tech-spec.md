@@ -219,7 +219,8 @@ dem ───────→ （何にも依存しない）
 | `workers-not-imported` | `src/workers/` を他のディレクトリから静的に import することを禁止。Worker は `new Worker(new URL(...), { type: 'module' })` でのみ起動する |
 | `workers-isolated` | `src/workers/` から `simulation`・`dem`・`shared` 以外の自作モジュールへの import を禁止（Worker にメインスレッド側のコードを持ち込まない） |
 | `no-circular` | 循環依存を禁止 |
-| `no-orphans` | どこからも参照されないモジュールを禁止（設定ファイルとエントリポイントは除外） |
+| `no-orphans` | 依存も被依存も無いモジュールを禁止（テストと型宣言は除外） |
+| `not-reachable-from-entry` | エントリ（`src/main.tsx`、`src/workers/*.worker.ts`）とテストのどれからも到達できないモジュールを禁止。dependency-cruiser の orphan は「依存も被依存も無い」ものだけなので、import を持つ死んだモジュールはこの規則で捕まえる |
 
 `types-only-from-core` は、dependency-cruiser の `options.tsPreCompilationDeps: "specify"` で型のみの import を区別し、`dependencyTypesNot: ["type-only"]` を持つルールで違反を検出する。§10.1 の `verbatimModuleSyntax` により型のみの import には必ず `import type` が付くため、判定は確実である。
 
@@ -972,7 +973,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}   # main とタグのデプロイは途中で止めない
 ```
 
 - Node バージョンは `.nvmrc` から読み取り、ローカルと CI を一致させる

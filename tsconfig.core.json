@@ -6,9 +6,7 @@
     "rootDir": "src",
     "outDir": "node_modules/.tmp/tsc/core",
     "tsBuildInfoFile": "node_modules/.tmp/tsc/core.tsbuildinfo",
-    "lib": ["ES2023"],
-    "noUncheckedIndexedAccess": true,
-    "allowImportingTsExtensions": true
+    "lib": ["ES2023"]
   },
   "include": ["src/dem", "src/shared"],
   "exclude": ["src/**/*.test.ts"],

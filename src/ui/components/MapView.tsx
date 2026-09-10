@@ -28,7 +28,7 @@ export function MapView({ children }: Props) {
     })
     setController(created)
     return () => {
-      container.removeAttribute('data-map-loaded')
+      delete container.dataset.mapLoaded
       created.destroy()
       setController(null)
     }

@@ -25,6 +25,11 @@ export class MapController {
       attributionControl: { compact: false },
       keyboard: true,
     })
+    // WebGL のコンテキストの生成の失敗などは、例外ではなく error イベントで届く。
+    // 01 では記録だけを行い、画面への表示は後続の spec のエラー処理で扱う
+    this.map.on('error', (event) => {
+      console.error(event.error)
+    })
   }
 
   destroy(): void {

@@ -22,7 +22,7 @@
     "prepare": "lefthook install",
     "size": "node scripts/check-bundle-size.mjs",
     "licenses": "node scripts/check-licenses.mjs",
-    "deploy": "pnpm build && wrangler deploy"
+    "deploy:production": "pnpm build && wrangler deploy"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

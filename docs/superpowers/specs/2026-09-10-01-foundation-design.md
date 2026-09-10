@@ -1,6 +1,6 @@
 # Spec 01: 基盤（walking skeleton）
 
-- Status: 確定（2026-09-10 裁定）
+- Status: 確定（2026-09-10 裁定。同日、01 の実装で確かめた事実に合わせて §4.1・§4.5・§4.7・§4.8・§4.11 を改訂。裁定の内容は変えていない）
 - 日付: 2026-09-10
 - 対応: base-spec §55 Phase 1 の前提、§57 #1
 - 依存: なし
@@ -87,7 +87,7 @@ tech-spec §3.1 の `worker/`（Cloudflare Worker のスクリプト置き場）
 - `package.json`
   - `packageManager`: `pnpm@12.x.y`（公開から 10 日を過ぎた最新のパッチ。tech-spec §13.7）
   - `engines.node`: `>=24 <25`
-  - scripts: `dev`、`build`（`tsc -b && vite build`）、`preview`、`test`、`test:e2e`、`lint`（`biome ci`）、`typecheck`（`tsc -b`）、`depcheck`（`depcruise src`）、`size`、`licenses`、`prepare`（`lefthook install`）、`deploy`
+  - scripts: `dev`、`build`（`tsc -b && vite build`）、`preview`、`test`、`test:e2e`、`lint`（`biome ci`）、`typecheck`（`tsc -b`）、`depcheck`（`depcruise src`）、`size`、`licenses`、`prepare`（`lefthook install`）、`deploy:production`（`pnpm deploy` と `pnpm licenses` は pnpm の組み込みのコマンドと同名なので、前者は名前を変え、後者は `pnpm run licenses` で呼ぶ）
 - `pnpm-workspace.yaml`: `minimumReleaseAge: 14400`、`minimumReleaseAgeStrict: true`、`allowBuilds`
   - `allowBuilds` は空から始める。`pnpm install` がビルドスクリプトの許可を求めたパッケージだけを、理由を PR に書いたうえで追加する。Vite・wrangler の依存（esbuild、workerd など）が候補になりうるが、実際に必要かはインストール時に判断する
 - `.npmrc`: `registry=https://registry.npmjs.org/` のみ
@@ -119,7 +119,7 @@ tech-spec §3.1 の `worker/`（Cloudflare Worker のスクリプト置き場）
 - tsconfig は tech-spec §10.3 の表のとおりに分ける。sim と core は `composite: true`・`emitDeclarationOnly: true`・`outDir: node_modules/.tmp/tsc/<名前>`、worker と app は `noEmit` で sim・core を references で参照する。ルートは `files: []` で全プロジェクトを参照する
 - テストファイル（`*.test.ts`）は sim・core・worker・app の各プロジェクトの対象から外し、`tsconfig.test.json`（lib は `ES2023` と `DOM`、types に `node` と `vitest`、sim と core を references で参照）でまとめて型検査する。composite プロジェクトの型宣言にテストが混ざらず、vitest の型が lib `ES2023` だけの環境で通らない問題も避けられる（T10）
 - `src/simulation/`・`src/dem/`・`src/shared/` の相対 import には `.ts` の拡張子を付ける。Node で直接実行できるようにするためである（03 §5）。これらのプロジェクトに `allowImportingTsExtensions: true` を置き、Biome の `useImportExtensions` をこの3ディレクトリで有効にする（T11）
-- `.dependency-cruiser.mjs` に tech-spec §4.2 の規則をすべて入れる（`core-is-pure`、`types-only-from-core`、`no-react-outside-ui`、`workers-not-imported`、`workers-isolated`、`no-circular`、`no-orphans`）。`options.tsPreCompilationDeps: "specify"` を指定する。`no-orphans` の除外には `*.test.ts` と `*.spec.ts` を入れる
+- `.dependency-cruiser.mjs` に tech-spec §4.2 の規則をすべて入れる（`core-is-pure`、`types-only-from-core`、`no-react-outside-ui`、`workers-not-imported`、`workers-isolated`、`no-circular`、`no-orphans`、`not-reachable-from-entry`）。orphan は「依存も被依存も無い」モジュールだけなので、エントリとテストから到達できないモジュールを禁止する規則を足した。`options.tsPreCompilationDeps: "specify"` を指定する。`no-orphans` の除外には `*.test.ts` と `*.spec.ts` を入れる
 - **一度だけ行う検証**（結果を PR に記録する。恒久的なテストにはしない）
   1. `src/simulation/` に `arr[0] + 1` を書いても `tsc -b` が通り、同じ式を `src/ui/` に書くと失敗する
   2. `src/simulation/` から `react` を import すると、dependency-cruiser と `tsc -b` が失敗する
@@ -150,8 +150,8 @@ tech-spec §3.1 の `worker/`（Cloudflare Worker のスクリプト置き場）
 | `build` | `vite build`、バンドル予算の検査、ライセンス検査 | ○ |
 | `e2e` | `playwright install --with-deps chromium webkit`、`playwright test`（WebKit は `@webkit` タグのテストのみ） | ○ |
 | `audit` | `pnpm audit --audit-level=high`。PR では警告のみ。`schedule` で検出したら Issue を起票（このジョブだけ `issues: write` に昇格する） | × |
-| `deploy-preview` | PR のとき。`wrangler versions upload` でブランチごとのプレビュー URL を発行し、ジョブのサマリに出す | × |
-| `deploy-staging` | `main` への push のとき。上の必須ジョブの成功が前提。ステージング用の Worker（`raintrace-staging`）へ `wrangler deploy --env staging` | — |
+| `deploy-preview` | PR のとき。`CLOUDFLARE_ENV=staging` でビルドし、ステージング用の Worker に `wrangler versions upload --preview-alias pr-<番号>` で PR ごとのプレビュー URL を発行し、ジョブのサマリに出す（本番の Worker には触れない） | × |
+| `deploy-staging` | `main` への push のとき。上の必須ジョブの成功が前提。`CLOUDFLARE_ENV=staging` でビルドし、ステージング用の Worker（`raintrace-staging`）へ `wrangler deploy`（`@cloudflare/vite-plugin` は環境をビルド時に決めるので、`--env` は使わない） | — |
 | `deploy-production` | `v*` のタグの push のとき（タグ付きリリース）。そのコミットで必須ジョブを回し直し、成功したら本番の Worker（`raintrace`）へ `wrangler deploy` | — |
 
 - 共通: `permissions: contents: read`、`concurrency` で古い実行を取り消す、すべての Action を SHA でピン留め（tech-spec §13.4）
@@ -169,7 +169,7 @@ Content-Security-Policy:
   style-src 'self' 'unsafe-inline';
   img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp;
   connect-src 'self' https://cyberjapandata.gsi.go.jp;
-  worker-src 'self' blob:;
+  worker-src 'self';
   object-src 'none';
   form-action 'self';
   frame-ancestors 'none';
@@ -179,10 +179,10 @@ Referrer-Policy: strict-origin-when-cross-origin
 ```
 
 - `style-src 'unsafe-inline'` は、Emotion が実行時にスタイルを挿入するために必要である
-- `worker-src blob:` は、MapLibre が内部の Worker を blob URL で起動するために必要である
+- MapLibre の内部の Worker は、`setWorkerUrl()` で同一オリジンのファイルを渡して起動する（MapLibre 6 は、Worker の URL がクロスオリジンのときだけ blob URL を使う）。そのため `worker-src` に `blob:` は要らない。E2E で違反が 0 件であることを確かめた
 - MapLibre などが上記以外を必要とした場合は、E2E の 6（CSP 違反の検出）で気づける。追加する場合は理由を PR に書く
 - 将来 Rust WASM を入れる場合（tech-spec §6.4）は、`script-src` に `'wasm-unsafe-eval'` が必要になる
-- **`_headers` は Cloudflare 側の仕組みなので、E2E の配信元である `vite preview` で適用されるとは限らない。** 01 で、preview の応答に CSP が付くかを確かめる（E2E の 6）。付かない場合は、CSP の定義を1か所（例: `csp.config.ts`）に置き、そこから `_headers` と `vite.config.ts` の `preview.headers` の両方を生成して、二重管理を避ける
+- **`_headers` は Cloudflare 側の仕組みなので、E2E の配信元である `vite preview` で適用されるとは限らない。** 01 で、preview の応答に CSP が付くかを確かめる（E2E の 6）。付かない場合は、CSP の定義を1か所（例: `csp.config.ts`）に置き、そこから `_headers` と `vite.config.ts` の `preview.headers` の両方を生成して、二重管理を避ける。01 の実装で、`@cloudflare/vite-plugin` を使うと preview の応答に CSP が付くことを確かめたので、この仕組みは作っていない
 
 ### 4.9 バンドル予算
 
@@ -198,7 +198,7 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 ### 4.11 Cloudflare
 
-- `wrangler.jsonc`: `name: "raintrace"`、`compatibility_date`（実装した日）、`assets: { directory: "./dist", not_found_handling: "single-page-application" }`。ステージング用に `env.staging`（Worker 名 `raintrace-staging`）を定義する（R01-3）
+- `wrangler.jsonc`: `name: "raintrace"`、`compatibility_date`（固定した wrangler の workerd が対応する最新の日付。実装した日の 2026-09-10 は workerd が受け付けなかった）、`assets: { not_found_handling: "single-page-application" }`（`directory` は `@cloudflare/vite-plugin` が決める）。ビルドの情報（`dist/.vite/`）は `public/.assetsignore` で配信から外す。ステージング用に `env.staging`（Worker 名 `raintrace-staging`）を定義する（R01-3）
 - Worker のスクリプトは持たない（静的配信のみ）
 - `@cloudflare/vite-plugin` は tech-spec §3.1 のとおり導入する（R01-8 で承認）。preview に `_headers` の CSP が効かない場合は、§4.8 のとおり1か所の定義から `preview.headers` も生成する
 

@@ -68,6 +68,12 @@ test('WebGL 2 が使えないと、非対応の画面が出る', async ({ page }
   await expect(page.getByText(strings.unsupported.missing.webgl2)).toBeVisible()
 })
 
+test('ビルドの情報（dist/.vite/）は配信しない', async ({ request }) => {
+  // not_found_handling が single-page-application なので、無いファイルには index.html が返る
+  const response = await request.get('/.vite/manifest.json')
+  expect(await response.text()).not.toContain('"isEntry"')
+})
+
 test('応答に CSP が付き、読み込み中に CSP 違反が起きない', async ({ page, gsiTiles }) => {
   await page.addInitScript(() => {
     const violations: string[] = []
