@@ -961,17 +961,20 @@ concurrency:
 
 ## 13.1 前提: リリースクールダウン
 
-本プロジェクトは、公開直後のパッケージバージョンを使用しない方針を採る。開発機には現在、pnpm 10 のグローバル設定として以下が入っている。
+本プロジェクトは、公開直後のパッケージバージョンを使用しない方針を採る。開発機には以下のグローバル設定が入っている（2026-09-10 に pnpm 12.2.1 で、値の読み込みと、期間未満のバージョンが拒否されることを確認した）。
 
+```yaml
+# ~/.config/pnpm/config.yaml（pnpm 11 以降が読む）
+minimumReleaseAge: 14400          # 分単位 = 10日
+minimumReleaseAgeStrict: true
 ```
-~/.config/pnpm/rc
-  minimum-release-age=14400          # 分単位 = 10日
-  minimum-release-age-strict=true
-```
+
+旧来の `~/.config/pnpm/rc`（pnpm 10 が読む）にも同じ値を残してある。
 
 - `minimumReleaseAge` は**分**単位で指定する（pnpm 10.16.0 で追加）。`14400` 分は 10 日である
 - `minimumReleaseAgeStrict` を true にすると、要求されたバージョン範囲の中に期間を満たすバージョンが無い場合、期間未満のバージョンで妥協せず、解決を失敗させる。false の場合は期間未満のバージョンへフォールバックする。pnpm 10.32 系でも有効であることを実機で確認した
 - pnpm 11 以降、`minimumReleaseAge` の既定値は 1 日である。本プロジェクトは 10 日を明示的に設定する
+- pnpm 12 は、対話的に実行すると期間未満のバージョンの採用を承認できる（拒否時のメッセージがそう案内する）。**この承認は行わない。** 期間内に取り込む必要がある場合は §13.9 の手順による。CI は非対話なので、期間未満のバージョンはそのまま失敗する
 
 ## 13.2 決定: 設定をリポジトリの pnpm-workspace.yaml に置く
 
@@ -987,9 +990,11 @@ minimumReleaseAgeStrict: true
 
 `.npmrc` にはレジストリの指定だけを置く。
 
-### 開発機のグローバル設定の移行
+### 開発機のグローバル設定
 
-pnpm 11 以降は、グローバル設定を `~/.config/pnpm/config.yaml` から読み、現在の `~/.config/pnpm/rc` は読まない。開発機の pnpm を 11 以降へ上げる場合は、同じ値を `config.yaml` に移さないと、**リポジトリの外ではクールダウンが黙って無効になる**。本リポジトリの中では `pnpm-workspace.yaml` の設定が効くため、移行の有無に左右されない。
+pnpm 11 以降は、グローバル設定を `~/.config/pnpm/config.yaml` から読み、`~/.config/pnpm/rc` は読まない。移さずに pnpm を上げると、リポジトリの外ではクールダウンが黙って無効になる。開発機は 2026-09-10 に pnpm 12.2.1 へ上げ、同じ値を `config.yaml` に移した。
+
+本リポジトリの中では `pnpm-workspace.yaml` の設定が効くため、グローバル設定の有無に左右されない。
 
 ## 13.3 パッケージマネージャは pnpm（決定）
 
@@ -1056,6 +1061,8 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 | pnpm | `package.json` の `packageManager` フィールド。pnpm 自身と CI の `pnpm/action-setup` がこれを読み、同じバージョンを使う。Corepack には依存しない（Node 25 以降は Corepack が同梱されない） |
 
 初期バージョン: Node 24（LTS）、**pnpm 12 系**（クールダウン期間を過ぎた最新のパッチ）。pnpm 10 は 2 メジャー古く、設定の置き場所（§13.2）もビルド許可の設定名も異なるため採らない。
+
+**pnpm 本体はクールダウンの対象外である。** corepack や CI の `pnpm/action-setup` は pnpm 本体を直接ダウンロードするため、`minimumReleaseAge` が効かない。`packageManager` のバージョンを手で上げる場合は、公開から 10 日以上経っていることを `pnpm view pnpm time` で確かめる。Renovate による更新は、§13.5 の `minimumReleaseAge` で守られる。
 
 ## 13.8 Lockfile
 
