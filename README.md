@@ -25,6 +25,8 @@ pnpm dev
 | `pnpm depcheck` | dependency-cruiser によるレイヤー規則の検査 |
 | `pnpm test` | ユニットテスト |
 | `pnpm test:e2e` | 本番ビルドに対する E2E |
+| `pnpm size` | バンドル予算の検査（`pnpm build` の後） |
+| `pnpm run licenses` | 本番の依存のライセンスの検査（`pnpm licenses` は pnpm の組み込みのコマンドと同名なので `run` を付ける） |
 
 ## 出典
 
