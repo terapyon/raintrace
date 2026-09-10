@@ -13,15 +13,16 @@ const RANGE_SIZE_M = 500 // R02-4
  * 大きな配列は SimulationClient が持ち、ストアには要約だけを置く
  */
 export class TerrainSession {
+  readonly store: AppStore
   private readonly client: SimulationClient
-  private readonly store: AppStore
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
 
+  // Worker が異常終了してもストアは変えない。読み込み中なら、その要求の失敗（'worker'）が load() で
+  // failed になる。表示中なら、メインは地形の複製を持つので、重ね描きもカーソル位置の標高もそのまま動く
   constructor(client: SimulationClient, store: AppStore) {
     this.client = client
     this.store = store
-    client.onCrash(() => store.getState().setFailed('worker'))
   }
 
   /** 地図のクリック・カーソル・移動を購読し、URL の地点を読む。戻り値で外す */
@@ -81,10 +82,9 @@ export class TerrainSession {
     void this.load(lon, lat)
   }
 
-  /** 失敗した読み込みをやり直す。Worker が止まっていれば起動し直す */
+  /** 失敗した読み込みをやり直す。Worker が止まっていれば、SimulationClient が次の要求で起動し直す */
   retry(): void {
-    const { selected, load } = this.store.getState()
-    if (load.status === 'failed' && load.reason === 'worker') this.client.restart()
+    const { selected } = this.store.getState()
     if (selected !== null) this.select(selected.lon, selected.lat)
   }
 

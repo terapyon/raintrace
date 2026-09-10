@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SimulationClient } from './bridge/SimulationClient'
-import { type AppStore, createAppStore } from './state/appStore'
+import { createAppStore } from './state/appStore'
 import { App } from './ui/App'
 import type { MissingFeature } from './ui/components/WebGLUnsupported'
 import { TerrainSession } from './ui/terrainSession'
@@ -35,13 +35,13 @@ if (container === null) throw new Error('#root が見つかりません')
 
 const missingFeatures = detectMissingFeatures()
 let session: TerrainSession | null = null
-let store: AppStore | null = null
 if (missingFeatures.length === 0) {
+  const store = createAppStore()
   try {
     // Worker を所有する SimulationClient はアプリで 1 つ。ping もそれで行う（01 の申し送り H2）。
-    // Worker の生成は、CSP で塞がれた場合などに同期的に例外を投げる
+    // Worker の生成は、CSP で塞がれた場合などに同期的に例外を投げる。
+    // TerrainSession の生成は代入だけなので、Worker を作った後に例外は出ない
     const client = new SimulationClient()
-    store = createAppStore()
     session = new TerrainSession(client, store)
     checkWorker(client)
   } catch (error) {
@@ -52,6 +52,6 @@ if (missingFeatures.length === 0) {
 
 createRoot(container).render(
   <StrictMode>
-    <App missingFeatures={missingFeatures} session={session} store={store} />
+    <App missingFeatures={missingFeatures} session={session} />
   </StrictMode>,
 )

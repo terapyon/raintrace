@@ -126,3 +126,33 @@ test('Worker の中の DEM の取得も差し替えられている', async ({ pa
   await waitTerrain(page)
   expect(counts.dem).toBeGreaterThan(0)
 })
+
+test('Worker のスクリプトを読めなくても、クリックのたびに停止を知らせ、作り直しが回り続けない', async ({
+  page,
+  context,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await routeGsi(context)
+  // Worker のスクリプト（dist/assets/simulation.worker-<hash>.js）の取得を失敗させる。
+  // Chromium では Worker に 'error' が発火し、SimulationClient は次の要求で作り直す
+  let workerRequests = 0
+  await context.route('**/assets/simulation.worker-*.js', (route) => {
+    workerRequests++
+    return route.abort()
+  })
+  await page.goto('/')
+  await expect(page.locator('html')).toHaveAttribute('data-worker-ready', 'false')
+  expect(workerRequests).toBe(1)
+  for (const expected of [2, 3]) {
+    await clickMap(page)
+    // クリックのたびに Worker を 1 回だけ作り直し、それも失敗する
+    await expect.poll(() => workerRequests).toBe(expected)
+    await expect(page.getByTestId('load-error')).toContainText(strings.errors.worker)
+  }
+  // 要求が無ければ作り直さない。表示も読み込み中に戻らない
+  await page.waitForTimeout(1000)
+  expect(workerRequests).toBe(3)
+  await expect(page.getByTestId('load-error')).toContainText(strings.errors.worker)
+  expect(errors).toEqual([])
+})

@@ -143,39 +143,84 @@ describe('SimulationClient の地形の読み込み', () => {
     worker.reply({ type: 'terrainLoaded', requestId: worker.lastRequestId(), terrain: fakeTerrain })
     await expect(second).resolves.toBe(fakeTerrain)
   })
+})
 
-  it('Worker の異常終了で、待っている ping と読み込みを失敗させて通知する', async () => {
+/** 作った Worker をすべて記録する。onCreate で作った直後の Worker に手を加えられる */
+function setupMany(onCreate?: (worker: FakeWorker) => void) {
+  const workers: FakeWorker[] = []
+  const client = new SimulationClient(() => {
+    const worker = new FakeWorker()
+    workers.push(worker)
+    onCreate?.(worker)
+    return worker
+  })
+  return { workers, client }
+}
+
+function nth(workers: readonly FakeWorker[], index: number): FakeWorker {
+  const worker = workers[index]
+  if (worker === undefined) throw new Error(`${index + 1} 番目の Worker がありません`)
+  return worker
+}
+
+describe('SimulationClient の Worker の異常終了', () => {
+  it('待っている ping と読み込みを worker で失敗させ、その Worker を終了して受信をやめる。タイマーも残さない', async () => {
+    vi.useFakeTimers()
     const { worker, client } = setup()
-    const crashes: number[] = []
-    client.onCrash(() => crashes.push(1))
     const ping = client.ping()
     const load = client.loadTerrain(0, 0, 500)
     worker.crash()
-    await expect(ping).rejects.toThrow()
+    await expect(ping).rejects.toMatchObject({ reason: 'worker' })
     await expect(load).rejects.toMatchObject({ reason: 'worker' })
-    expect(crashes).toEqual([1])
+    expect(worker.terminated).toBe(true)
+    expect(worker.listeners.size).toBe(0)
+    expect(worker.errorListeners.size).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('onCrash の戻り値で通知をやめる', () => {
-    const { worker, client } = setup()
-    const crashes: number[] = []
-    const stop = client.onCrash(() => crashes.push(1))
-    stop()
-    worker.crash()
-    expect(crashes).toEqual([])
+  it('異常終了しただけでは、新しい Worker を作らない', () => {
+    const { workers } = setupMany()
+    nth(workers, 0).crash()
+    expect(workers).toHaveLength(1)
   })
 
-  it('restart で古い Worker を終了し、新しい Worker を起動する', () => {
-    const workers: FakeWorker[] = []
-    const client = new SimulationClient(() => {
-      const worker = new FakeWorker()
-      workers.push(worker)
-      return worker
-    })
-    client.restart()
+  it('読み込み中の異常終了は worker で失敗し、次の loadTerrain で起動し直した Worker が応える', async () => {
+    const { workers, client } = setupMany()
+    const first = client.loadTerrain(0, 0, 500)
+    nth(workers, 0).crash()
+    await expect(first).rejects.toMatchObject({ reason: 'worker' })
+    const second = client.loadTerrain(0, 0, 500)
     expect(workers).toHaveLength(2)
-    expect(workers[0]?.terminated).toBe(true)
+    const next = nth(workers, 1)
+    next.reply({ type: 'terrainLoaded', requestId: next.lastRequestId(), terrain: fakeTerrain })
+    await expect(second).resolves.toBe(fakeTerrain)
+    expect(client.terrain).toBe(fakeTerrain)
+  })
+
+  it('起動し直した Worker がまた異常終了しても、同じように扱う', async () => {
+    const { workers, client } = setupMany()
+    nth(workers, 0).crash()
+    const ping = client.ping()
+    expect(workers).toHaveLength(2)
+    nth(workers, 1).crash()
+    await expect(ping).rejects.toMatchObject({ reason: 'worker' })
+    expect(nth(workers, 1).terminated).toBe(true)
+    expect(workers).toHaveLength(2)
     void client.ping().catch(() => {})
-    expect(workers[1]?.posted.at(-1)).toMatchObject({ type: 'ping' })
+    expect(workers).toHaveLength(3)
+    expect(nth(workers, 2).posted.at(-1)).toMatchObject({ type: 'ping' })
+    client.dispose()
+  })
+
+  it('作るたびにすぐ異常終了する Worker でも、読み込みは速やかに失敗し、作り直しが回り続けない', async () => {
+    const { workers, client } = setupMany((worker) => queueMicrotask(() => worker.crash()))
+    // 起動時の Worker が異常終了するのを待つ
+    await Promise.resolve()
+    expect(workers).toHaveLength(1)
+    await expect(client.loadTerrain(0, 0, 500)).rejects.toMatchObject({ reason: 'worker' })
+    expect(workers).toHaveLength(2)
+    // 要求が無ければ、それ以上は作らない
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(workers).toHaveLength(2)
   })
 })

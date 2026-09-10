@@ -62,7 +62,7 @@ export class SimulationClient {
   private readonly createWorker: () => WorkerPort
   private readonly pendingPings = new Map<number, PendingPing>()
   private pendingTerrain: PendingTerrain | null = null
-  private readonly crashListeners = new Set<() => void>()
+  private crashed = false
   private nextId = 1
 
   private readonly onMessage = (event: MessageEvent<WorkerToMainMessage>): void => {
@@ -99,8 +99,10 @@ export class SimulationClient {
   }
 
   private readonly onError = (): void => {
-    this.failAll(new TerrainLoadError('worker', 'Worker が異常終了しました'))
-    for (const listener of this.crashListeners) listener()
+    // 'error' は Worker の未捕捉の例外でも発火し、Worker が止まったとは限らない。
+    // どちらも作り直しの契機にして扱いを決定的にする
+    this.stop(new TerrainLoadError('worker', 'Worker が異常終了しました'))
+    this.crashed = true
   }
 
   constructor(createWorker: () => WorkerPort = createSimulationWorker) {
@@ -112,12 +114,14 @@ export class SimulationClient {
   ping(timeoutMs = PING_TIMEOUT_MS): Promise<void> {
     const id = this.nextId++
     return new Promise((resolve, reject) => {
+      // Worker の生成が例外を投げても、タイマーや待ちを残さないよう先に取る
+      const worker = this.port()
       const timer = setTimeout(() => {
         this.pendingPings.delete(id)
         reject(new Error(`Worker が ${timeoutMs}ms 以内に応答しませんでした`))
       }, timeoutMs)
       this.pendingPings.set(id, { resolve, reject, timer })
-      this.worker.postMessage({ type: 'ping', id })
+      worker.postMessage({ type: 'ping', id })
     })
   }
 
@@ -133,28 +137,27 @@ export class SimulationClient {
     )
     const requestId = this.nextId++
     return new Promise((resolve, reject) => {
+      const worker = this.port()
       this.pendingTerrain = { requestId, resolve, reject, onProgress }
-      this.worker.postMessage({ type: 'loadTerrain', requestId, lon, lat, sizeM })
+      worker.postMessage({ type: 'loadTerrain', requestId, lon, lat, sizeM })
     })
-  }
-
-  /** Worker の異常終了を通知する。戻り値を呼ぶと通知をやめる */
-  onCrash(listener: () => void): () => void {
-    this.crashListeners.add(listener)
-    return () => {
-      this.crashListeners.delete(listener)
-    }
-  }
-
-  /** Worker を起動し直す。待っている要求は 'worker' で失敗させる（spec 02 §7） */
-  restart(): void {
-    this.stop(new TerrainLoadError('worker', 'Worker を起動し直しました'))
-    this.worker = this.start()
   }
 
   /** Worker を終了する。待っている要求は失敗させ、タイマーを残さない */
   dispose(): void {
     this.stop(new TerrainLoadError('worker', 'SimulationClient は破棄されました'))
+  }
+
+  /**
+   * 要求を送る Worker。異常終了の後は、次の要求のときに起動し直す（spec 02 §7）。
+   * すぐに起動し直すと、スクリプトを読めない Worker（CSP で塞がれた場合など）で作り直しが止まらない
+   */
+  private port(): WorkerPort {
+    if (this.crashed) {
+      this.worker = this.start()
+      this.crashed = false
+    }
+    return this.worker
   }
 
   private start(): WorkerPort {
