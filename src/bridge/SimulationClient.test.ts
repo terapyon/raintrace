@@ -1,28 +1,47 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MainToWorkerMessage, WorkerToMainMessage } from '../shared/protocol'
+import type { MainToWorkerMessage, TerrainPayload, WorkerToMainMessage } from '../shared/protocol'
 import { SimulationClient, type WorkerPort } from './SimulationClient'
 
 type Listener = (event: MessageEvent<WorkerToMainMessage>) => void
+type ErrorListener = (event: Event) => void
 
 class FakeWorker implements WorkerPort {
   readonly posted: MainToWorkerMessage[] = []
   readonly listeners = new Set<Listener>()
+  readonly errorListeners = new Set<ErrorListener>()
   terminated = false
 
   postMessage(message: MainToWorkerMessage): void {
     this.posted.push(message)
   }
-  addEventListener(_type: 'message', listener: Listener): void {
-    this.listeners.add(listener)
+  addEventListener(
+    type: 'message' | 'error' | 'messageerror',
+    listener: Listener | ErrorListener,
+  ): void {
+    if (type === 'message') this.listeners.add(listener as Listener)
+    else this.errorListeners.add(listener as ErrorListener)
   }
-  removeEventListener(_type: 'message', listener: Listener): void {
-    this.listeners.delete(listener)
+  removeEventListener(
+    type: 'message' | 'error' | 'messageerror',
+    listener: Listener | ErrorListener,
+  ): void {
+    if (type === 'message') this.listeners.delete(listener as Listener)
+    else this.errorListeners.delete(listener as ErrorListener)
   }
   terminate(): void {
     this.terminated = true
   }
   reply(message: WorkerToMainMessage): void {
     for (const listener of this.listeners) listener(new MessageEvent('message', { data: message }))
+  }
+  crash(): void {
+    for (const listener of this.errorListeners) listener(new Event('error'))
+  }
+  lastRequestId(): number {
+    const last = this.posted.at(-1)
+    if (last?.type !== 'loadTerrain')
+      throw new Error('最後のメッセージが loadTerrain ではありません')
+    return last.requestId
   }
 }
 
@@ -32,11 +51,13 @@ function setup() {
   return { worker, client }
 }
 
+const fakeTerrain = { geo: { size: 1 } } as unknown as TerrainPayload
+
 afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('SimulationClient', () => {
+describe('SimulationClient の ping', () => {
   it('ping を送り、同じ id の pong が返ると解決する', async () => {
     const { worker, client } = setup()
     const done = client.ping()
@@ -67,6 +88,7 @@ describe('SimulationClient', () => {
     client.dispose()
     expect(worker.terminated).toBe(true)
     expect(worker.listeners.size).toBe(0)
+    expect(worker.errorListeners.size).toBe(0)
   })
 
   it('dispose で待っている ping を失敗させ、タイマーを残さない', async () => {
@@ -76,5 +98,84 @@ describe('SimulationClient', () => {
     client.dispose()
     await expect(done).rejects.toThrow('破棄')
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('SimulationClient の地形の読み込み', () => {
+  it('同じ requestId の terrainLoaded で解決し、terrain に保持する。進捗も伝える', async () => {
+    const { worker, client } = setup()
+    const progress: [number, number][] = []
+    const done = client.loadTerrain(139.7, 35.6, 500, (d, s) => progress.push([d, s]))
+    expect(worker.posted.at(-1)).toMatchObject({
+      type: 'loadTerrain',
+      lon: 139.7,
+      lat: 35.6,
+      sizeM: 500,
+    })
+    const requestId = worker.lastRequestId()
+    worker.reply({ type: 'terrainProgress', requestId, done: 1, started: 4 })
+    worker.reply({ type: 'terrainLoaded', requestId, terrain: fakeTerrain })
+    await expect(done).resolves.toBe(fakeTerrain)
+    expect(client.terrain).toBe(fakeTerrain)
+    expect(progress).toEqual([[1, 4]])
+  })
+
+  it('terrainFailed では理由つきで失敗する', async () => {
+    const { worker, client } = setup()
+    const done = client.loadTerrain(0, 0, 500)
+    worker.reply({
+      type: 'terrainFailed',
+      requestId: worker.lastRequestId(),
+      reason: 'no-data',
+      message: '',
+    })
+    await expect(done).rejects.toMatchObject({ reason: 'no-data' })
+  })
+
+  it('新しい読み込みは古いものを superseded で失敗させ、古い結果は無視する', async () => {
+    const { worker, client } = setup()
+    const first = client.loadTerrain(0, 0, 500)
+    const firstId = worker.lastRequestId()
+    const second = client.loadTerrain(1, 1, 500)
+    await expect(first).rejects.toMatchObject({ reason: 'superseded' })
+    worker.reply({ type: 'terrainLoaded', requestId: firstId, terrain: fakeTerrain })
+    expect(client.terrain).toBeNull()
+    worker.reply({ type: 'terrainLoaded', requestId: worker.lastRequestId(), terrain: fakeTerrain })
+    await expect(second).resolves.toBe(fakeTerrain)
+  })
+
+  it('Worker の異常終了で、待っている ping と読み込みを失敗させて通知する', async () => {
+    const { worker, client } = setup()
+    const crashes: number[] = []
+    client.onCrash(() => crashes.push(1))
+    const ping = client.ping()
+    const load = client.loadTerrain(0, 0, 500)
+    worker.crash()
+    await expect(ping).rejects.toThrow()
+    await expect(load).rejects.toMatchObject({ reason: 'worker' })
+    expect(crashes).toEqual([1])
+  })
+
+  it('onCrash の戻り値で通知をやめる', () => {
+    const { worker, client } = setup()
+    const crashes: number[] = []
+    const stop = client.onCrash(() => crashes.push(1))
+    stop()
+    worker.crash()
+    expect(crashes).toEqual([])
+  })
+
+  it('restart で古い Worker を終了し、新しい Worker を起動する', () => {
+    const workers: FakeWorker[] = []
+    const client = new SimulationClient(() => {
+      const worker = new FakeWorker()
+      workers.push(worker)
+      return worker
+    })
+    client.restart()
+    expect(workers).toHaveLength(2)
+    expect(workers[0]?.terminated).toBe(true)
+    void client.ping().catch(() => {})
+    expect(workers[1]?.posted.at(-1)).toMatchObject({ type: 'ping' })
   })
 })

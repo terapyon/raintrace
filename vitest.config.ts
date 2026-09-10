@@ -12,6 +12,7 @@ export default defineConfig({
       thresholds: {
         'src/simulation/**': { lines: 90 },
         'src/dem/**': { lines: 85 },
+        'src/state/**': { lines: 80 },
       },
     },
   },
