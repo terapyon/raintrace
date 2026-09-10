@@ -8,5 +8,14 @@
     "lib": ["ES2023", "DOM"],
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "tests/e2e/**/*.ts"]
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "tests/e2e/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  // scripts/bench-engine.ts は src/simulation を import する。参照しないと、simulation のソースを
+  // このプロジェクトの設定（noUncheckedIndexedAccess: true）で検査してしまう（tech-spec §10.3）
+  "references": [{ "path": "./tsconfig.sim.json" }]
 }

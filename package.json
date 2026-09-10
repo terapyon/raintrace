@@ -22,6 +22,7 @@
     "prepare": "lefthook install",
     "size": "node scripts/check-bundle-size.mjs",
     "licenses": "node scripts/check-licenses.mjs",
+    "bench:engine": "node scripts/bench-engine.ts",
     "deploy:production": "pnpm build && wrangler deploy"
   },
   "devDependencies": {
