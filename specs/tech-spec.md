@@ -16,6 +16,8 @@ Status: Draft
 
 本書で「決定」と記した事項は、変更する場合に本書の改訂を伴う。「方針」と記した事項は実装時の判断指針であり、合理的な理由があれば実装時に逸脱してよい。
 
+base-spec が候補や例として挙げている事項（ホスティング先、技術スタック、モジュール構成、API など）を本書で確定または変更している場合は、本書を優先する。対応関係は §19 に一覧する。
+
 ---
 
 # 1. 技術スタック一覧
@@ -27,7 +29,7 @@ Status: Draft
 | UI フレームワーク | React | SPA、SSR なし |
 | UI コンポーネント | MUI (`@mui/material`) + Emotion | §9 |
 | 地図 | MapLibre GL JS | 命令的ラッパーで React から分離（§5.3） |
-| 3D 描画 | Three.js | MapLibre Custom WebGL Layer 内で使用 |
+| 3D 描画 | Three.js | MapLibre Custom WebGL Layer 内で使用。地形の描画方式は §5.5 |
 | 状態管理 | Zustand | UI 状態のみ。セル配列は載せない（§5） |
 | 並行処理 | Web Worker + Transferable | SharedArrayBuffer 不採用（§7.3） |
 | シミュレーション | TypeScript + TypedArray | 性能未達時に Rust WASM へ差し替え（§6） |
@@ -49,7 +51,7 @@ Status: Draft
 | Next.js / React Router (framework mode) / TanStack Start | 単一画面・完全クライアント処理のため SSR とサーバルーティングの恩恵がない。ビルドの複雑さのみが増える |
 | Cloudflare Pages | Cloudflare は新規プロジェクトについて Workers Static Assets を推奨方針としている |
 | ESLint + typescript-eslint + Prettier | 依存パッケージが数十個増え、サプライチェーン方針（§13）と整合しない。型認識ルールが必要になった時点で再検討する |
-| SharedArrayBuffer | COOP/COEP が必要になり、CORP を返さない GSI タイルの取得経路に不確実性を持ち込む（§7.3） |
+| SharedArrayBuffer | Transferable で性能要件を満たせるため、COOP/COEP を運用する負担に見合わない（§7.3） |
 | WebGPU | 初期対応ブラウザを狭める。将来の選択肢として構造だけ確保する（base-spec §26） |
 | i18n ライブラリ | 初期は日本語のみ。文字列を1モジュールに集約して将来に備える（§9.4） |
 
@@ -60,7 +62,7 @@ Status: Draft
 本プロジェクト固有の判断基準を、優先順位順に定める。判断に迷った場合はこの順で従う。
 
 1. **シミュレーションエンジンを純粋に保つ** — `src/simulation/` は DOM・React・WebGL・MapLibre のいずれにも依存しない。base-spec §61 の要求であり、テスト容易性と将来の実装差し替え（WASM 化）の前提でもある。CI で機械的に強制する（§4.2）
-2. **大きな配列を React に載せない** — 250,000 セルの `Float32Array` を React state / props / context に流さない。React が扱うのは UI 設定値と低頻度の統計値のみ（§5）
+2. **大きな配列を React に載せない** — 250,000 セルの TypedArray を React state / props / context に流さない。React が扱うのは UI 設定値と低頻度の統計値のみ（§5）
 3. **依存を増やさない** — 依存追加は 10 日のリリースクールダウン（§13）を経て初めて利用可能になり、かつ攻撃面を広げる。既存の依存または標準 API で実現できる場合はそちらを選ぶ
 4. **速度は測ってから最適化する** — 性能目標（§14）に対する実測なしに最適化手段（WASM / WebGPU）を導入しない
 
@@ -105,6 +107,8 @@ dist/           ビルド成果物
 
 シミュレーション結果そのものは URL に載せない。同じ URL から同じ初期条件で再現できることのみを保証する。
 
+URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）は、URL の値を優先する。
+
 ## 3.4 デプロイ
 
 | 環境 | トリガ | 手段 |
@@ -128,22 +132,27 @@ raintrace/
     base-spec.md          基本仕様
     tech-spec.md          本書
   src/
-    simulation/           純粋 TypeScript。外部 I/O・DOM・描画に非依存
-      types.ts            エンジンのインターフェース定義
-      SimulationEngine.ts
-      FlowSolver.ts
+    simulation/           純粋 TypeScript。I/O・DOM・描画に非依存
+      types.ts            エンジンのインターフェースと型（§6.2）
+      TsSimulationEngine.ts エンジンの TypeScript 実装
+      FlowSolver.ts       1 step 分の水移動計算（エンジン内部）
       WaterGrid.ts
       Rainfall.ts
       Boundary.ts
       DepressionAnalysis.ts
-    dem/                  DEM 取得とデコード。fetch は使うが DOM/React には非依存
-      DemTileLoader.ts
-      GsiDemDecoder.ts
-      DemGrid.ts
-      tileMath.ts
-    workers/
+      constants.ts        許容誤差などの定数（§6.6）
+    dem/                  純粋 TypeScript。RGBA → 標高の変換とグリッド組み立て（I/O なし）
+      GsiDemDecoder.ts    RGBA バイト列 → 標高 Float32Array + 有効セルマスク
+      DemGrid.ts          複数タイルの結合と範囲の切り出し
+      tileMath.ts         緯度経度・タイル座標・地上解像度の変換（§7.6）
+      demSources.ts       DEM 種別・エンドポイント・最大ズーム（§7.4）
+    shared/
+      protocol.ts         Worker とメインスレッド間の型付きメッセージ定義
+    workers/              Worker 内でのみ動くコード
       simulation.worker.ts
-      protocol.ts         メインスレッドとの型付きメッセージ定義
+      demLoader.ts        fetch → createImageBitmap → OffscreenCanvas → RGBA
+    bridge/
+      SimulationClient.ts メインスレッドで Worker を所有する。水深バッファを Renderer へ、統計を store へ渡す
     renderer/             Three.js / WebGL。React には非依存
       TerrainRenderer.ts
       WaterRenderer.ts
@@ -161,16 +170,19 @@ raintrace/
       strings.ts
       components/
     main.tsx
-  worker/                 Cloudflare Worker（初期は静的配信のみ）
+  worker/                 Cloudflare Worker（初期は静的配信のみ。src/workers/ の Web Worker とは別物）
   tests/
     e2e/                  Playwright
-  .npmrc
+  .npmrc                レジストリの指定のみ（§13.2）
+  pnpm-workspace.yaml   pnpm の設定（§13.2。workspace としては使わない）
   .nvmrc
   .dependency-cruiser.mjs
   biome.json
-  tsconfig.json           project references のルート
-  tsconfig.app.json
+  tsconfig.json           project references のルート（§10.3）
   tsconfig.sim.json
+  tsconfig.core.json
+  tsconfig.worker.json
+  tsconfig.app.json
   tsconfig.node.json
   vite.config.ts
   wrangler.jsonc
@@ -183,30 +195,34 @@ base-spec §61 の「Simulation Engine を MapLibre や Three.js に依存させ
 許可される依存方向:
 
 ```
-ui  ─────────┐
-             ├──→ state ──→ simulation (型のみ)
-map ─────────┤
-             │
-renderer ────┴──→ simulation (型のみ)
+ui ────────→ state ─────→ simulation（型のみ）
+ui ────────→ bridge
+ui ────────→ map ───────→ renderer
+bridge ────→ state, renderer
+bridge ────→ shared（protocol）
+renderer ──→ simulation, dem（型のみ）
+workers ───→ simulation, dem, shared
+shared ────→ simulation, dem（型のみ）
 
-workers ──→ simulation
-workers ──→ dem
-
-dem ──→ (外部依存なし。fetch のみ)
-simulation ──→ (何にも依存しない)
+simulation → （何にも依存しない）
+dem ───────→ （何にも依存しない）
 ```
 
 禁止ルール:
 
 | ルール | 内容 |
 |---|---|
-| `simulation-is-pure` | `src/simulation/` から `react`, `@mui/*`, `maplibre-gl`, `three`, `zustand`, および DOM 型に依存する自作モジュールへの import を禁止 |
-| `dem-is-headless` | `src/dem/` から `react`, `@mui/*`, `maplibre-gl`, `three` への import を禁止 |
-| `renderer-no-react` | `src/renderer/` から `react`, `@mui/*` への import を禁止 |
+| `core-is-pure` | `src/simulation/` と `src/dem/` から、自ディレクトリの外（src 内の他ディレクトリ、外部パッケージ）への import を禁止 |
+| `types-only-from-core` | `state`・`renderer`・`shared` から `simulation`・`dem` への import は型のみに限る（dependency-cruiser の type-only 判定を用いる） |
+| `no-react-outside-ui` | `src/renderer/` と `src/bridge/` から `react`, `@mui/*` への import を禁止 |
+| `workers-not-imported` | `src/workers/` を他のディレクトリから静的に import することを禁止。Worker は `new Worker(new URL(...), { type: 'module' })` でのみ起動する |
+| `workers-isolated` | `src/workers/` から `simulation`・`dem`・`shared` 以外の自作モジュールへの import を禁止（Worker にメインスレッド側のコードを持ち込まない） |
 | `no-circular` | 循環依存を禁止 |
-| `no-orphans` | どこからも参照されないモジュールを禁止（設定ファイル等は除外） |
+| `no-orphans` | どこからも参照されないモジュールを禁止（設定ファイルとエントリポイントは除外） |
 
-`src/simulation/` は DOM 型そのものを使えないようにする。これは §10.2 の tsconfig 分割によって型レベルでも担保する（`lib` から `DOM` を外す）。
+`types-only-from-core` は、dependency-cruiser の `options.tsPreCompilationDeps: "specify"` で型のみの import を区別し、`dependencyTypesNot: ["type-only"]` を持つルールで違反を検出する。§10.1 の `verbatimModuleSyntax` により型のみの import には必ず `import type` が付くため、判定は確実である。
+
+`src/simulation/` と `src/dem/` は、DOM や WebWorker の API そのものも使えない。これは §10.3 の tsconfig 分割によって型レベルでも担保する。
 
 ## 4.3 workspace 分割を採らない理由
 
@@ -223,47 +239,50 @@ simulation ──→ (何にも依存しない)
 大きな配列を React に載せないため、責務を3層に分離する。
 
 ```
-┌─────────────────────────────────────────────────┐
-│ Web Worker                                      │
-│   elevation: Float32Array (250,000)             │
-│   water:     Float32Array (250,000)             │
-│   activeCells                                   │
-│   → シミュレーションの真の状態を所有            │
-└───────┬─────────────────────────────────────────┘
-        │ postMessage(Transferable)
-        │   ・水深バッファ（描画用、所有権を往復）
+┌──────────────────────────────────────────────────┐
+│ Web Worker                                       │
+│   elevation : Float32Array   標高                │
+│   validMask : Uint8Array     有効セル            │
+│   water     : Float64Array   水深                │
+│   activeCells                                    │
+│   → シミュレーションの真の状態を所有             │
+└───────┬──────────────────────────────────────────┘
+        │ postMessage
+        │   ・標高と有効セルマスク（読み込み時に1回、コピー）
+        │   ・水深の Float32 転送バッファ（毎フレーム、Transferable で往復）
         │   ・統計値（小さいオブジェクト）
         ↓
-┌─────────────────────────────────────────────────┐
-│ Renderer (Three.js / MapLibre Custom Layer)     │
-│   受け取ったバッファを直接 GPU へアップロード   │
-│   → React の再描画サイクルとは完全に無関係      │
-└───────┬─────────────────────────────────────────┘
-        │ 10Hz にスロットルした統計値のみ
-        ↓
-┌─────────────────────────────────────────────────┐
-│ React + MUI + Zustand                           │
-│   降雨量 / 半径 / 再生状態 / 垂直強調 / DEM種別 │
-│   統計表示（投入水量・湛水量・流出量・最大水深）│
-│   → 再レンダリングは MUI パネルのみ             │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│ bridge/SimulationClient（メインスレッド）        │
+│   Worker を所有し、受信したものを下の2層へ渡す   │
+└───────┬───────────────────────────┬──────────────┘
+        │ 標高・水深バッファ        │ 10Hz にスロットルした統計値
+        ↓                           ↓
+┌──────────────────────────┐ ┌───────────────────────────┐
+│ Renderer                 │ │ React + MUI + Zustand     │
+│ (Three.js / Custom Layer)│ │ 降雨量・半径・再生状態    │
+│ バッファを直接 GPU へ    │ │ 垂直強調・DEM 種別        │
+│ React の再描画と無関係   │ │ 統計表示・セル情報        │
+└──────────────────────────┘ └───────────────────────────┘
 ```
 
 ## 5.2 バッファの受け渡し（ダブルバッファ）
 
-Worker とメインスレッドの間で `Float32Array` を2枚用意し、`postMessage` の Transferable として所有権ごと往復させる。コピーが発生しないため 250,000 要素（1MB）でもコストは無視できる。
+Worker 内部の水深（`Float64Array`）とは別に、描画用の `Float32Array` を2枚用意し、`postMessage` の Transferable として所有権ごと往復させる。転送そのものはコピーを伴わない。Worker は step の後に内部の水深を転送バッファへ単精度で書き写す（250,000 要素で 1ms 未満）。表示には単精度で十分である。
 
 ```
 Worker                          Main
-  bufferA (計算中)                bufferB (描画中)
+  bufferA (書き込み中)            bufferB (描画中)
       │                               │
       │  step 完了                    │  描画完了
       └────── transfer bufferA ──────→│
        ←───── transfer bufferB ───────┘
-  bufferB (計算中)                bufferA (描画中)
+  bufferB (書き込み中)            bufferA (描画中)
 ```
 
 転送中の配列は転送元で `byteLength === 0` になるため、**転送後に元の参照へアクセスしない**ことを実装上の不変条件とする。
+
+メインスレッドからバッファがまだ返却されていない場合、Worker はそのフレームの送信を見送る（新しいバッファを確保しない）。描画が遅れても Worker 側のメモリは増えない。
 
 ## 5.3 MapLibre と React の接続
 
@@ -288,9 +307,13 @@ map.addLayer(new MapCustomLayer(renderer))   // Three.js をこの中で使う
         ↓
 DEM タイル URL を決定（DEM1A → DEM5A/B/C → DEM10B のフォールバック）
         ↓
-Worker 内で fetch → createImageBitmap → OffscreenCanvas → getImageData
+Worker 内で fetch → createImageBitmap → OffscreenCanvas → getImageData（workers/demLoader.ts）
         ↓
-GSI DEM PNG をデコード → elevation: Float32Array   (§7.2)
+GsiDemDecoder（純粋関数）で RGBA → elevation + validMask   (§7.2)
+        ↓
+DemGrid でタイルを結合し、範囲を切り出す   (§7.6)
+        ↓
+標高と validMask をメインスレッドへ1回コピーで送る（Renderer・セル情報用）
         ↓
 SimulationEngine.loadTerrain()
         ↓
@@ -303,13 +326,38 @@ Renderer が GPU へ / React が統計を表示
 
 DEM の取得とデコードを Worker 内で行うことで、`OffscreenCanvas` の利用が可能になり、メインスレッドを一切ブロックしない。
 
+`createImageBitmap` は既定で色空間の変換やアルファの乗算を行うことがあり、PNG の RGB 値が変わると標高が狂う。`createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })` とし、Canvas は `getContext('2d', { willReadFrequently: true })` で取得する。実タイル 1 枚の既知の画素について、復号した標高が一致することを確かめるテストを置く。
+
+## 5.5 地形の描画方式（未決。Phase 1 の最初にスパイクで確定）
+
+地形と水面をどう描き分けるかは、本書の時点では決めない。最大の技術リスクであるため、Phase 1 の最初にスパイク（使い捨ての検証実装）を行って決める。
+
+| 案 | 地形 | 水面・流向 | 懸念 |
+|---|---|---|---|
+| A | MapLibre のネイティブ 3D terrain（`addProtocol` で GSI PNG を MapLibre が読める形式へ変換） | Custom Layer 内の Three.js | MapLibre は視点に応じた LOD で地形を描くため、シミュレーショングリッドの標高で作った水面と高さが一致しない。薄い水面が地形に沈んだり、z-fighting が起きたりする恐れがある |
+| B | シミュレーション範囲内は Three.js で地形メッシュも描く（ベースマップをテクスチャとして貼る）。範囲外は MapLibre の平面地図 | Custom Layer 内の Three.js | 地形と水面が同じグリッドから作られるので高さは一致する。範囲の境界で見た目の段差が出る。ベースマップのテクスチャ化を自前で行う必要がある |
+
+GSI の標高 PNG は符号付き 24bit で無効値を持つため、MapLibre の `raster-dem` が前提とする Terrarium・Mapbox 形式とも、線形のカスタムエンコーディングとも一致しない（base-spec §27）。案 A を採る場合は変換処理が必須になる。
+
+案 A の派生として、水面メッシュの高さを `queryTerrainElevation` で MapLibre の地形に合わせる方法もある。見た目は揃うが、表示される水面の高さがシミュレーションの標高と食い違う。スパイクでは、この派生を含む案 A と案 B を比較する。
+
+これとは別に、**2D のラスタ表示（水深や標高を画像として地図に重ねる）を検証用ビューとして必ず作る。** 3D の描画方式に関係なく、base-spec §56 が最初に求める「窪地・流路が期待どおりに得られるか」の確認は、この 2D 表示で行える。
+
+スパイクの合格基準:
+
+- 垂直強調 1x〜10x のすべてで、水深 1cm 以上の水面が地形に沈まず、ちらつかないこと
+- 垂直強調を地形と水面に同じ倍率で適用できること（base-spec §29）
+- シミュレーション実行中も、地図操作で 60fps を維持できること（§14.1）
+
+どちらの案を採っても、シミュレーション側（§5.1 の Worker 層）の設計は変わらない。
+
 ---
 
 # 6. シミュレーションエンジンの実装方針
 
 ## 6.1 決定: 初期は TypeScript 実装
 
-Phase 1〜4（base-spec §55）は TypeScript + `Float32Array` で実装する。Rust WASM は初期実装に含めない。
+Phase 1〜4（base-spec §55）は TypeScript + TypedArray で実装する。Rust WASM は初期実装に含めない。
 
 ### 判断根拠
 
@@ -331,17 +379,48 @@ V8 は単型の `Float32Array` 上のループを十分に最適化するため�
 
 ```ts
 // src/simulation/types.ts
-export interface FlowSolver {
-  loadTerrain(elevation: Float32Array, meta: TerrainMeta): void
+export interface TerrainMeta {
+  width: number        // 列数
+  height: number       // 行数
+  cellSizeM: number    // セルの一辺（m）。§7.6
+}
+
+export interface RainfallInput {
+  x: number            // グリッドの北西端から東向きの距離（m）
+  y: number            // グリッドの北西端から南向きの距離（m）
+  radiusM: number
+  amountMm: number
+}
+
+export interface StepStats {
+  step: number         // 実行済みの step 数（base-spec §33 の「Step N」）
+  totalWater: number   // 累積の投入水量（m³）
+  storedWater: number  // 領域内にある現在の水量（m³）
+  outflowWater: number // 累積の領域外流出量（m³）
+  maxDepth: number     // 最大水深（m）
+  floodedArea: number  // 水深が描画閾値（1cm）以上のセルの面積（m²）
+}
+
+export interface SimulationEngine {
+  loadTerrain(elevation: Float32Array, validMask: Uint8Array, meta: TerrainMeta): void
   addRainfall(rain: RainfallInput): void
-  step(dt: number): StepResult
+  step(): StepStats
   reset(): void
-  /** 描画用の水深バッファ。所有権は呼び出し側へ移らない読み取り専用ビュー */
-  waterDepthView(): Float32Array
+  /** 内部の水深配列。呼び出し側は読み取り専用として扱い、転送バッファへのコピー元にのみ使う */
+  waterDepth(): Float64Array
 }
 ```
 
-TypeScript 実装（`TsFlowSolver`）と将来の WASM 実装（`WasmFlowSolver`）が同一インターフェースを満たす。呼び出し側（Worker）は実装を知らない。
+TypeScript 実装（`TsSimulationEngine`）と将来の WASM 実装（`WasmSimulationEngine`）が同一インターフェースを満たす。呼び出し側（Worker）は実装を知らない。`FlowSolver.ts` はエンジン内部で 1 step 分の水移動を計算するモジュールであり、外部には公開しない。
+
+base-spec の API 例との対応:
+
+| base-spec | 本書 | 変更理由 |
+|---|---|---|
+| §44 `SimulationConfig` | `TerrainMeta` | `timestep` は持たない。base-spec §33 のとおり step は物理時間と対応しないため |
+| §44 `Rainfall` | `RainfallInput` | 座標系（グリッド北西端からの m）と単位を名前で明示した |
+| §45 `step()` など | 同名のメソッド | 変更なし |
+| §46 `SimulationResult` | `StepStats` + `waterDepth()` | 水深配列は §5.2 の転送設計で統計値と別経路になるため分けた。統計のフィールド名は base-spec を踏襲 |
 
 ## 6.3 Rust WASM への移行基準（決定）
 
@@ -360,6 +439,7 @@ TypeScript 実装（`TsFlowSolver`）と将来の WASM 実装（`WasmFlowSolver`
 - **crate 依存ゼロ**。`wasm-bindgen` も使用しない。`#[no_mangle] pub extern "C"` 関数と WebAssembly linear memory のみで JS と接続する
 - ビルドは `cargo build --target wasm32-unknown-unknown --release` の単一コマンド。`wasm-pack` を使わない
 - メインスレッドではなく Worker 内でのみインスタンス化する
+- 中間計算は f64 で行う。TypeScript の数値演算は常に倍精度なので、差分テスト（§11.6）で両実装を一致させるために必要である
 - **TypeScript 実装を削除しない。リファレンス実装として維持する**
 
 最後の点が重要である。同一入力に対する両実装の出力を突き合わせる**差分テスト**を CI で実行することで、WASM 実装のバグ（浮動小数点演算順序の差異、境界処理の取りこぼし等）を機械的に検出できる。base-spec §47/§48 のテストケース群はそのまま両実装に適用可能である。
@@ -375,12 +455,63 @@ TypeScript 実装（`TsFlowSolver`）と将来の WASM 実装（`WasmFlowSolver`
 
 | 対象 | 型 | 理由 |
 |---|---|---|
-| 標高 | `Float32Array` | DEM の精度（0.01m 単位）に対して十分。メモリ量が半分 |
-| 水深 | `Float32Array` | 同上 |
-| 質量保存の累計値（投入・流出・湛水） | `number`（f64） | 加算の反復による誤差蓄積を避けるため倍精度で保持 |
-| セルインデックス | `number`（整数） | `Int32Array` を Active Cell スタックに使用 |
+| 標高 | `Float32Array` | GSI の記録単位は 0.01m。単精度の丸め誤差は標高 4000m でも 0.3mm 未満 |
+| 有効セルマスク | `Uint8Array` | 無効値セルの判定（§7.2） |
+| 水深（Worker 内） | `Float64Array` | 数百万回の水移動で丸め誤差が累積し、質量保存を崩すのを避ける |
+| 水深（描画用の転送バッファ） | `Float32Array` | 表示には単精度で十分。転送量が半分になる |
+| 質量保存の累計値（投入・流出・湛水） | `number`（f64） | 加算の反復による誤差の蓄積を避ける |
+| 中間計算 | `number`（f64） | JavaScript の数値演算は常に倍精度。WASM でも f64 に揃える（§6.4） |
+| セルインデックス | `Int32Array` | Active Cell のスタックに使用 |
 
-`epsilon` は base-spec §49 の候補どおり `1e-5` を初期値とし、質量保存テストの実測により調整する。定数は `src/simulation/constants.ts` に集約する。
+許容誤差は §6.6 で定める。定数は `src/simulation/constants.ts` に集約する。
+
+## 6.6 精度・許容誤差・表示の粒度（決定）
+
+base-spec §6 の精度方針を、以下のとおり具体化する。内部の値は 0.1m などの単位に丸めない。丸めると薄い水の移動が消え、質量保存が成り立たなくなるためである。
+
+### データの記録単位
+
+GSI の標高 PNG は 0.01m 単位で標高を記録している（地理院の標高タイル仕様で u = 0.01m）。2026-09-10 に実タイルを復号して確認した結果は以下のとおり。
+
+| タイル | 0.1m の倍数である値の割合 | 解釈 |
+|---|---|---|
+| DEM1A（`dem1a_png`、z17） | 約 5% | 1cm 刻みの値を持つ |
+| DEM5A（`dem5a_png`、z15） | 約 9% | 1cm 刻みの値を持つ |
+| DEM10B（`dem_png`、z14） | 約 52% | 元データが 0.1m 刻みの箇所を多く含む |
+
+1cm は記録の単位であって、測量精度そのものではない。base-spec §6 のとおり、この区別を UI で明示する。
+
+### 計算
+
+- 標高と水深は連続値で扱う（§6.5）。0.1m などへの丸めは行わない
+- 数値計算による誤差を、ユーザーが求める「10cm 以内」より十分小さく抑える
+
+### 許容誤差（初期値。実測で調整する。base-spec §49）
+
+| 名前 | 初期値 | 用途 |
+|---|---|---|
+| 質量保存の許容誤差 | (初期水量 + 投入水量の累計) × 1e-9 | 各 step での質量保存の検査（§11.3） |
+| 水面標高の数値誤差 | 1cm | 平衡状態の水面標高と、体積から求めた理論値との差（§11.2）。目標の 10cm に対し十分な余裕を取る |
+| 水深の比較許容値（epsilon） | 1e-5 m | 平面テストでの水面の一致判定など |
+
+### 表示
+
+- 水深の色分けと凡例は **5cm 刻み**とする。base-spec §31 の標準区分と「10cm 刻み表示」を置き換える。連続表示のモードは残す
+- 数値で表示する水深と標高（base-spec §38 の最大水深、§39 のセル情報）は **0.01m 単位**とする。元データの記録単位に合わせる
+- 水面の描画閾値は base-spec §30 のとおり 1cm とする
+
+## 6.7 base-spec §55 のフェーズとの対応（決定）
+
+base-spec §55 は Web Worker・TypedArray・Active Cells を Phase 5（Performance）に置いているが、§24・§25 の本文と本書の設計はこれらを前提にしている。本書では次のとおりに前倒しする。
+
+| 要素 | base-spec §55 | 本書 | 理由 |
+|---|---|---|---|
+| Web Worker | Phase 5 | Phase 1 から | DEM の取得とデコードに既に使う。スレッド境界を後から入れると手戻りが大きい |
+| TypedArray | Phase 5 | Phase 1 から | base-spec §25 の原則どおり |
+| Active Cells | Phase 5 | Phase 3（Dynamic Water） | §6.3 の測定条件の前提になる |
+| WebGPU | Phase 5 | 導入しない | §1.1 |
+
+Phase 5 は、性能の計測と、§6.3・§8.4 の条件を満たした場合の最適化を行う段階とする。
 
 ---
 
@@ -388,7 +519,7 @@ TypeScript 実装（`TsFlowSolver`）と将来の WASM 実装（`WasmFlowSolver`
 
 ## 7.1 バックエンド不要の検証結果（実測）
 
-GSI タイルエンドポイントの CORS 対応を実測した（2026-09-10 時点）。
+GSI タイルエンドポイントの CORS 対応を実測した（2026-09-10 時点。`Origin` ヘッダを付けた GET で確認した。GSI は `Vary: Origin` を返し、`Origin` の無いリクエストには ACAO を付けない。ブラウザの CORS リクエストは必ず `Origin` を送るので実害はないが、再検証の際は `Origin` を付けること）。
 
 ```
 GET https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/{z}/{x}/{y}.png
@@ -399,9 +530,15 @@ GET https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png
   HTTP/2 200
   access-control-allow-origin: *
   ※ Cross-Origin-Resource-Policy ヘッダは返却されない
+
+存在しないタイル（海域の DEM1A、存在しないパスなど）:
+  HTTP/2 404（本文は S3 の XML エラー）
+  access-control-allow-origin: *
 ```
 
 `access-control-allow-origin: *` が返るため、ブラウザから直接 fetch でき、`createImageBitmap` 経由でピクセル値を読み取っても canvas が tainted にならない。**プロキシ用のバックエンドは不要である**。
+
+404 のレスポンスにも `access-control-allow-origin: *` が付くため、ブラウザの fetch から 404 のステータスを読み取れる。§7.4 のフォールバックは、404（データなし）とネットワークエラーを区別して実装できる。
 
 この事実は base-spec §51「Version 0.1 ではバックエンドなし」の前提が成立することを裏付ける。
 
@@ -420,7 +557,7 @@ x >  2^23  →  h = (x - 2^24) * u
 
 ### 無効値の扱い（決定）
 
-`x == 2^23` の無効値セル（海域、データ欠測域）は、内部表現で `NaN` として保持する。
+`x == 2^23` の無効値セル（海域、データ欠測域）は、有効セルマスク（`Uint8Array`。有効 = 1、無効 = 0）で表す。無効セルの標高配列の値は参照しない。`NaN` はホットループに持ち込まない（比較が常に false になり、分岐の取りこぼしを招くため）。
 
 シミュレーション上は**領域外と同等に扱う**。すなわち:
 
@@ -432,13 +569,13 @@ x >  2^23  →  h = (x - 2^24) * u
 
 ## 7.3 SharedArrayBuffer を採用しない理由（決定）
 
-`SharedArrayBuffer` の利用には `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy` の設定が必須である。
+`SharedArrayBuffer` を使うには、ページに `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy` を付けて cross-origin isolation を有効にする必要がある。
 
-しかし §7.1 の実測どおり GSI タイルは `Cross-Origin-Resource-Policy` を返さない。この状態で COEP を有効化すると、GSI タイルの読み込み可否が「すべての取得経路が CORS モードで行われること」に依存する。MapLibre 内部のタイル取得経路まで含めてこれを保証・維持するのは困難であり、外部サービス側のヘッダ変更に対して脆い。
+技術的には可能である。Cloudflare Workers の Static Assets は `_headers` ファイルでこれらのヘッダを付けられる。また COEP の下でも、CORS モードで取得して ACAO の検査を通るリソースは読み込める。MapLibre はタイルを `fetch()` の CORS モードで取得し、GSI は `access-control-allow-origin: *` を返すので、地図と DEM の取得は壊れない。
 
-§5.2 の Transferable ダブルバッファで性能要件を満たせるため、この不確実性を負う理由がない。
+それでも採用しないのは、§5.2 の Transferable ダブルバッファで性能要件を満たせるためである。cross-origin isolation を有効にすると、`crossorigin` 属性なしで第三者のリソース（Web フォントの `<link>` など）を埋め込めなくなる制約と、ヘッダ設定を維持し続ける負担を負う。得られるものに対して、運用の負担が見合わない。
 
-将来 WebGPU を導入する場合も同様の制約を負わないよう、この判断を維持する。
+§6.3 の基準で WASM を導入し、さらにマルチスレッド化が必要になった場合に再検討する。
 
 ## 7.4 DEM の選択とフォールバック
 
@@ -450,7 +587,9 @@ base-spec §41 のとおり自動選択する。
 | DEM5A | z15 | `/xyz/dem5a_png/{z}/{x}/{y}.png` |
 | DEM5B | z15 | `/xyz/dem5b_png/{z}/{x}/{y}.png` |
 | DEM5C | z15 | `/xyz/dem5c_png/{z}/{x}/{y}.png` |
-| DEM10B | z14 | `/xyz/dem10b_png/{z}/{x}/{y}.png` |
+| DEM10B | z14 | `/xyz/dem_png/{z}/{x}/{y}.png` |
+
+DEM10B の PNG タイルのパスは `dem_png` である。`dem10b_png` というパスは存在しない（2026-09-10 に実測。存在しないキーとして 404 が返る）。上表のパスは地理院タイル一覧のページで確認した。
 
 上位から順に取得を試み、404 が返った場合に次へフォールバックする。全て失敗した場合は「この地域には標高データがありません」と表示し、シミュレーションを開始しない。
 
@@ -463,6 +602,27 @@ base-spec §41 のとおり自動選択する。
 | WebGL 2 非対応 | 起動時に検出し、非対応である旨を表示して 3D 表示を行わない |
 | `OffscreenCanvas` 非対応 | メインスレッドの canvas でデコードするフォールバック経路を用意する |
 | Worker の異常終了 | エラーを UI に表示し、Reset で復帰可能にする |
+
+## 7.6 シミュレーショングリッドの定義（決定）
+
+選択した DEM の最大ズームのピクセルを、リサンプリングせずにそのままセルとする。
+
+```
+cellSizeM = 2π × 6378137 × cos(φ0) / (256 × 2^z)
+  φ0 : シミュレーション範囲の中心の緯度
+  z  : DEM の最大ズーム（§7.4）
+```
+
+| DEM | z | φ0 = 26°（那覇付近） | φ0 = 35°（東京付近） | φ0 = 45°（稚内付近） |
+|---|---|---|---|---|
+| DEM1A | 17 | 約 1.07m | 約 0.98m | 約 0.84m |
+| DEM5A/B/C | 15 | 約 4.3m | 約 3.9m | 約 3.4m |
+| DEM10B | 14 | 約 8.6m | 約 7.8m | 約 6.8m |
+
+- 範囲内での緯度による縮尺の変化は、1000m 四方でも 0.02% 以下なので無視する。全セルに同じ `cellSizeM` を使う
+- セル数は `ceil(sizeM / cellSizeM)` とし、要求された範囲を必ず覆う。DEM1A・500m・φ0 = 35° では 512 × 512 になる。base-spec §9 の「500 × 500」はこの近似である
+- 範囲は複数のタイルにまたがるため、`DemGrid` がタイルを結合して切り出す。DEM1A・500m では 1 辺あたり最大 3 タイル（計 9 タイル）になる
+- セル面積は `cellSizeM²` とする。水量（m³）は 水深（m）× セル面積 で求める
 
 ---
 
@@ -500,7 +660,7 @@ interface PersistedSettings {
   }
   display: {
     verticalExaggeration: 1 | 2 | 5 | 10   // 既定 2
-    waterDepthPalette: 'stepped' | 'continuous'
+    waterDepthPalette: 'stepped' | 'continuous'   // stepped は 5cm 刻み（§6.6）
     showFlowVectors: boolean
     flowVectorSpacingM: 5 | 10 | 20
   }
@@ -538,7 +698,7 @@ Phase 5（Performance）において、DEM 再取得が体感性能上のボト�
 
 ## 9.1 決定: MUI
 
-`@mui/material` と Emotion（`@emotion/react` / `@emotion/styled`）を使用する。アイコンは `@mui/icons-material` から named import する。
+`@mui/material` と Emotion（`@emotion/react` / `@emotion/styled`）を使用する。アイコンは `@mui/icons-material/PlayArrow` のように、アイコンごとのパスから import する。バレルからの named import は本番ビルドでは tree-shake されるが、開発サーバの起動が重くなるためである。
 
 SSR を行わないため Emotion のランタイムコストは許容範囲である。
 
@@ -629,16 +789,27 @@ base-spec §37 の構成に従う。
 
 ## 10.3 tsconfig の構成
 
-TypeScript の project references で領域を分割する。
+TypeScript の project references で領域を分割し、`tsc -b` で一括して型検査する。
 
-| ファイル | 対象 | 特記事項 |
-|---|---|---|
-| `tsconfig.json` | ルート（references のみ） | |
-| `tsconfig.sim.json` | `src/simulation/` | `noUncheckedIndexedAccess: false`、**`lib` から `DOM` を除外** |
-| `tsconfig.app.json` | `src/` のうち上記以外 | `noUncheckedIndexedAccess: true`、`lib: ["ES2023", "DOM", "DOM.Iterable", "WebWorker"]` |
-| `tsconfig.node.json` | `vite.config.ts` 等 | |
+| ファイル | 対象 | lib | `noUncheckedIndexedAccess` |
+|---|---|---|---|
+| `tsconfig.json` | ルート（references のみ） | | |
+| `tsconfig.sim.json` | `src/simulation/` | `ES2023` のみ | 無効 |
+| `tsconfig.core.json` | `src/dem/`, `src/shared/` | `ES2023` のみ | 有効 |
+| `tsconfig.worker.json` | `src/workers/` | `ES2023`, `WebWorker` | 有効 |
+| `tsconfig.app.json` | 上記以外の `src/` | `ES2023`, `DOM`, `DOM.Iterable` | 有効 |
+| `tsconfig.node.json` | `vite.config.ts` など | Node 用 | 有効 |
 
-`tsconfig.sim.json` から `DOM` を除外することで、`src/simulation/` が `document` や `window` を参照できないことを**型レベルで保証する**。§4.2 の dependency-cruiser と合わせて二重に強制する。
+構成上の要点:
+
+- **`DOM` と `WebWorker` の lib を同じコンパイル単位に同時指定しない。** 宣言が重複して衝突するため、Worker 用の設定を分ける
+- **純粋な領域（sim・core）はどちらの lib も持たない。** `document`・`window`・`self`・`fetch`・`console` のいずれも参照できないことを型レベルで保証する。計測（`performance.now()`）とログ出力は workers 側で行う。§4.2 の dependency-cruiser と合わせて二重に強制する
+- **sim と core は `composite: true` と `emitDeclarationOnly: true` で型宣言を出力し、他のプロジェクトは references 経由でそれを参照する。** 参照せずにソースを直接 import すると、import した側の設定（`noUncheckedIndexedAccess: true` など）で `src/simulation/` まで検査され、§10.2 の設定分けが意味を失うためである。型宣言の出力先はリポジトリ外の一時ディレクトリ（例: `node_modules/.tmp/`）とする
+- 実行時のバンドルは、Vite が TypeScript のソースから直接行う。型宣言の出力は型検査にだけ使う
+- 参照する側（worker・app）は `noEmit` のままでよい。参照される側は `noEmit` にできない（TS6310 になる）
+- **型検査は必ず `tsc -b` で行う。** `tsc -p` を単独で実行すると、参照先の型宣言がまだ出力されていない場合に TS6305 で失敗する。CI と pre-push（§12.2、§12.3）はどちらも `tsc -b` を使う
+
+2026-09-10 に tsc 5.9.3 で、この構成なら隔離が成り立つことを確認した。Vite のテンプレートと同じ構成（各プロジェクトが `noEmit` で composite なし）では、`tsc -b` は通るものの、`src/simulation/` が import 側の設定で検査されてしまい、隔離されないことも確認した。
 
 ---
 
@@ -665,6 +836,7 @@ base-spec §47 の4ケースを必須テストとする。
 | 傾斜面 | 高所から低所へ移動すること。逆流しないこと |
 | 単純窪地 | 窪地に蓄積し、平衡状態で水面が水平になること |
 | 越流 | 水位上昇後、最も低い峠（spill point）から隣接領域へ流れること |
+| 平衡水位 | 閉じた窪地に既知の体積の水を入れ、平衡後の水面標高が体積から求めた理論値と 1cm 以内で一致すること（§6.6） |
 
 ## 11.3 質量保存の property-based テスト
 
@@ -672,7 +844,7 @@ base-spec §48 の質量保存はランダム入力に対する不変条件で�
 
 ```
 ∀ (地形, 降雨条件, ステップ数):
-    |初期水量 + 投入水量 − (現在水量 + 累積流出量)| < epsilon
+    |初期水量 + 投入水量 − (現在水量 + 累積流出量)| ≤ (初期水量 + 投入水量) × 1e-9   (§6.6)
 ```
 
 - 地形はランダム生成（平坦、単調傾斜、複数窪地、無効値混在の各パターン）
@@ -692,7 +864,7 @@ WebGL の描画結果に対するスクリーンショット比較は環境差�
 5. Reset を押すと統計値が 0 に戻る
 6. 免責ダイアログが初回に表示され、了解後は再表示されない
 
-外部（GSI）へのネットワーク依存を避けるため、E2E ではタイルリクエストを Playwright の `route()` で固定のフィクスチャに差し替える。
+外部（GSI）へのネットワーク依存を避けるため、E2E ではタイルリクエストを Playwright の `route()` で固定のフィクスチャに差し替える。DEM の取得は Worker 内で行われるため、`page.route()` ではなく `browserContext.route()` を使う。Worker から出るリクエストも差し替えられることを、E2E を作る最初に確かめる。
 
 ## 11.5 カバレッジ閾値
 
@@ -732,7 +904,7 @@ Biome を lint と format の両方に使用する。
 
 有効化する主なルール群: `recommended`、React 向けルール、`a11y` ルール。
 
-型情報を要するルール（`no-floating-promises` 等）は Biome では扱えない。これが実際に問題となった場合に typescript-eslint の追加を再検討する。現時点では `tsc --noEmit` による型検査で大半が捕捉できると判断する。
+型情報を要するルール（`no-floating-promises` 等）は Biome では扱えない。これが実際に問題となった場合に typescript-eslint の追加を再検討する。現時点では `tsc -b` による型検査で大半が捕捉できると判断する。
 
 ## 12.2 ローカルの品質ゲート
 
@@ -741,7 +913,7 @@ pre-commit フックを **lefthook** で管理する。
 | フック | 実行内容 |
 |---|---|
 | pre-commit | Biome（変更ファイルのみ、自動修正あり） |
-| pre-push | `tsc --noEmit`、`vitest run`（ユニットのみ） |
+| pre-push | `tsc -b`、`vitest run`（ユニットのみ） |
 
 pre-commit で重い検査を行わない。型検査とテストは pre-push に置き、コミットの速度を保つ。
 
@@ -751,11 +923,11 @@ pre-commit で重い検査を行わない。型検査とテストは pre-push �
 
 | ジョブ | 内容 |
 |---|---|
-| `quality` | `biome ci`、`tsc --noEmit`（全 project reference）、`depcruise` |
+| `quality` | `biome ci`、`tsc -b`（全 project reference）、`depcruise` |
 | `test` | `vitest run --coverage`（閾値検査を含む） |
 | `build` | `vite build` + バンドルサイズ検査（§14.2） |
 | `e2e` | `playwright test` |
-| `audit` | `pnpm audit --audit-level=high` |
+| `audit` | `pnpm audit --audit-level=high`。PR では警告のみで、マージはブロックしない。週次のスケジュール実行でも走らせ、検出したものは Issue として起票する（§12.4、§13.9） |
 | `deploy` | `main` への push 時のみ。上記すべての成功が前提 |
 
 ### 共通設定
@@ -770,7 +942,7 @@ concurrency:
 ```
 
 - Node バージョンは `.nvmrc` から読み取り、ローカルと CI を一致させる
-- pnpm は `package.json` の `packageManager` フィールドで固定し、Corepack で解決する
+- pnpm は `package.json` の `packageManager` フィールドで固定し、`pnpm/action-setup` がそれを読む（§13.7）
 - 依存インストールは `pnpm install --frozen-lockfile`
 - **すべての GitHub Actions をコミット SHA でピン留めする**（§13.4）
 
@@ -781,13 +953,15 @@ concurrency:
 - `quality`、`test`、`build`、`e2e`
 - 特に §11.3 の質量保存テスト
 
+`audit` は必須に含めない。PR の内容と無関係に公開された脆弱性情報で、すべての PR が止まるのを避けるためである。検出された場合は Issue として起票し、別途対応する。
+
 ---
 
 # 13. 依存管理とサプライチェーン対策
 
 ## 13.1 前提: リリースクールダウン
 
-本プロジェクトは、公開直後のパッケージバージョンを使用しない方針を採る。開発環境には既に以下が設定されている。
+本プロジェクトは、公開直後のパッケージバージョンを使用しない方針を採る。開発機には現在、pnpm 10 のグローバル設定として以下が入っている。
 
 ```
 ~/.config/pnpm/rc
@@ -795,29 +969,39 @@ concurrency:
   minimum-release-age-strict=true
 ```
 
-`minimum-release-age` は**分**単位で指定する。`14400` 分は 10 日である。
+- `minimumReleaseAge` は**分**単位で指定する（pnpm 10.16.0 で追加）。`14400` 分は 10 日である
+- `minimumReleaseAgeStrict` を true にすると、要求されたバージョン範囲の中に期間を満たすバージョンが無い場合、期間未満のバージョンで妥協せず、解決を失敗させる。false の場合は期間未満のバージョンへフォールバックする。pnpm 10.32 系でも有効であることを実機で確認した
+- pnpm 11 以降、`minimumReleaseAge` の既定値は 1 日である。本プロジェクトは 10 日を明示的に設定する
 
-`minimum-release-age-strict=true` により、lockfile に記載済みのバージョンであってもクールダウン期間を満たさなければインストールが失敗する。
+## 13.2 決定: 設定をリポジトリの pnpm-workspace.yaml に置く
 
-## 13.2 決定: 設定をリポジトリに含める
+グローバル設定は開発機ごとのものであり、CI や他の環境には適用されない。ローカルと CI で依存解決が食い違うのを防ぐため、**同じ設定をリポジトリにコミットする**。
 
-上記はグローバル設定であり、開発者ごとの環境や CI には適用されない。設定差によりローカルと CI で依存解決が食い違うことを防ぐため、**リポジトリの `.npmrc` に同一の設定をコミットする**。
+置き場所は `pnpm-workspace.yaml` とする。pnpm 11 以降は、`.npmrc` から認証とレジストリ以外の設定を読まず、`package.json` の `pnpm` フィールドも読まないためである。本プロジェクトは workspace を用いない（§4.3）が、`pnpm-workspace.yaml` は非 workspace 構成でも設定ファイルとして読まれる（pnpm 10 でも読まれることを実機で確認した）。
 
+```yaml
+# pnpm-workspace.yaml
+minimumReleaseAge: 14400
+minimumReleaseAgeStrict: true
 ```
-# .npmrc
-minimum-release-age=14400
-minimum-release-age-strict=true
-```
 
-これにより CI・他の開発者マシン・将来の自分のいずれにおいても同じ制約が働く。
+`.npmrc` にはレジストリの指定だけを置く。
+
+### 開発機のグローバル設定の移行
+
+pnpm 11 以降は、グローバル設定を `~/.config/pnpm/config.yaml` から読み、現在の `~/.config/pnpm/rc` は読まない。開発機の pnpm を 11 以降へ上げる場合は、同じ値を `config.yaml` に移さないと、**リポジトリの外ではクールダウンが黙って無効になる**。本リポジトリの中では `pnpm-workspace.yaml` の設定が効くため、移行の有無に左右されない。
 
 ## 13.3 パッケージマネージャは pnpm（決定）
 
-npm・yarn にはリリースクールダウン相当の機能がない。§13.1 の方針を実現できるのは pnpm のみであるため、pnpm を必須とする。
+リリースクールダウンの機能自体は pnpm 以外にもある（npm の `min-release-age`、yarn の `npmMinimalAgeGate`、bun の `minimumReleaseAge`）。pnpm を選ぶ理由は次の3点である。
 
-加えて pnpm 10 は、**依存パッケージの postinstall スクリプトを既定で実行しない**。ビルドスクリプトの実行が必要なパッケージは `onlyBuiltDependencies` に明示的に列挙する。本プロジェクトは workspace を用いない単一 package.json 構成（§4.3）であるため、`package.json` の `pnpm.onlyBuiltDependencies` に記載する。これはインストール時の任意コード実行という最大の攻撃経路を既定で塞ぐものであり、本プロジェクトはこの既定を維持する。
+- strict モードで、期間を満たすバージョンが無いときに期間未満のバージョンへ妥協しない
+- 依存パッケージのビルドスクリプト（postinstall など）を既定で実行しない（pnpm 10.0.0 以降）
+- 開発機の既存の設定と一致する
 
-`onlyBuiltDependencies` への追加は、そのパッケージがビルドを必要とする理由を Pull Request の説明に記載したうえで行う。
+ビルドスクリプトの実行が必要な依存パッケージは、`pnpm-workspace.yaml` の `allowBuilds` に明示的に列挙する。これはインストール時の任意コード実行という最大の攻撃経路を既定で塞ぐものであり、本プロジェクトはこの既定を維持する。`allowBuilds` への追加は、ビルドが必要な理由を Pull Request の説明に書いたうえで行う。
+
+pre-commit フックの lefthook（§12.2）は postinstall でフックを導入するパッケージだが、`allowBuilds` には入れない。代わりに本プロジェクト自身の `package.json` に `"prepare": "lefthook install"` を置く。ルートプロジェクト自身のライフサイクルスクリプトは実行されるためである。Biome はビルドスクリプトを持たない。
 
 ## 13.4 GitHub Actions のピン留め
 
@@ -834,24 +1018,25 @@ npm・yarn にはリリースクールダウン相当の機能がない。§13.1
 
 ## 13.5 依存更新: Renovate
 
-Dependabot ではなく **Renovate** を使用する。Renovate は `minimumReleaseAge` 設定を持ち、§13.1 の方針と厳密に揃えられるためである。
+依存の更新には **Renovate** を使う。選ぶ理由は以下である。
+
+- `minimumReleaseAge` を持ち、§13.1 の方針と揃えられる
+- `lockFileMaintenance` により、推移的依存の更新もクールダウン付きで定期的に回せる
+- GitHub Actions の SHA ピン留め（§13.4）を、`helpers:pinGitHubActionDigests` で自動的に維持できる
+
+Dependabot にもクールダウンの設定があるため、クールダウンの有無は選択の理由にしない。
 
 ```jsonc
 {
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "minimumReleaseAge": "10 days",
-  "lockFileMaintenance": { "enabled": true },
-  "pinDigests": true,           // GitHub Actions を SHA でピン留め
-  "packageRules": [
-    {
-      "matchUpdateTypes": ["minor", "patch"],
-      "matchCurrentVersion": "!/^0/",
-      "automerge": false        // 自動マージは行わない
-    }
-  ]
+  "lockFileMaintenance": { "enabled": true }
 }
 ```
 
-自動マージは行わない。すべての依存更新を人が確認する。
+自動マージは行わない（Renovate の既定のまま）。すべての依存更新を人が確認する。
+
+Renovate は GitHub App としてリポジトリへの書き込み権限を持つ。この点は、リポジトリの公開・非公開の判断（§17）と併せて確認する。
 
 ## 13.6 依存追加の判断基準
 
@@ -868,13 +1053,17 @@ Dependabot ではなく **Renovate** を使用する。Renovate は `minimumRele
 | 対象 | 固定方法 |
 |---|---|
 | Node | `.nvmrc` に記載。`package.json` の `engines` にも明記 |
-| pnpm | `package.json` の `packageManager` フィールド（Corepack が検証） |
+| pnpm | `package.json` の `packageManager` フィールド。pnpm 自身と CI の `pnpm/action-setup` がこれを読み、同じバージョンを使う。Corepack には依存しない（Node 25 以降は Corepack が同梱されない） |
 
-初期バージョン: Node 24（LTS）、pnpm 10。
+初期バージョン: Node 24（LTS）、**pnpm 12 系**（クールダウン期間を過ぎた最新のパッチ）。pnpm 10 は 2 メジャー古く、設定の置き場所（§13.2）もビルド許可の設定名も異なるため採らない。
 
 ## 13.8 Lockfile
 
 `pnpm-lock.yaml` を必ずコミットする。CI は `--frozen-lockfile` で実行し、lockfile と `package.json` の不整合を失敗として扱う。
+
+## 13.9 セキュリティ修正の緊急取り込み
+
+クールダウンのため、脆弱性の修正版は公開から 10 日間インストールできない。緊急に取り込む必要がある場合は、`pnpm-workspace.yaml` の `minimumReleaseAgeExclude` に該当パッケージを一時的に追加する。追加は Pull Request で行い、理由と対象の脆弱性情報を記載する。クールダウン期間を過ぎたら除外を削除する。
 
 ---
 
@@ -904,23 +1093,31 @@ Dependabot ではなく **Renovate** を使用する。Renovate は `minimumRele
 以下を動的 import により初期ロードから除外する。
 
 - Three.js および `src/renderer/`（地点選択後に必要になる）
-- `src/simulation/` および Worker（Start 押下時に必要になる）
+- Worker（`src/workers/`・`src/simulation/`・`src/dem/`。地点のクリック時に DEM の取得で必要になる）
 
 上限超過を CI の `build` ジョブで失敗として扱う。
+
+2026-09-10 時点の各パッケージの gzip サイズから試算すると（MapLibre 約 154KB、React 約 47KB、MUI 60〜100KB、Emotion 約 20KB）、初期ロードは 280〜330KB になる。400KB の上限は成立するが、余裕は大きくない。チャンクごとの予算（目安: 地図系 170KB 以下、UI 系 150KB 以下、アプリ本体 60KB 以下）は、Phase 1 の実測で確定する。
 
 ## 14.3 メモリ
 
 500m 四方 / DEM1A（250,000 セル）における主要な配列:
 
 ```
-elevation   Float32Array(250,000)  = 1.0 MB
-water × 2   Float32Array(250,000)  = 2.0 MB   （ダブルバッファ）
-activeCells Int32Array(250,000)    = 1.0 MB
-────────────────────────────────────────────
-                                     約 4 MB
+Worker:
+  elevation      Float32Array(250,000)  = 1.0  MB
+  validMask      Uint8Array(250,000)    = 0.25 MB
+  water          Float64Array(250,000)  = 2.0  MB
+  activeCells    Int32Array(250,000)    = 1.0  MB
+Worker ⇄ メイン:
+  転送用 × 2     Float32Array(250,000)  = 2.0  MB
+メインスレッド:
+  elevation と validMask のコピー       = 1.25 MB
+─────────────────────────────────────────────────
+                                          約 7.5 MB
 ```
 
-1000m 四方（1,000,000 セル）を選択した場合でも約 16MB であり、実用範囲に収まる。
+1000m 四方（1,000,000 セル）を選択した場合でも約 30MB であり、実用範囲に収まる。
 
 ---
 
@@ -967,7 +1164,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 
 ## 16.2 依存ライブラリのライセンス
 
-すべての依存パッケージのライセンスを CI で列挙し、GPL 系など本プロジェクトの配布形態と両立しないライセンスが混入していないことを確認する。
+すべての依存パッケージのライセンスを CI で `pnpm licenses list` により列挙し（依存を増やさないよう pnpm の組み込み機能を使う）、GPL 系など本プロジェクトの配布形態と両立しないライセンスが混入していないことを確認する。
 
 ## 16.3 本プロジェクトのライセンス
 
@@ -982,10 +1179,11 @@ MapLibre のアトリビューションコントロールに含める形で実�
 | 項目 | 決定時期 | 備考 |
 |---|---|---|
 | 本プロジェクトのライセンス | 実装開始前 | リポジトリを公開するか否かと併せて決定する |
-| リポジトリの公開 / 非公開 | 実装開始前 | 公開する場合、GitHub Actions の Secrets 取り扱いを再確認する |
+| リポジトリの公開 / 非公開 | 実装開始前 | 公開する場合、GitHub Actions の Secrets 取り扱いを再確認する。Renovate（GitHub App）に書き込み権限を渡すことも併せて判断する（§13.5） |
 | アクセス解析の導入可否 | Phase 1 完了後 | 導入する場合は Cloudflare Web Analytics を候補とする。base-spec §52 のプライバシー方針（位置情報をサーバへ保存しない）と両立することが条件 |
 | エラー監視の導入可否 | Phase 3 以降 | 導入する場合、位置情報を送信しない設定を必須とする |
-| `epsilon` の具体値 | Phase 2 | `1e-5` を初期値とし、質量保存テストの実測で調整（base-spec §49） |
+| 許容誤差の具体値 | Phase 2〜3 | §6.6 の初期値を実測で調整する（base-spec §49） |
+| 地形の描画方式 | Phase 1 の最初 | §5.5 のスパイクで確定する |
 | IndexedDB キャッシュの導入 | Phase 5 | §8.4 の条件を満たした場合のみ |
 | Rust WASM の導入 | Phase 5 | §6.3 の移行基準を満たした場合のみ |
 | 水深表示の配色（カラーマップ） | Phase 3 | 色覚特性に配慮した配色を選定する（§9.5） |
@@ -1003,6 +1201,44 @@ MapLibre のアトリビューションコントロールに含める形で実�
 5. **MapLibre と Three.js は React の外で命令的に扱う**。react-map-gl / react-three-fiber を使わない（§1.1、§5.3）
 6. **シミュレーションは初期 TypeScript 実装**。§6.3 の実測基準を割った場合にのみ Rust WASM を追加し、TypeScript 実装はリファレンスとして残す（§6）
 7. **UI は MUI**。文字列は 1 モジュールに集約する（§9）
-8. **`noUncheckedIndexedAccess` は `src/simulation/` のみ無効**。同ディレクトリは `lib` からも `DOM` を外す（§10.2、§10.3）
+8. **`noUncheckedIndexedAccess` は `src/simulation/` のみ無効**。純粋な領域（simulation・dem）は DOM と WebWorker のどちらの lib も持たない（§10.2、§10.3）
 9. **質量保存を property-based テストで検証**し、CI の必須ゲートとする（§11.3）
-10. **pnpm を必須**とし、リリースクールダウン 10 日をリポジトリの `.npmrc` にコミットする。GitHub Actions は SHA でピン留めする（§13）
+10. **pnpm 12 系を必須**とし、リリースクールダウン 10 日を `pnpm-workspace.yaml` でリポジトリにコミットする。GitHub Actions は SHA でピン留めする（§13）
+11. **内部の水深は Float64 の連続値で計算する**。水面標高の数値誤差は 1cm 以内を目標とする。水深の色分けは 5cm 刻み、数値は 0.01m で表示する（§6.6）
+12. **Worker と TypedArray は Phase 1 から採用し、Active Cells は Phase 3 で入れる**（§6.7）
+13. **地形の描画方式は Phase 1 の最初にスパイクで確定する**（§5.5）
+
+---
+
+# 19. base-spec との対応
+
+本書が base-spec の記述を確定・変更している箇所の一覧。
+
+| base-spec | 本書 | 内容 |
+|---|---|---|
+| §4、§41 DEM10B | §7.4 | PNG タイルのパスは `dem_png`（`dem10b_png` は存在しない） |
+| §9 500 × 500 cells | §7.6 | セルの大きさは緯度で変わる。DEM1A・東京付近で 512 × 512 |
+| §24 メインスレッドで DEM を取得 | §5.4 | Worker 内で取得・デコードする |
+| §31 水深の表示区分 | §6.6 | 5cm 刻みの色分けに置き換える（base-spec §6.3 と揃える） |
+| §43 モジュール構成 | §4.1 | `dem/` を純粋化し、`shared/`・`bridge/` を追加 |
+| §44〜§46 API | §6.2 | `SimulationEngine` として型を確定 |
+| §49 epsilon | §6.6 | 用途別に3種類の許容誤差を定義 |
+| §51 ホスティング候補 | §3 | Cloudflare Workers（Static Assets） |
+| §55 Phase 5 の Worker・TypedArray・Active Cells | §6.7 | Worker・TypedArray は Phase 1、Active Cells は Phase 3 |
+| §60 技術スタック候補 | §1 | React・MUI・Zustand などを追加して確定 |
+
+---
+
+# 20. 実装 spec へ引き継ぐ事項
+
+base-spec の曖昧さ・矛盾のうち、技術選定ではなく機能やモデルの設計として決めるべきもの。個別の実装 spec で決定する。右端の欄は技術仕様のレビューで出た案で、決定ではない。
+
+| # | 事項 | 内容 | 技術仕様のレビューで出た案（決定ではない） |
+|---|---|---|---|
+| 1 | 地図クリックの意味 | base-spec §36（クリックで降雨地点を指定）と §39（クリックでセル情報を表示）が同じ操作で衝突している。E2E（§11.4）にも影響する | 地点が未選択ならクリックで降雨中心を設定する。選択後のクリックはセル情報を開き、その中に「ここを降雨中心にする」ボタンを置く。マーカーはドラッグで動かせる。これなら base-spec §58 の 3 操作も保てる |
+| 2 | Phase 1 の範囲 | base-spec §55 の Phase 1 は 3D terrain を含むが、§56 は最初に確認すべきは 3D 描画ではないとしている | Phase 1 を「DEM グリッドと 2D 表示（標高の色分け、最低点、流向）」とし、3D は §5.5 のスパイクとして並行させ、Phase 1 の完了条件から外す |
+| 3 | 流れのモデルの詳細 | 境界条件、base-spec §16 の threshold、1 step あたりの移動量の上限、D8 の対角距離の扱い。更新方式は、差分テスト（§11.6）が成り立つよう、処理順に結果が依存しない決定的な方式とする | 全セルを読んで別バッファに書く Jacobi 方式（2 バッファ）。1 step の総流出量を水面差の半分までに制限して振動を防ぐ。対角の重みは 1/√2 などに固定する。threshold は 1mm 程度。領域端の外側に、標高が端のセルと同じで水深 0 の仮想セルを置き、そこへの流出を領域外流出とする。Phase 2 の「平衡計算」を別アルゴリズム（Priority-Flood など）として持つか、動的モデルを収束まで回すことで済ませるかも決める |
+| 4 | DEM のカバレッジの混在 | 範囲内で DEM1A のタイルが一部だけ存在しない場合の扱い | 1 枚でも 404 なら範囲全体を次の DEM に落とし、解像度の混在を作らない。ただし沿岸では海域の DEM1A タイルも 404 になるため、この規則だけでは海に面した地域の多くが DEM5 に落ちる。区別の案: 404 になったタイルの位置を、全国分がある `dem_png`（z14）で調べる。対応する画素がすべて無効値なら海域として無効セル扱いにし（フォールバックしない）、有効な標高があれば未整備の陸域として範囲全体を次の DEM に落とす |
+| 5 | 粗い DEM での降雨量 | DEM10B（約 8m のセル）では半径 10m の円が数セルしか覆わず、πr² × 雨量と実際の投入量がずれる | 半径内に中心があるセルの集合 S（最低 1 セル）に、1 セルあたり (πr² × 雨量) ÷ \|S\| を入れる。総量は解像度によらず理論値と一致し、雨の足跡の形だけが近似になる |
+| 6 | 3 操作の目標と免責表示 | base-spec §58 の「3 操作以内」を、初回の免責ダイアログ（§9.6）を除いて数えるか | 「初回の免責の了解を除く」と明記する。または免責をパネル内の常時表示とし、初回の Start 時の確認を 3 操作目に含める |
+| 7 | 越流イベント | base-spec §21 の越流イベント（窪地の水位が spill point に達した）を、どう検出して `StepStats` に載せるか | |
