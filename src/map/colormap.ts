@@ -1,3 +1,5 @@
+import type { TerrainPayload } from '../shared/protocol'
+
 type Rgb = readonly [number, number, number]
 
 // 標高: 色覚特性に配慮した連続色（cividis に近い 5 点を線形補間。tech-spec §9.5）
@@ -22,6 +24,9 @@ const DEPRESSION_BANDS: readonly Rgb[] = [
 ]
 
 export const DEPTH_BAND_M = 0.05
+// analyzeDepressions.ts の同名の定数と揃えている（map は simulation を実行時に import しないので、値をここにも持つ。
+// 2 つが同じ値であることは colormap.test.ts が確かめる）
+export const DEPTH_TOLERANCE_M = 1e-3
 const ELEVATION_ALPHA = 200
 const DEPRESSION_ALPHA = 220
 const BLACK: Rgb = [0, 0, 0]
@@ -40,9 +45,10 @@ export function elevationColor(t: number): Rgb {
   ]
 }
 
-/** 5cm 刻みの帯の番号（0 から）。最後の帯で頭打ち */
+/** 5cm 刻みの帯の番号（0 から）。Float32 の丸めを吸収する余裕を持たせる。最後の帯で頭打ち */
 export function depthBand(depthM: number): number {
-  return Math.min(DEPRESSION_BANDS.length - 1, Math.max(0, Math.floor(depthM / DEPTH_BAND_M)))
+  const band = Math.floor((depthM + DEPTH_TOLERANCE_M) / DEPTH_BAND_M)
+  return Math.min(DEPRESSION_BANDS.length - 1, Math.max(0, band))
 }
 
 /** 標高を範囲内の最低〜最高で色分けした RGBA（無効セルは透明） */
@@ -67,12 +73,13 @@ export function depressionRgba(
   fill: Float32Array,
   elevation: Float32Array,
   labels: Int32Array,
-  significant: ReadonlySet<number>,
+  depressions: TerrainPayload['depressions'],
 ): Uint8ClampedArray<ArrayBuffer> {
   const rgba = new Uint8ClampedArray(fill.length * 4)
   for (let i = 0; i < fill.length; i++) {
     const label = labels[i] ?? 0
-    if (label === 0 || !significant.has(label)) continue
+    // 窪地の id は 1 から順（types.ts）
+    if (label === 0 || !depressions[label - 1]?.significant) continue
     const depth = (fill[i] ?? 0) - (elevation[i] ?? 0)
     if (depth <= 0) continue
     const color = DEPRESSION_BANDS[depthBand(depth)] ?? BLACK

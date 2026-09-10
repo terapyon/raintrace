@@ -58,15 +58,14 @@ export function flowFeatures(
 
 /** 最低点と、表示対象の窪地（R02-3）の spill point */
 export function markerFeatures(
-  terrain: Pick<TerrainPayload, 'lowestIndex' | 'depressions' | 'significantIds' | 'geo'>,
+  terrain: Pick<TerrainPayload, 'lowestIndex' | 'depressions' | 'geo'>,
 ): PointCollection<{ kind: 'lowest' | 'spill' }> {
   const features: PointFeature<{ kind: 'lowest' | 'spill' }>[] = []
   if (terrain.lowestIndex !== -1) {
     features.push(point(cellCenter(terrain.geo, terrain.lowestIndex), { kind: 'lowest' }))
   }
-  const significant = new Set(terrain.significantIds)
   for (const d of terrain.depressions) {
-    if (significant.has(d.id)) {
+    if (d.significant) {
       features.push(point(cellCenter(terrain.geo, d.spillIndex), { kind: 'spill' }))
     }
   }

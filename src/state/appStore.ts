@@ -74,8 +74,7 @@ export function createAppStore(): AppStore {
 }
 
 export function summarizeTerrain(terrain: TerrainPayload): TerrainSummary {
-  const significant = new Set(terrain.significantIds)
-  const shown = terrain.depressions.filter((d) => significant.has(d.id))
+  const shown = terrain.depressions.filter((d) => d.significant)
   let largest: (typeof shown)[number] | null = null
   for (const d of shown) {
     if (largest === null || d.capacityM3 > largest.capacityM3) largest = d

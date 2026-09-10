@@ -1,4 +1,4 @@
-import { analyzeDepressions, significantDepressions } from './analyzeDepressions.ts'
+import { analyzeDepressions } from './analyzeDepressions.ts'
 import { d8FlowDirection } from './d8FlowDirection.ts'
 import { lowestCell } from './lowestCell.ts'
 import type { Depression, TerrainGrid } from './types.ts'
@@ -8,8 +8,7 @@ export interface TerrainAnalysis {
   flowDirection: Uint8Array
   fill: Float32Array
   labels: Int32Array
-  depressions: Depression[]
-  significantIds: number[] // 表示と越流イベントの対象（R02-3）
+  depressions: Depression[] // 表示と越流イベントの対象（R02-3）は Depression.significant
   elevationRange: { min: number; max: number } | null // 有効セルの最低・最高
 }
 
@@ -31,7 +30,6 @@ export function analyzeTerrain(grid: TerrainGrid): TerrainAnalysis {
     fill,
     labels,
     depressions,
-    significantIds: significantDepressions(depressions).map((d) => d.id),
     elevationRange: range,
   }
 }

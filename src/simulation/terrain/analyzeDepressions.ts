@@ -6,6 +6,21 @@ import type { Depression, DepressionAnalysis, TerrainGrid } from './types.ts'
 export const SIGNIFICANT_DEPRESSION = { minDepthM: 0.05, minAreaM2: 10 } as const
 
 /**
+ * 標高は Float32 で持つので、F − Z に絶対標高に応じた丸めの誤差が乗る
+ *（3.05 − 3.00 は 0.04999995、1000.05 − 1000.00 は 0.04998779）。
+ * DEM は 1cm 刻みなので、1mm の余裕なら隣の値と取り違えない
+ */
+export const DEPTH_TOLERANCE_M = 1e-3
+
+/** 窪地が表示と越流イベントの対象か（R02-3。Float32 の丸めを吸収する） */
+export function isSignificant(
+  d: Pick<Depression, 'maxDepthM' | 'areaM2'>,
+  criteria: { minDepthM: number; minAreaM2: number } = SIGNIFICANT_DEPRESSION,
+): boolean {
+  return d.maxDepthM >= criteria.minDepthM - DEPTH_TOLERANCE_M && d.areaM2 >= criteria.minAreaM2
+}
+
+/**
  * Priority-Flood（Barnes ほか, 2014）で満水時の水面 F と窪地を求める（spec 02 §5）。
  * - 起点は、グリッドの端のセルと、無効セルに隣接するセル（03 の境界の扱い R03-2 と揃える）
  * - 取り出したセル c の近傍 n が Z_n < F_c なら、n は窪地の中にあり F_c まで引き上げられる。
@@ -13,7 +28,10 @@ export const SIGNIFICANT_DEPRESSION = { minDepthM: 0.05, minAreaM2: 10 } as cons
  * - 引き上げ済みのセルどうしが別のラベルで隣り合ったら、同じ水位の 1 つの窪地として併合する
  *   （同じ標高の縁が複数あると、別々に始まった引き上げが後で出会う）。併合した窪地の spill point は、先にできた方のもの
  */
-export function analyzeDepressions(grid: TerrainGrid): DepressionAnalysis {
+export function analyzeDepressions(
+  grid: TerrainGrid,
+  criteria: { minDepthM: number; minAreaM2: number } = SIGNIFICANT_DEPRESSION,
+): DepressionAnalysis {
   const { elevation, validMask, width, height, cellSizeM } = grid
   const n = width * height
   const fill = new Float32Array(n)
@@ -121,7 +139,7 @@ export function analyzeDepressions(grid: TerrainGrid): DepressionAnalysis {
 
   const depressions: Depression[] = []
   for (let id = 1; id < count; id++) {
-    depressions.push({
+    const depression: Omit<Depression, 'significant'> = {
       id,
       pitIndex: pit[id],
       spillIndex: spillOf[representatives[id]],
@@ -130,15 +148,8 @@ export function analyzeDepressions(grid: TerrainGrid): DepressionAnalysis {
       areaM2: cells[id] * cellArea,
       capacityM3: volume[id],
       cellCount: cells[id],
-    })
+    }
+    depressions.push({ ...depression, significant: isSignificant(depression, criteria) })
   }
   return { fill, labels, depressions }
-}
-
-/** 表示と越流イベントの対象（R02-3）だけを残す */
-export function significantDepressions(
-  list: Depression[],
-  criteria: { minDepthM: number; minAreaM2: number } = SIGNIFICANT_DEPRESSION,
-): Depression[] {
-  return list.filter((d) => d.maxDepthM >= criteria.minDepthM && d.areaM2 >= criteria.minAreaM2)
 }

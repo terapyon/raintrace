@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { depressionRgba, depthBand, elevationColor, elevationRgba } from './colormap'
+import { DEPTH_TOLERANCE_M as DEPTH_TOLERANCE_M_TERRAIN } from '../simulation/terrain/analyzeDepressions'
+import { makeDepression } from '../simulation/terrain/testGrids'
+import {
+  DEPTH_TOLERANCE_M,
+  depressionRgba,
+  depthBand,
+  elevationColor,
+  elevationRgba,
+} from './colormap'
 
 describe('elevationColor', () => {
   it('両端は決めた色、範囲外は端に丸める', () => {
@@ -18,12 +26,22 @@ describe('elevationColor', () => {
 describe('depthBand（5cm 刻み）', () => {
   it.each([
     [0.01, 0],
-    [0.049, 0],
+    [0.0485, 0], // 閾値（0.05）から 1mm を超えて離れているので帯は変わらない
     [0.051, 1],
     [0.12, 2],
     [10, 7],
   ])('深さ %f m は帯 %i', (depth, band) => {
     expect(depthBand(depth)).toBe(band)
+  })
+
+  it('Float32 の丸めで 0.05 未満になった深さ（3.05 − 3.00）も帯 1 になる', () => {
+    expect(depthBand(Math.fround(3.05) - Math.fround(3.0))).toBe(1)
+  })
+})
+
+describe('DEPTH_TOLERANCE_M', () => {
+  it('analyzeDepressions.ts の同名の定数と同じ値', () => {
+    expect(DEPTH_TOLERANCE_M).toBe(DEPTH_TOLERANCE_M_TERRAIN)
   })
 })
 
@@ -47,7 +65,12 @@ describe('depressionRgba', () => {
     const fill = new Float32Array([10, 10, 10])
     const elevation = new Float32Array([9.9, 9.5, 9.0])
     const labels = new Int32Array([1, 1, 2])
-    const rgba = depressionRgba(fill, elevation, labels, new Set([1]))
+    // 窪地の id は 1 から順（types.ts）。id 1 は表示対象、id 2 は表示対象でない
+    const depressions = [
+      makeDepression({ id: 1, significant: true }),
+      makeDepression({ id: 2, significant: false }),
+    ]
+    const rgba = depressionRgba(fill, elevation, labels, depressions)
     expect(rgba[3]).toBeGreaterThan(0) // 深さ 0.1m、帯 2
     expect([...rgba.slice(0, 3)]).not.toEqual([...rgba.slice(4, 7)]) // 帯 2 と帯 7 は違う色
     expect(rgba[11]).toBe(0) // 窪地 2 は表示対象でない
@@ -58,7 +81,7 @@ describe('depressionRgba', () => {
       new Float32Array([10]),
       new Float32Array([9]),
       new Int32Array([0]),
-      new Set([1]),
+      [],
     )
     expect(rgba[3]).toBe(0)
   })

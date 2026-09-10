@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { pixelToLonLat } from '../dem/tileMath'
 import type { TerrainPayload } from '../shared/protocol'
+import { makeDepression } from '../simulation/terrain/testGrids'
 import { cellCenter, flowFeatures, markerFeatures, outlineFeature } from './terrainFeatures'
 
 const geo = {
@@ -47,30 +48,21 @@ describe('flowFeatures', () => {
 })
 
 describe('markerFeatures', () => {
-  const depression = (id: number, spillIndex: number) => ({
-    id,
-    pitIndex: 0,
-    spillIndex,
-    spillElevation: 1,
-    maxDepthM: 1,
-    areaM2: 100,
-    capacityM3: 1,
-    cellCount: 1,
-  })
-
   it('最低点と、表示対象の窪地の spill point', () => {
     const collection = markerFeatures({
       geo,
       lowestIndex: 5,
-      depressions: [depression(1, 6), depression(2, 7)],
-      significantIds: [2],
+      depressions: [
+        makeDepression({ id: 1, spillIndex: 6, significant: false }),
+        makeDepression({ id: 2, spillIndex: 7, significant: true }),
+      ],
     })
     expect(collection.features.map((f) => f.properties.kind)).toEqual(['lowest', 'spill'])
     expect(collection.features[1]?.geometry.coordinates).toEqual(cellCenter(geo, 7))
   })
 
   it('有効セルが無ければ最低点は出さない', () => {
-    const collection = markerFeatures({ geo, lowestIndex: -1, depressions: [], significantIds: [] })
+    const collection = markerFeatures({ geo, lowestIndex: -1, depressions: [] })
     expect(collection.features).toEqual([])
   })
 })

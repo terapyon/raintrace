@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { TerrainPayload } from '../shared/protocol'
+// state は simulation の型だけを import する（依存規則。makeDepression は値なので使えない）
+import type { Depression } from '../simulation/terrain/types'
 import { createAppStore, summarizeTerrain } from './appStore'
 
-const depression = (id: number, capacityM3: number) => ({
+const depression = (id: number, capacityM3: number, significant: boolean): Depression => ({
   id,
   pitIndex: 0,
   spillIndex: 1,
@@ -11,13 +13,13 @@ const depression = (id: number, capacityM3: number) => ({
   areaM2: 100,
   capacityM3,
   cellCount: 100,
+  significant,
 })
 
 const terrain = {
   geo: { level: 1, breakdown: { dem1a: 9 }, cellSizeM: 0.98, invalidRatio: 0.1 },
   elevationRange: { min: 1.23, max: 4.56 },
-  depressions: [depression(1, 5), depression(2, 50), depression(3, 500)],
-  significantIds: [1, 2],
+  depressions: [depression(1, 5, true), depression(2, 50, true), depression(3, 500, false)],
 } as unknown as TerrainPayload
 
 describe('summarizeTerrain', () => {
@@ -34,7 +36,10 @@ describe('summarizeTerrain', () => {
   })
 
   it('表示対象の窪地が無ければ、件数 0 で最大のものは null', () => {
-    const none = { ...terrain, significantIds: [] } as unknown as TerrainPayload
+    const none = {
+      ...terrain,
+      depressions: terrain.depressions.map((d) => ({ ...d, significant: false })),
+    } as unknown as TerrainPayload
     expect(summarizeTerrain(none)).toMatchObject({ depressionCount: 0, largestDepression: null })
   })
 })

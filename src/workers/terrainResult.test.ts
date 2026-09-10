@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TerrainGeo } from '../shared/protocol'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain'
+import { makeDepression } from '../simulation/terrain/testGrids'
 import { packTerrain } from './terrainResult'
 
 const geo: TerrainGeo = {
@@ -31,16 +32,7 @@ function makeGrid() {
   }
 }
 
-const depression = {
-  id: 1,
-  pitIndex: 0,
-  spillIndex: 1,
-  spillElevation: 3,
-  maxDepthM: 1,
-  areaM2: 100,
-  capacityM3: 1,
-  cellCount: 1,
-}
+const depression = makeDepression({ spillElevation: 3 })
 
 function makeAnalysis(): TerrainAnalysis {
   return {
@@ -49,7 +41,6 @@ function makeAnalysis(): TerrainAnalysis {
     fill: Float32Array.from([1, 2, 3, 4]),
     labels: Int32Array.from([0, 1, 0, 0]),
     depressions: [depression],
-    significantIds: [1],
     elevationRange: { min: 1, max: 4 },
   }
 }

@@ -58,10 +58,9 @@ export class TerrainOverlay {
         elevationRgba(terrain.elevation, terrain.validMask, range.min, range.max),
         0.75,
       )
-      const significant = new Set(terrain.significantIds)
       this.addCanvasLayer(
         ID.depressions,
-        depressionRgba(terrain.fill, terrain.elevation, terrain.labels, significant),
+        depressionRgba(terrain.fill, terrain.elevation, terrain.labels, terrain.depressions),
         0.85,
       )
       this.map.addSource(ID.outline, { type: 'geojson', data: outlineFeature(corners) })

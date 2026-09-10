@@ -23,7 +23,7 @@ describe('analyzeTerrain', () => {
     expect(result.lowestIndex).toBe(lowestCell(grid))
     expect([...result.flowDirection]).toEqual([...d8FlowDirection(grid)])
     expect(result.depressions).toEqual(analyzeDepressions(grid).depressions)
-    expect(result.significantIds).toEqual([1])
+    expect(result.depressions.filter((d) => d.significant).map((d) => d.id)).toEqual([1])
     expect(result.elevationRange).toEqual({ min: 7, max: 10 })
   })
 

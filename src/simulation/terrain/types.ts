@@ -17,6 +17,7 @@ export interface Depression {
   areaM2: number // セル数 × セル面積
   capacityM3: number // Σ(F − Z) × セル面積
   cellCount: number
+  significant: boolean // 表示と越流イベントの対象（R02-3）
 }
 
 export interface DepressionAnalysis {
