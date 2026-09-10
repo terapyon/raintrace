@@ -137,9 +137,9 @@ raintrace/
       types.ts            エンジンのインターフェースと型（§6.2）
       TsSimulationEngine.ts エンジンの TypeScript 実装
       FlowSolver.ts       1 step 分の水移動計算（エンジン内部）
-      WaterGrid.ts
-      Rainfall.ts
-      Boundary.ts
+      WaterGrid.ts        水深の2つのバッファと走査範囲（外接矩形。実装 spec 03 §3.5）
+      Rainfall.ts         降雨の投入先と水深（実装 spec 03 §3.6）
+      testing/            テストとベンチマーク用の地形と補助関数
       terrain/            地形解析（D8 流向・窪地・spill point。実装 spec 02 §5）
       constants.ts        許容誤差などの定数（§6.6）
     dem/                  純粋 TypeScript。RGBA → 標高の変換とグリッド組み立て（I/O なし）
@@ -483,7 +483,7 @@ base-spec の API 例との対応:
 | 水深（描画用の転送バッファ） | `Float32Array` | 表示には単精度で十分。転送量が半分になる |
 | 質量保存の累計値（投入・流出・湛水） | `number`（f64） | 加算の反復による誤差の蓄積を避ける |
 | 中間計算 | `number`（f64） | JavaScript の数値演算は常に倍精度。WASM でも f64 に揃える（§6.4） |
-| セルインデックス | `Int32Array` | Active Cell のスタックに使用 |
+| セルインデックス | `Int32Array` | 降雨の投入先の一覧。走査範囲はセルの集合ではなく、濡れたセルの外接矩形で持つ（実装 spec 03 §3.5） |
 
 許容誤差は §6.6 で定める。定数は `src/simulation/constants.ts` に集約する。
 
