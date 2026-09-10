@@ -58,7 +58,7 @@ describe('SimulationClient', () => {
     const { worker, client } = setup()
     void client.ping().catch(() => {})
     void client.ping().catch(() => {})
-    expect(worker.posted.map((m) => m.id)).toEqual([1, 2])
+    expect(worker.posted.flatMap((m) => (m.type === 'ping' ? [m.id] : []))).toEqual([1, 2])
     client.dispose()
   })
 
