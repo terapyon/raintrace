@@ -13,7 +13,12 @@ import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import type { ReactNode } from 'react'
 import { useStore } from 'zustand'
-import type { AppStore, CursorElevation, DisplaySettings } from '../../state/appStore'
+import type {
+  AppStore,
+  CursorElevation,
+  DisplaySettings,
+  LoadFailureReason,
+} from '../../state/appStore'
 import {
   formatCellSize,
   formatCoordinate,
@@ -26,6 +31,21 @@ import { DemInfoBadge } from './DemInfoBadge'
 
 const PANEL_WIDTH = 320
 const FLOW_SPACINGS = [5, 10, 20] as const
+
+/**
+ * 失敗の理由ごとの出し方。データが無い・対応範囲の外は、再試行しても変わらないので知らせるだけ。
+ * 理由が増えたら、Record の型が漏れを知らせる
+ */
+const FAILURE_DISPLAY: Record<
+  LoadFailureReason,
+  { severity: 'info' | 'error'; retryable: boolean }
+> = {
+  'no-data': { severity: 'info', retryable: false },
+  'out-of-range': { severity: 'info', retryable: false },
+  network: { severity: 'error', retryable: true },
+  internal: { severity: 'error', retryable: true },
+  worker: { severity: 'error', retryable: true },
+}
 
 function Row({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
   return (
@@ -98,19 +118,17 @@ export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void
             />
           </Box>
         )}
-        {load.status === 'failed' && load.reason !== 'superseded' && (
+        {load.status === 'failed' && (
           <Alert
-            severity={
-              load.reason === 'no-data' || load.reason === 'out-of-range' ? 'info' : 'error'
-            }
+            severity={FAILURE_DISPLAY[load.reason].severity}
             data-testid="load-error"
             sx={{ my: 1 }}
             action={
-              load.reason === 'no-data' || load.reason === 'out-of-range' ? undefined : (
+              FAILURE_DISPLAY[load.reason].retryable ? (
                 <Button color="inherit" size="small" onClick={onRetry}>
                   {strings.panel.retry}
                 </Button>
-              )
+              ) : undefined
             }
           >
             {strings.errors[load.reason]}

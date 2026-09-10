@@ -1,6 +1,7 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { cellAt } from '../dem/gridRange'
+import { wrapLongitude } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
 import { TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
@@ -56,8 +57,13 @@ export class TerrainSession {
     map.on('moveend', onMoveEnd)
 
     const view = parseUrlView(window.location.search)
-    if (view.point !== null) this.select(view.point.lon, view.point.lat)
-    else if (view.zoom !== null) map.setZoom(view.zoom)
+    if (view.point !== null) {
+      // 読み込みの間も地点の周りを見せる。範囲が出たら fitBounds で合わせ直す
+      if (view.zoom !== null) {
+        map.jumpTo({ center: [view.point.lon, view.point.lat], zoom: view.zoom })
+      }
+      this.select(view.point.lon, view.point.lat)
+    } else if (view.zoom !== null) map.setZoom(view.zoom)
 
     return () => {
       map.off('click', onClick)
@@ -73,13 +79,14 @@ export class TerrainSession {
     }
   }
 
-  /** 地点を選び、読み込む */
+  /** 地点を選び、読み込む。経度は [−180, 180) に収めてから、ストア・マーカー・URL・Worker に渡す */
   select(lon: number, lat: number): void {
-    this.store.getState().selectPoint(lon, lat)
+    const wrappedLon = wrapLongitude(lon)
+    this.store.getState().selectPoint(wrappedLon, lat)
     this.overlay?.clearTerrain()
-    this.overlay?.showSelection(lon, lat)
+    this.overlay?.showSelection(wrappedLon, lat)
     this.writeUrl()
-    void this.load(lon, lat)
+    void this.load(wrappedLon, lat)
   }
 
   /** 失敗した読み込みをやり直す。Worker が止まっていれば、SimulationClient が次の要求で起動し直す */
@@ -99,8 +106,10 @@ export class TerrainSession {
       // 表示の切り替えは読み込みの間にも変わりうるので、描く直前の値を取り直す
       this.overlay?.showTerrain(terrain, this.store.getState().display)
     } catch (error) {
-      if (error instanceof TerrainLoadError && error.reason === 'superseded') return
-      actions.setFailed(error instanceof TerrainLoadError ? error.reason : 'internal')
+      const reason = error instanceof TerrainLoadError ? error.reason : 'internal'
+      // 新しい地点の読み込みに置き換わった。ストアはもう新しい地点の読み込み中なので、何もしない
+      if (reason === 'superseded') return
+      actions.setFailed(reason)
       // 「この地域には標高データがありません」のときは範囲を消す（spec 02 §7）
       this.overlay?.clearTerrain()
       console.error(error)
@@ -110,7 +119,8 @@ export class TerrainSession {
   private updateCursor(lon: number, lat: number): void {
     const terrain = this.client.terrain
     if (terrain === null || this.store.getState().load.status !== 'ready') return
-    const cell = cellAt(terrain.geo, lon, lat)
+    // 世界のコピーの上のカーソルも、選んだ地点と同じ [−180, 180) の経度で調べる
+    const cell = cellAt(terrain.geo, wrapLongitude(lon), lat)
     if (cell === null) {
       this.store.getState().setCursor({ kind: 'outside' })
       return

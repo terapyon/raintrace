@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TerrainPayload } from '../shared/protocol'
 // state は simulation の型だけを import する（依存規則。makeDepression は値なので使えない）
 import type { Depression } from '../simulation/terrain/types'
-import { createAppStore, summarizeTerrain } from './appStore'
+import { type CursorElevation, createAppStore, summarizeTerrain } from './appStore'
 
 const depression = (id: number, capacityM3: number, significant: boolean): Depression => ({
   id,
@@ -84,6 +84,44 @@ describe('createAppStore', () => {
       depressions: true,
       flow: false,
       flowSpacingM: 20,
+    })
+  })
+
+  describe('setCursor は同じ値なら購読者に知らせない', () => {
+    const countNotifications = (cursors: (CursorElevation | null)[]): number => {
+      const store = createAppStore()
+      let count = 0
+      store.subscribe(() => {
+        count++
+      })
+      for (const cursor of cursors) store.getState().setCursor(cursor)
+      return count
+    }
+
+    it('同じ標高を 2 回なら 1 回', () => {
+      expect(
+        countNotifications([
+          { kind: 'value', meters: 1 },
+          { kind: 'value', meters: 1 },
+        ]),
+      ).toBe(1)
+    })
+
+    it('標高が違えば 2 回', () => {
+      expect(
+        countNotifications([
+          { kind: 'value', meters: 1 },
+          { kind: 'value', meters: 2 },
+        ]),
+      ).toBe(2)
+    })
+
+    it('範囲の外を 2 回なら 1 回', () => {
+      expect(countNotifications([{ kind: 'outside' }, { kind: 'outside' }])).toBe(1)
+    })
+
+    it('null を 2 回なら 0 回（初期値も null）', () => {
+      expect(countNotifications([null, null])).toBe(0)
     })
   })
 })

@@ -2,11 +2,14 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { DemId } from '../dem/demSources'
 import type { TerrainErrorReason, TerrainPayload } from '../shared/protocol'
 
+/** 読み込みの失敗の理由。superseded（新しい地点に置き換わった）は失敗として置かない */
+export type LoadFailureReason = Exclude<TerrainErrorReason, 'superseded'>
+
 export type LoadState =
   | { status: 'idle' }
   | { status: 'loading'; done: number; started: number }
   | { status: 'ready' }
-  | { status: 'failed'; reason: TerrainErrorReason }
+  | { status: 'failed'; reason: LoadFailureReason }
 
 export interface DisplaySettings {
   elevation: boolean
@@ -43,12 +46,19 @@ export interface AppActions {
   selectPoint(lon: number, lat: number): void
   setProgress(done: number, started: number): void
   setTerrain(summary: TerrainSummary): void
-  setFailed(reason: TerrainErrorReason): void
+  setFailed(reason: LoadFailureReason): void
   setDisplay(patch: Partial<DisplaySettings>): void
   setCursor(cursor: CursorElevation | null): void
 }
 
 export type AppStore = StoreApi<AppState & AppActions>
+
+/** kind が同じで、標高なら値も同じ。null どうしも同じとみなす */
+function sameCursor(a: CursorElevation | null, b: CursorElevation | null): boolean {
+  if (a === null || b === null) return a === b
+  if (a.kind !== b.kind) return false
+  return a.kind !== 'value' || (b.kind === 'value' && a.meters === b.meters)
+}
 
 /** UI の状態（tech-spec §8.1）。zustand/vanilla で作り、React からは useStore で読む */
 export function createAppStore(): AppStore {
@@ -69,7 +79,8 @@ export function createAppStore(): AppStore {
     setTerrain: (summary) => set({ summary, load: { status: 'ready' } }),
     setFailed: (reason) => set({ load: { status: 'failed', reason }, summary: null }),
     setDisplay: (patch) => set((state) => ({ display: { ...state.display, ...patch } })),
-    setCursor: (cursor) => set({ cursor }),
+    // マウスの移動のたびに呼ばれる。同じ値なら同じ state を返し、購読者（パネル）に知らせない
+    setCursor: (cursor) => set((state) => (sameCursor(state.cursor, cursor) ? state : { cursor })),
   }))
 }
 

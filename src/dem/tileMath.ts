@@ -52,6 +52,14 @@ export function pixelToLonLat(x: number, y: number, z: number): LonLat {
   }
 }
 
+/**
+ * 経度を [−180, 180) に収める。MapLibre は世界のコピーを描く（renderWorldCopies）ので、
+ * 地図のクリックの経度は ±180 を超えうる。NaN は NaN のまま
+ */
+export function wrapLongitude(lon: number): number {
+  return ((((lon + 180) % 360) + 360) % 360) - 180
+}
+
 /** 地上解像度（m／ピクセル）。cellSizeM = 2π × 6378137 × cos(φ) / (256 × 2^z) */
 export function groundResolutionM(lat: number, z: number): number {
   return (2 * Math.PI * EARTH_RADIUS_M * Math.cos((lat * Math.PI) / 180)) / worldSizePx(z)

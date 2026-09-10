@@ -1,7 +1,8 @@
 import type { TileCoord } from './tileMath.ts'
 
-/** DEM の種類（tech-spec §7.4）。DEM10B のタイルのパスは dem_png */
-export type DemId = 'dem1a' | 'dem5a' | 'dem5b' | 'dem5c' | 'dem10b'
+/** DEM の種類（tech-spec §7.4）。細かい順で、パネルの並びにも使う。DEM10B のタイルのパスは dem_png */
+export const DEM_IDS = ['dem1a', 'dem5a', 'dem5b', 'dem5c', 'dem10b'] as const
+export type DemId = (typeof DEM_IDS)[number]
 
 const PATHS: Record<DemId, string> = {
   dem1a: 'dem1a_png',

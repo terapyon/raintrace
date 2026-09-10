@@ -1,7 +1,5 @@
-import type { DemId } from '../dem/demSources'
+import { DEM_IDS, type DemId } from '../dem/demSources'
 import { strings } from './strings'
-
-const DEM_ORDER: readonly DemId[] = ['dem1a', 'dem5a', 'dem5b', 'dem5c', 'dem10b']
 
 /** 標高と水深は 0.01m 単位（tech-spec §6.6） */
 export const formatMeters = (value: number): string => `${value.toFixed(2)} m`
@@ -10,11 +8,11 @@ export const formatCellSize = (value: number): string => `約 ${value.toFixed(2)
 export const formatPercent = (ratio: number): string => `${(ratio * 100).toFixed(1)}%`
 export const formatCubicMeters = (value: number): string => `${value.toFixed(2)} m³`
 
-/** 最も多く使った DEM を主にし（同数なら DEM_ORDER の順）、ほかを「一部」として添える */
+/** 最も多く使った DEM を主にし（同数なら DEM_IDS の順）、ほかを「一部」として添える */
 export function formatDemLabel(breakdown: Partial<Record<DemId, number>>): string {
   const count = (id: DemId): number => breakdown[id] ?? 0
-  const order = (id: DemId): number => DEM_ORDER.indexOf(id)
-  const used = DEM_ORDER.filter((id) => count(id) > 0).sort(
+  const order = (id: DemId): number => DEM_IDS.indexOf(id)
+  const used = DEM_IDS.filter((id) => count(id) > 0).sort(
     (a, b) => count(b) - count(a) || order(a) - order(b),
   )
   const [main, ...rest] = used

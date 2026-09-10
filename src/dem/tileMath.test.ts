@@ -5,7 +5,31 @@ import {
   pixelToLonLat,
   tilesInPixelRect,
   worldSizePx,
+  wrapLongitude,
 } from './tileMath.ts'
+
+describe('wrapLongitude', () => {
+  it.each([
+    [-180, -180],
+    [180, -180],
+    [540, -180],
+    [-540, -180],
+  ])('経度 %f は %f（[−180, 180) に収める）', (lon, expected) => {
+    expect(wrapLongitude(lon)).toBe(expected)
+  })
+
+  // ±180 の足し引きで下の桁が丸まる（139.7 は 139.70000000000005 になる）ので、近さで比べる
+  it.each([
+    [499.7, 139.7],
+    [139.7, 139.7],
+  ])('経度 %f は %f（世界のコピーの上の経度も、範囲の中の経度も）', (lon, expected) => {
+    expect(wrapLongitude(lon)).toBeCloseTo(expected, 9)
+  })
+
+  it('NaN はそのまま伝わる（Worker の inServiceArea が false にする）', () => {
+    expect(wrapLongitude(Number.NaN)).toBeNaN()
+  })
+})
 
 describe('lonLatToPixel と pixelToLonLat', () => {
   it('経度 0・緯度 0 は z0 の世界の中心', () => {

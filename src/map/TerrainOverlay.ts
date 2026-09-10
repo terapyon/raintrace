@@ -29,6 +29,15 @@ export class TerrainOverlay {
   private readonly whenMapLoaded: (run: () => void) => void
   private marker: Marker | null = null
   private terrain: TerrainPayload | null = null
+  // 最新の表示の設定。地形が無い間や描画を待つ間に変わっても覚えておき、描くときに使う。
+  // 初期値はストアの既定と同じ（showTerrain・setDisplay が必ず上書きする）
+  private display: OverlayDisplay = {
+    elevation: true,
+    depressions: true,
+    flow: true,
+    flowSpacingM: 10,
+  }
+  // 描いた矢印の間隔。表示の設定の間隔と違えば、矢印を作り直す
   private flowSpacingM = 10
   private generation = 0
 
@@ -43,14 +52,15 @@ export class TerrainOverlay {
   }
 
   showTerrain(terrain: TerrainPayload, display: OverlayDisplay): void {
-    // 読み込みを待つ間に別の地形が来たら、古い方は描かない
+    this.display = display
+    // 読み込みを待つ間に別の地形が来たり、消されたりしたら、古い方は描かない
     const generation = ++this.generation
     this.whenMapLoaded(() => {
       if (generation !== this.generation) return
-      this.clearTerrain()
-      this.generation = generation
+      this.removeLayers()
       this.terrain = terrain
-      this.flowSpacingM = display.flowSpacingM
+      // 待つ間に表示の設定が変わりうるので、描く時点で覚えている設定を使う
+      this.flowSpacingM = this.display.flowSpacingM
       const { corners } = terrain.geo
       const range = terrain.elevationRange ?? { min: 0, max: 0 }
       this.addCanvasLayer(
@@ -73,7 +83,7 @@ export class TerrainOverlay {
       this.ensureArrowImage()
       this.map.addSource(ID.flow, {
         type: 'geojson',
-        data: flowFeatures(terrain, display.flowSpacingM),
+        data: flowFeatures(terrain, this.flowSpacingM),
       })
       this.map.addLayer({
         id: ID.flow,
@@ -99,14 +109,17 @@ export class TerrainOverlay {
           'circle-stroke-width': 2,
         },
       })
-      this.setDisplay(display)
+      this.setDisplay(this.display)
       this.map.getContainer().dataset.rangeShown = 'true'
       this.map.fitBounds([corners[3], corners[1]], { padding: 40, duration: 0 })
     })
   }
 
+  /** 表示の設定を覚え、地形を描いていれば適用する */
   setDisplay(display: OverlayDisplay): void {
-    if (this.terrain === null) return
+    this.display = display
+    const terrain = this.terrain
+    if (terrain === null) return
     const visibility = (visible: boolean): 'visible' | 'none' => (visible ? 'visible' : 'none')
     this.map.setLayoutProperty(ID.elevation, 'visibility', visibility(display.elevation))
     this.map.setLayoutProperty(ID.depressions, 'visibility', visibility(display.depressions))
@@ -115,24 +128,29 @@ export class TerrainOverlay {
       this.flowSpacingM = display.flowSpacingM
       this.map
         .getSource<GeoJSONSource>(ID.flow)
-        ?.setData(flowFeatures(this.terrain, display.flowSpacingM))
+        ?.setData(flowFeatures(terrain, display.flowSpacingM))
     }
   }
 
   /** 範囲の枠と重ね描きを消す（マーカーは残す）。読み込みを待っている描画も取り消す */
   clearTerrain(): void {
     this.generation++
+    this.removeLayers()
+  }
+
+  destroy(): void {
+    this.marker?.remove()
+    this.marker = null
+  }
+
+  /** レイヤー・ソースと範囲の表示の印を消す。generation には触らない（待っている描画は取り消さない） */
+  private removeLayers(): void {
     for (const id of Object.values(ID)) {
       if (this.map.getLayer(id) !== undefined) this.map.removeLayer(id)
       if (this.map.getSource(id) !== undefined) this.map.removeSource(id)
     }
     delete this.map.getContainer().dataset.rangeShown
     this.terrain = null
-  }
-
-  destroy(): void {
-    this.marker?.remove()
-    this.marker = null
   }
 
   private addCanvasLayer(id: string, rgba: Uint8ClampedArray<ArrayBuffer>, opacity: number): void {
