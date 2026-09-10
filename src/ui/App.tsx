@@ -1,6 +1,6 @@
-import Box from '@mui/material/Box'
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
+import { MapView } from './components/MapView'
 import { type MissingFeature, WebGLUnsupported } from './components/WebGLUnsupported'
 import { theme } from './theme'
 
@@ -12,11 +12,7 @@ export function App({ missingFeatures }: Props) {
   return (
     <ThemeProvider theme={theme} defaultMode="system">
       <CssBaseline />
-      {missingFeatures.length > 0 ? (
-        <WebGLUnsupported missing={missingFeatures} />
-      ) : (
-        <Box component="main" sx={{ position: 'fixed', inset: 0 }} />
-      )}
+      {missingFeatures.length > 0 ? <WebGLUnsupported missing={missingFeatures} /> : <MapView />}
     </ThemeProvider>
   )
 }

@@ -37,6 +37,7 @@
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@mui/material": "9.4.0",
+    "maplibre-gl": "6.6.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   }
