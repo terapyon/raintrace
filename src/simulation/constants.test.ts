@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEPTH_EPSILON_M,
+  DIFFUSION_C,
+  FLOODED_DEPTH_M,
   FLOW_THRESHOLD_M,
   MASS_TOLERANCE_REL,
   massTolerance,
+  SPILL_TOLERANCE_M,
   SURFACE_ELEVATION_TOLERANCE_M,
 } from './constants.ts'
 
@@ -21,5 +24,13 @@ describe('許容誤差（tech-spec §6.6）', () => {
   it('質量保存の許容誤差は投入総量に比例する', () => {
     expect(massTolerance(0)).toBe(0)
     expect(massTolerance(1000)).toBeCloseTo(1e-6, 15)
+  })
+})
+
+describe('エンジンの定数（spec 03 §3.11）', () => {
+  it('表の値と一致する', () => {
+    expect(DIFFUSION_C).toBe(0.5)
+    expect(FLOODED_DEPTH_M).toBe(0.01)
+    expect(SPILL_TOLERANCE_M).toBe(0.01)
   })
 })
