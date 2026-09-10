@@ -86,10 +86,9 @@ async function allSea(
   tiles: TileCoord[],
   fetchReference: (tile: TileCoord) => Promise<TileFetchResult>,
 ): Promise<boolean> {
-  for (const tile of tiles) {
-    if (!(await isSeaTile(tile, fetchReference))) return false
-  }
-  return true
+  // 親タイル（z14）が複数あっても、同時数の制限の中で並べて取得する（fetchReference が使い回す。レビュー L4）
+  const results = await Promise.all(tiles.map((tile) => isSeaTile(tile, fetchReference)))
+  return results.every((sea) => sea)
 }
 
 /**

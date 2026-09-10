@@ -41,16 +41,27 @@ export function createGsiTileFetcher(
       }, ms)
       signal.addEventListener('abort', onAbort, { once: true })
     })
+  // fetcher ごとに 1 枚だけ作り、使い回す（レビュー L5）。最初に使うときに作る
+  // （Node のテストでは OffscreenCanvas が無いので、fetcher の生成時には作らない）
+  let context: OffscreenCanvasRenderingContext2D | null = null
+  const getContext = (): OffscreenCanvasRenderingContext2D => {
+    if (context === null) {
+      const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE)
+      const created = canvas.getContext('2d', { willReadFrequently: true })
+      if (created === null) throw new Error('OffscreenCanvas の 2D コンテキストを得られません')
+      context = created
+    }
+    return context
+  }
   return (dem, tile) => {
     progress.onStart()
-    return limit(() =>
-      retry(() => fetchOnce(dem, tile, signal), {
-        delaysMs: GSI_RETRY_DELAYS_MS,
-        sleep,
-        shouldRetry: (error) =>
-          !signal.aborted && (error instanceof NetworkError || error instanceof HttpError),
-      }),
-    ).finally(() => progress.onDone())
+    // 同時数の枠は 1 回の fetchOnce の間だけ占める。再試行の待ち（0.5〜2 秒）は枠の外（レビュー P2）
+    return retry(() => limit(() => fetchOnce(dem, tile, signal, getContext)), {
+      delaysMs: GSI_RETRY_DELAYS_MS,
+      sleep,
+      shouldRetry: (error) =>
+        !signal.aborted && (error instanceof NetworkError || error instanceof HttpError),
+    }).finally(() => progress.onDone())
   }
 }
 
@@ -58,6 +69,7 @@ async function fetchOnce(
   dem: DemId,
   tile: TileCoord,
   signal: AbortSignal,
+  getContext: () => OffscreenCanvasRenderingContext2D,
 ): Promise<TileFetchResult> {
   let response: Response
   try {
@@ -68,8 +80,16 @@ async function fetchOnce(
   }
   if (response.status === 404) return { status: 'missing' }
   if (!response.ok) throw new HttpError(response.status)
+  let blob: Blob
+  try {
+    blob = await response.blob()
+  } catch (error) {
+    // 本文の読み込み中の切断も、fetch() 自体の失敗と同じ扱いにする（レビュー P7）
+    if (signal.aborted) throw error
+    throw new NetworkError(error)
+  }
   // 色空間の変換とアルファの乗算をさせない。RGB の値が変わると標高が狂う（tech-spec §5.4）
-  const bitmap = await createImageBitmap(await response.blob(), {
+  const bitmap = await createImageBitmap(blob, {
     premultiplyAlpha: 'none',
     colorSpaceConversion: 'none',
   })
@@ -77,9 +97,8 @@ async function fetchOnce(
     if (bitmap.width !== TILE_SIZE || bitmap.height !== TILE_SIZE) {
       throw new Error(`タイルの大きさが ${bitmap.width}×${bitmap.height} です`)
     }
-    const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE)
-    const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (context === null) throw new Error('OffscreenCanvas の 2D コンテキストを得られません')
+    const context = getContext()
+    // drawImage から getImageData までは await を挟まないので、同時に取得していても 1 枚を使い回せる
     context.drawImage(bitmap, 0, 0)
     return {
       status: 'ok',

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { DemTileData } from './DemGrid.ts'
-import { type FetchDemTile, isSeaTile, selectDem, type TileFetchResult } from './demSelection.ts'
+import {
+  type FetchDemTile,
+  isSeaTile,
+  selectDem,
+  type TileFetchResult,
+  tileKey,
+} from './demSelection.ts'
 import type { DemId } from './demSources.ts'
 import type { TileCoord } from './tileMath.ts'
 
@@ -120,6 +126,39 @@ describe('selectDem', () => {
     expect(result.tier.level).toBe(3)
     expect(result.breakdown).toEqual({ dem10b: result.tiles.size })
     expect(uniqueReferences(calls)).toBe(true)
+  })
+
+  it('404 のタイルの海域判定は、親タイル（z14）が複数あっても並べて取得する（レビュー L4）', async () => {
+    // z14 タイルの境目にちょうどかかる地点。段 1（z17）の範囲が 2 つ以上の z14 タイルにまたがる
+    const BOUNDARY_LON = 139.7021484375
+    const references = new Map<
+      string,
+      { promise: Promise<TileFetchResult>; resolve: (result: TileFetchResult) => void }
+    >()
+    const fetchTile: FetchDemTile = (dem, tile) => {
+      if (dem !== 'dem10b') return Promise.resolve({ status: 'missing' })
+      const key = tileKey(tile.x, tile.y)
+      let entry = references.get(key)
+      if (entry === undefined) {
+        let resolve!: (result: TileFetchResult) => void
+        const promise = new Promise<TileFetchResult>((r) => {
+          resolve = r
+        })
+        entry = { promise, resolve }
+        references.set(key, entry)
+      }
+      return entry.promise
+    }
+
+    const done = selectDem(BOUNDARY_LON, LAT, 500, fetchTile)
+    // dem_png の要求が始まるところまでマイクロタスクを流す（まだどれも解決させない）
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(references.size).toBeGreaterThanOrEqual(2)
+
+    for (const entry of references.values()) entry.resolve({ status: 'missing' })
+    const result = await done
+    expect(result.tier.level).toBe(1)
+    expect(result.seaTileCount).toBeGreaterThan(0)
   })
 })
 
