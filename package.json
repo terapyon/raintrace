@@ -9,17 +9,35 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
     "lint": "biome ci",
     "format": "biome check --write",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "pnpm build && playwright test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
+    "@cloudflare/vite-plugin": "1.54.2",
+    "@playwright/test": "1.62.1",
     "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.1",
     "@vitest/coverage-v8": "4.1.11",
     "typescript": "6.0.3",
-    "vitest": "4.1.11"
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.127.1"
+  },
+  "dependencies": {
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
+    "@mui/material": "9.4.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   }
 }

@@ -3,9 +3,11 @@
   "compilerOptions": {
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsc/node.tsbuildinfo",
-    "lib": ["ES2023"],
+    // DOM は、E2E の page.evaluate の中で window などを参照するため。
+    // E2E が src/ui/strings.ts を import するので、strings.ts は app とこのプロジェクトの両方で検査される（意図どおり）
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "noUncheckedIndexedAccess": true
   },
-  "include": ["vitest.config.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "tests/e2e/**/*.ts"]
 }

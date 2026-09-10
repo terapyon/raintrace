@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "raintrace",
+  // spec 01 §4.11 は「実装した日」（2026-09-10）とするが、手元と CI の workerd（wrangler 4.127.1）が
+  // サポートする最新の日付がこれなので合わせる。wrangler を上げたら更新する
+  "compatibility_date": "2026-09-04",
+  "workers_dev": true,
+  "preview_urls": true,
+  // 静的配信のみ。assets.directory は @cloudflare/vite-plugin がビルドの出力先に合わせて決める
+  "assets": {
+    "not_found_handling": "single-page-application"
+  },
+  "env": {
+    // ステージング（R01-3）。ビルド時に CLOUDFLARE_ENV=staging を渡すと、この名前の Worker 向けに出力される
+    "staging": {
+      "name": "raintrace-staging"
+    }
+  }
+}
