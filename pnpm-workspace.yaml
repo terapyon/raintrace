@@ -1,0 +1,5 @@
+# pnpm の設定（workspace としては使わない。tech-spec §13.2）
+minimumReleaseAge: 14400
+minimumReleaseAgeStrict: true
+# ビルドスクリプトの実行を許すパッケージ。追加するときは理由を PR に書く（tech-spec §13.3）
+allowBuilds: {}
