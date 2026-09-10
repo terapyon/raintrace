@@ -305,6 +305,7 @@
 - Modify: `src/workers/simulation.worker.ts`、`src/workers/terrainResult.ts`、`src/workers/terrainResult.test.ts`
 - Modify: `src/dem/gridRange.ts`、`src/dem/gridRange.test.ts`
 - Modify: `tests/e2e/dem.spec.ts`
+- Modify: `src/dem/tileMath.ts`、`src/dem/tileMath.test.ts`、`src/map/TerrainOverlay.ts`
 
 **要件:**
 - 再レビュー 軽微 4（dispose の後）: `private disposed = false`。`dispose()` で true にする。`port()` は disposed なら `new TerrainLoadError('worker', 'SimulationClient は破棄されました')` を投げる（異常終了の後の dispose でも Worker を作り直さない）
@@ -314,12 +315,15 @@
 - 再レビュー 軽微 9: `SimulationClient.test.ts` の 20ms の実時間の待ちを、microtask を流す形（`await Promise.resolve()` など）に置き換える。`gridRange.test.ts` の自明な `expect(1206).toBeLessThan(MAX_GRID_SIZE)` を消す
 - Task 3 のレビューの軽微: `onError` のコメントに、'error' と同じく 'messageerror' も作り直しの契機にしていることを書く。`dem.spec.ts` の Worker を読めない場合の E2E で、2 回目の操作を地図のクリックではなく「再試行」のボタン（`strings.panel.retry`）にする（spec 02 §7 の再試行の経路を E2E で通す。Worker のスクリプトの要求はやはり 1 回だけ増える）
 - Task 2 のレビューの軽微: `gridRange.ts` のコメントと `gridRange.test.ts` のテスト名の「lat=90 は有限でない」を直す（実際は約 6.8e18 の有限の値で、上限の判定で止まる。`!(size <= MAX_GRID_SIZE)` の形は NaN も止める）。境界のテストを足す: `cell = groundResolutionM(35, 17)` として、`sizeM = (4096 − 0.5) × cell` は N = 4096 で投げず、`(4097 − 0.5) × cell` は投げる
+- Task 6 のレビューの軽微: `wrapLongitude` は範囲の中（`lon >= -180 && lon < 180`）の経度をそのまま返す（早期の return。範囲の外と NaN は今の式のまま。NaN は比較が false なので式を通り NaN のまま）。`tileMath.test.ts` の 139.7 の期待を `toBe(139.7)` にする
+- Task 6 のレビューの軽微: `TerrainOverlay` の `display` を `OverlayDisplay | null = null` にし、遅れた描画は `this.display ?? display` を使う（ストアの既定値の写しを消す。`setDisplay` は今までどおり地形が無くても覚える）
 
 **テスト（先に書く）:**
 1. dispose の後の ping と loadTerrain は 'worker' で失敗し、Worker の factory は呼ばれない（異常終了の後に dispose しても同じ）
 2. 起動し直すときに factory が同期的に投げると、loadTerrain は 'worker' で失敗する。次の要求で factory が成功すれば解決する
 3. 上の gridRange の境界のテスト
 4. terrainResult.test の requestId の期待を消し、retained.grid が grid そのもの（同じ配列）であることを確かめる
+5. `wrapLongitude(139.7)` は `toBe(139.7)`（範囲の中はそのまま）。−180・180・540・−540・499.7・NaN の既存のテストはそのまま通る
 
 - [ ] テストを書き、失敗を確かめる
 - [ ] 実装し、成功を確かめる
