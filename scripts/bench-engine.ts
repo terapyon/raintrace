@@ -75,6 +75,10 @@ function run(label: string, elevation: Float32Array, rain: RainfallInput, maxSte
 }
 
 const maxSteps = Number(process.argv[2] ?? 100_000)
+if (!(Number.isInteger(maxSteps) && maxSteps > 0)) {
+  console.error('usage: node scripts/bench-engine.ts [上限の step 数（正の整数）]')
+  process.exit(1)
+}
 const elevation = syntheticElevation()
 const center = { x: 256.5 * CELL_M, y: 256.5 * CELL_M }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SPILL_TOLERANCE_M } from './constants.ts'
 import type { TsSimulationEngine } from './TsSimulationEngine.ts'
-import { cellCenter, engineOn, walledBasin } from './testing/fixtures.ts'
+import { buildTerrain, cellCenter, engineOn, walledBasin } from './testing/fixtures.ts'
 import type { SimulationEvent } from './types.ts'
 
 // 7 × 7 の盆地（床 0m、縁 10m、床は列・行 1〜5 の 25m²）。中央のセルを最低点、spill 標高 0.3m とする手組みの窪地
@@ -93,5 +93,33 @@ describe('越流イベント（spec 03 §3.7）', () => {
       { id: 1, pitIndex: 1.5, spillElevation: 1 },
     ]
     for (const d of bad) expect(() => engine.setDepressions([d])).toThrow(RangeError)
+  })
+
+  it('最低点が無効セルなら RangeError', () => {
+    const t = buildTerrain(7, 7, 1, (x, y) => (x === 3 && y === 3 ? Number.NaN : 0))
+    const engine = engineOn(t)
+    expect(() => engine.setDepressions([{ id: 1, pitIndex: PIT, spillElevation: 1 }])).toThrow(
+      RangeError,
+    )
+  })
+
+  it('spill 標高が有限でなければ RangeError', () => {
+    const engine = engineOn(BASIN)
+    for (const spillElevation of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => engine.setDepressions([{ id: 1, pitIndex: PIT, spillElevation }])).toThrow(
+        RangeError,
+      )
+    }
+  })
+
+  it('深さ 5mm の窪地は、雨なしでは通知せず、最低点に水が届いた後の step で 1 回だけ通知する', () => {
+    const engine = engineOn(BASIN)
+    const spillElevation = (BASIN.elevation[PIT] ?? 0) + 0.005
+    engine.setDepressions([{ id: 9, pitIndex: PIT, spillElevation }])
+    expect(collect(engine, 10)).toEqual([])
+    rainOnFloor(engine, 0.35)
+    const events = collect(engine, 3000)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'spill', depressionId: 9, spillElevation })
   })
 })

@@ -123,6 +123,12 @@ export class TsSimulationEngine implements SimulationEngine {
       if (!Number.isInteger(d.pitIndex) || d.pitIndex < 0 || d.pitIndex >= n) {
         throw new RangeError(`窪地 ${d.id} の最低点のセル番号が範囲外です: ${d.pitIndex}`)
       }
+      if (terrain.validMask[d.pitIndex] !== 1) {
+        throw new RangeError(`窪地 ${d.id} の最低点が無効セルです: ${d.pitIndex}`)
+      }
+      if (!Number.isFinite(d.spillElevation)) {
+        throw new RangeError(`窪地 ${d.id} の spill 標高が有限ではありません: ${d.spillElevation}`)
+      }
     }
     this.depressions = list.map(({ id, pitIndex, spillElevation }) => ({
       id,
@@ -143,7 +149,11 @@ export class TsSimulationEngine implements SimulationEngine {
     for (let k = 0; k < this.depressions.length; k++) {
       if (this.notified[k] !== 0) continue
       const d = this.depressions[k]
-      if (elevation[d.pitIndex] + w[d.pitIndex] >= d.spillElevation - SPILL_TOLERANCE_M) {
+      // 最低点が乾いている窪地は溢れていない。深さが越流の余裕（1cm）以下の窪地が、雨なしで通知されるのを防ぐ
+      if (
+        w[d.pitIndex] > 0 &&
+        elevation[d.pitIndex] + w[d.pitIndex] >= d.spillElevation - SPILL_TOLERANCE_M
+      ) {
         this.notified[k] = 1
         events.push({
           type: 'spill',
