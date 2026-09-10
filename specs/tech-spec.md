@@ -369,7 +369,7 @@ Phase 1〜4（base-spec §55）は TypeScript + TypedArray で実装する。Rus
 
 ### 判断根拠
 
-base-spec §22-23 が指定する Active Cell 方式を適用した場合の概算:
+base-spec §22-23 が指定する Active Cell 方式を適用した場合の概算（base-spec の Active Cell は、実装 spec 03 §3.5 で濡れたセルの外接矩形の走査範囲として実装した）:
 
 ```
 全セル総当たり   : 250,000 cells × 8近傍 = 2.0M ops/step
@@ -424,7 +424,10 @@ export interface SimulationEngine {
   addRainfall(rain: RainfallInput): void
   step(): StepStats
   reset(): void
-  /** 内部の水深配列。呼び出し側は読み取り専用として扱い、転送バッファへのコピー元にのみ使う */
+  /**
+   * 内部の水深配列（読み取り専用。転送バッファへのコピー元にのみ使う）。
+   * step() のたびに別の配列に入れ替わるので、step の後に呼び直す
+   */
   waterDepth(): Float64Array
   /** 越流イベントの判定に使う窪地（実装 spec 02 の地形解析の結果） */
   setDepressions(list: { id: number; pitIndex: number; spillElevation: number }[]): void
@@ -448,7 +451,7 @@ base-spec の API 例との対応:
 
 以下の**いずれか**を満たした場合に限り、Rust WASM 実装の追加を検討する。
 
-> DEM1A / 500m 四方 / Active Cell 有効の条件で、Chrome デスクトップ実測において
+> DEM1A / 500m 四方 / 濡れたセルに絞った走査（実装 spec 03 §3.5 の外接矩形）の条件で、Chrome デスクトップ実測において
 > - 1 step の所要時間の**中央値が 8ms を超える**、または
 > - **p95 が 16ms を超える**
 
@@ -470,8 +473,8 @@ base-spec の API 例との対応:
 
 移行を検討する際、特に効果が見込めるのは以下である。
 
-1. **Active Cell の集合管理** — JS の `Set<number>` は反復・追加のコストが高い。Rust では自前のリングバッファまたはビットセットで管理でき、差が出やすい
-2. **全セル総当たりが必要な処理** — 窪地検出（Priority-Flood 等）や初期シンク解析。Active Cell 方式が効かないため素の演算速度が支配的になる
+1. **濡れたブロックの管理** — 実装 spec 03 §3.5 の外接矩形は、濡れた場所が散らばると広がる。ブロックをビットセットで管理する方式に移すと差が出やすい（Rust では自前のビットセットで持てる）
+2. **全セル総当たりが必要な処理** — 窪地検出（Priority-Flood 等）や初期シンク解析。走査範囲を絞る方式が効かないため素の演算速度が支配的になる
 
 ## 6.5 数値表現
 
@@ -666,7 +669,7 @@ Cloudflare の Static Assets の `_headers` で、CSP などのレスポンス�
 
 | 分類 | 保持場所 | 例 |
 |---|---|---|
-| シミュレーションの真の状態 | Web Worker 内の TypedArray | 標高、水深、Active Cell |
+| シミュレーションの真の状態 | Web Worker 内の TypedArray | 標高、水深、走査範囲 |
 | 描画用の派生状態 | Renderer が保持するバッファ | 水深ビュー、流向ベクトル |
 | UI 設定値 | Zustand + localStorage | 降雨量、半径、垂直強調、ベースマップ |
 | UI 一時状態 | Zustand（永続化しない） | 再生中か、選択中セル、統計値 |
@@ -1121,7 +1124,7 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 
 | 指標 | 目標 | 測定条件 |
 |---|---|---|
-| 1 step の所要時間（中央値） | < 8ms | DEM1A / 500m 四方 / Active Cell 有効 / Chrome デスクトップ |
+| 1 step の所要時間（中央値） | < 8ms | DEM1A / 500m 四方 / 濡れたセルに絞った走査（実装 spec 03 §3.5 の外接矩形） / Chrome デスクトップ |
 | 1 step の所要時間（p95） | < 16ms | 同上 |
 | 地図操作時のフレームレート | 60fps 維持 | シミュレーション実行中を含む |
 | 地点クリックから 3D 地形表示まで | < 3秒 | キャッシュなし、一般的な回線 |
