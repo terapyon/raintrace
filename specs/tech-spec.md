@@ -802,7 +802,7 @@ TypeScript の project references で領域を分割し、`tsc -b` で一括し�
 
 構成上の要点:
 
-- **`DOM` と `WebWorker` の lib を同じコンパイル単位に同時指定しない。** 宣言が重複して衝突するため、Worker 用の設定を分ける
+- **`DOM` と `WebWorker` の lib を同じコンパイル単位に同時指定しない。** 同時に指定すると、Worker のコードから `document` を参照しても型エラーにならず、Worker で使えない API の誤用を型で防げないためである。なお `skipLibCheck: false` の場合は、2つの lib の宣言が衝突してエラーになる（2026-09-10 に tsc 5.9.3 で、`skipLibCheck: true` では衝突せず `document` の参照が通ること、`false` では TS6200 などが出ることを確認した）
 - **純粋な領域（sim・core）はどちらの lib も持たない。** `document`・`window`・`self`・`fetch`・`console` のいずれも参照できないことを型レベルで保証する。計測（`performance.now()`）とログ出力は workers 側で行う。§4.2 の dependency-cruiser と合わせて二重に強制する
 - **sim と core は `composite: true` と `emitDeclarationOnly: true` で型宣言を出力し、他のプロジェクトは references 経由でそれを参照する。** 参照せずにソースを直接 import すると、import した側の設定（`noUncheckedIndexedAccess: true` など）で `src/simulation/` まで検査され、§10.2 の設定分けが意味を失うためである。型宣言の出力先はリポジトリ外の一時ディレクトリ（例: `node_modules/.tmp/`）とする
 - 実行時のバンドルは、Vite が TypeScript のソースから直接行う。型宣言の出力は型検査にだけ使う
@@ -969,10 +969,10 @@ minimumReleaseAge: 14400          # 分単位 = 10日
 minimumReleaseAgeStrict: true
 ```
 
-旧来の `~/.config/pnpm/rc`（pnpm 10 が読む）にも同じ値を残してある。
+旧来の `~/.config/pnpm/rc`（pnpm 10 が読む）にも同じ値を残してある。ただし strict の行は pnpm 10 では無視される。
 
 - `minimumReleaseAge` は**分**単位で指定する（pnpm 10.16.0 で追加）。`14400` 分は 10 日である
-- `minimumReleaseAgeStrict` を true にすると、要求されたバージョン範囲の中に期間を満たすバージョンが無い場合、期間未満のバージョンで妥協せず、解決を失敗させる。false の場合は期間未満のバージョンへフォールバックする。pnpm 10.32 系でも有効であることを実機で確認した
+- `minimumReleaseAgeStrict` を true にすると、要求されたバージョン範囲の中に期間を満たすバージョンが無い場合、期間未満のバージョンで妥協せず、解決を失敗させる。false の場合は期間未満のバージョンへフォールバックする。これは pnpm 11 以降の設定であり、pnpm 10 は認識しない（pnpm 10.32.1 の配布物にこの設定名が存在しないことを 2026-09-10 に確認した）
 - pnpm 11 以降、`minimumReleaseAge` の既定値は 1 日である。本プロジェクトは 10 日を明示的に設定する
 - pnpm 12 は、対話的に実行すると期間未満のバージョンの採用を承認できる（拒否時のメッセージがそう案内する）。**この承認は行わない。** 期間内に取り込む必要がある場合は §13.9 の手順による。CI は非対話なので、期間未満のバージョンはそのまま失敗する
 
