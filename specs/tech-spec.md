@@ -1233,6 +1233,9 @@ MapLibre のアトリビューションコントロールに含める形で実�
 | §51 ホスティング候補 | §3 | Cloudflare Workers（Static Assets） |
 | §55 Phase 5 の Worker・TypedArray・Active Cells | §6.7 | Worker・TypedArray は Phase 1、Active Cells は Phase 3 |
 | §60 技術スタック候補 | §1 | React・MUI・Zustand などを追加して確定 |
+| §55 Phase 1 の「3D terrain」 | 実装 spec 02・S・05 | Phase 1 は 2D 表示までとし、3D はスパイク S と実装 spec 05 に移す |
+| §55 Phase 2 の「水の平衡計算」 | 実装 spec 03 | 別のアルゴリズムを持たず、動的モデルを収束まで回して得る |
+| §55 Phase 4 の「降雨時間」 | 実装 spec 04 | PoC では瞬時の投入のみとし、降雨時間は後回しにする |
 
 ---
 
