@@ -205,6 +205,8 @@ bridge ────→ shared（protocol）
 renderer ──→ simulation, dem（型のみ）
 workers ───→ simulation, dem, shared
 shared ────→ simulation, dem（型のみ）
+map, state ─→ shared（型のみ）
+state ─────→ dem（型のみ）
 
 simulation → （何にも依存しない）
 dem ───────→ （何にも依存しない）
@@ -216,6 +218,7 @@ dem ───────→ （何にも依存しない）
 |---|---|
 | `core-is-pure` | `src/simulation/` と `src/dem/` から、自ディレクトリの外（src 内の他ディレクトリ、外部パッケージ）への import を禁止 |
 | `types-only-from-core` | `state`・`renderer`・`shared` から `simulation`・`dem` への import は型のみに限る（dependency-cruiser の type-only 判定を用いる） |
+| `map-types-only` | `src/map/`（テストは除く）から `simulation`・`shared` への import は型のみに限る |
 | `no-react-outside-ui` | `src/renderer/` と `src/bridge/` から `react`, `@mui/*` への import を禁止 |
 | `workers-not-imported` | `src/workers/` を他のディレクトリから静的に import することを禁止。Worker は `new Worker(new URL(...), { type: 'module' })` でのみ起動する |
 | `workers-isolated` | `src/workers/` から `simulation`・`dem`・`shared` 以外の自作モジュールへの import を禁止（Worker にメインスレッド側のコードを持ち込まない） |

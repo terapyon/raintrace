@@ -18,6 +18,13 @@ export default {
       to: { path: '^src/(simulation|dem)/', dependencyTypesNot: ['type-only'] },
     },
     {
+      name: 'map-types-only',
+      comment: 'map から simulation・shared へは型だけを import する（テストは除く）',
+      severity: 'error',
+      from: { path: '^src/map/', pathNot: '\\.test\\.ts$' },
+      to: { path: '^src/(simulation|shared)/', dependencyTypesNot: ['type-only'] },
+    },
+    {
       name: 'no-react-outside-ui',
       comment: 'renderer と bridge は React・MUI・Emotion に依存しない',
       severity: 'error',

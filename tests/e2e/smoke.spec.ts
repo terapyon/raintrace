@@ -1,25 +1,13 @@
-import { readFileSync } from 'node:fs'
 import { test as base, expect } from '@playwright/test'
 import { strings } from '../../src/ui/strings'
+import { type GsiCounts, routeGsi } from './support/gsi'
 
-const tilePng = readFileSync(new URL('./fixtures/tile.png', import.meta.url))
-
-// 地理院への通信を自作の単色 PNG に差し替える。Worker から出るリクエストも捕まえるため、
+// 地理院への通信を差し替える。Worker から出るリクエストも捕まえるため、
 // page ではなく browserContext で差し替える（tech-spec §11.4）
-const test = base.extend<{ gsiTiles: { count: number } }>({
+const test = base.extend<{ gsiTiles: GsiCounts }>({
   gsiTiles: [
     async ({ context }, use) => {
-      const counter = { count: 0 }
-      await context.route('https://cyberjapandata.gsi.go.jp/**', async (route) => {
-        counter.count++
-        await route.fulfill({
-          status: 200,
-          contentType: 'image/png',
-          headers: { 'access-control-allow-origin': '*' },
-          body: tilePng,
-        })
-      })
-      await use(counter)
+      await use(await routeGsi(context))
     },
     { auto: true },
   ],
@@ -38,7 +26,7 @@ test('地図の canvas が表示される', async ({ page }) => {
 
 test('地図タイルのリクエストが、差し替えた画像で応答される', async ({ page, gsiTiles }) => {
   await page.goto('/')
-  await expect.poll(() => gsiTiles.count).toBeGreaterThan(0)
+  await expect.poll(() => gsiTiles.pale).toBeGreaterThan(0)
 })
 
 test('出典が表示される', async ({ page }) => {
@@ -85,7 +73,7 @@ test('応答に CSP が付き、読み込み中に CSP 違反が起きない', a
   const response = await page.goto('/')
   expect(response?.headers()['content-security-policy']).toContain("default-src 'self'")
   await expect(page.locator(mapLoaded)).toBeAttached()
-  await expect.poll(() => gsiTiles.count).toBeGreaterThan(0)
+  await expect.poll(() => gsiTiles.pale).toBeGreaterThan(0)
   const violations = await page.evaluate(
     () => (window as unknown as { __cspViolations: string[] }).__cspViolations,
   )
