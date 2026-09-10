@@ -74,7 +74,7 @@ raintrace/
   scripts/check-licenses.mjs
   .npmrc  pnpm-workspace.yaml  .nvmrc  .dependency-cruiser.mjs  biome.json  lefthook.yml
   tsconfig.json  tsconfig.sim.json  tsconfig.core.json  tsconfig.worker.json
-  tsconfig.app.json  tsconfig.node.json
+  tsconfig.app.json  tsconfig.node.json  tsconfig.test.json
   vite.config.ts  vitest.config.ts  playwright.config.ts  wrangler.jsonc
   index.html  LICENSE  README.md
 ```
@@ -103,8 +103,9 @@ tech-spec §3.1 の `worker/`（Cloudflare Worker のスクリプト置き場）
 
 ### 4.3 アプリの骨格
 
-- `main.tsx`: `canvas.getContext('webgl2')` で WebGL 2 を確かめ、非対応なら `WebGLUnsupported` を表示して終わる
+- `main.tsx`: `canvas.getContext('webgl2')` で WebGL 2 を確かめ、非対応なら `WebGLUnsupported` を表示して終わる。確かめに使ったコンテキストは `WEBGL_lose_context` の `loseContext()` で解放する（ブラウザごとのコンテキスト数の上限を消費しないため）
 - `App`: MUI の `createTheme({ colorSchemes: { light: true, dark: true }, cssVariables: true })`、`CssBaseline`、全画面の `MapView`
+- フォントは外部から読まず、システムフォントを使う（テーマの `typography.fontFamily` にシステムフォントの並びを指定する）。MUI の既定の Roboto を Google Fonts から読むと、CSP に外部のオリジンが増え、利用者のアクセスが外部に伝わる（base-spec §52）
 - `strings.ts`: 画面に出す文字列はすべてここに置く（tech-spec §9.4）
 
 ### 4.4 Worker の骨組み（R01-6）
@@ -117,25 +118,27 @@ tech-spec §3.1 の `worker/`（Cloudflare Worker のスクリプト置き場）
 ### 4.5 型検査と依存規則
 
 - tsconfig は tech-spec §10.3 の表のとおりに分ける。sim と core は `composite: true`・`emitDeclarationOnly: true`・`outDir: node_modules/.tmp/tsc/<名前>`、worker と app は `noEmit` で sim・core を references で参照する。ルートは `files: []` で全プロジェクトを参照する
-- テストファイル（`*.test.ts`）は、そのディレクトリのプロジェクトで型検査する。`vitest` の型が lib `ES2023` だけのプロジェクトで通るかを 01 で確かめ、通らなければテスト用の tsconfig を別に設ける
-- `.dependency-cruiser.mjs` に tech-spec §4.2 の規則をすべて入れる（`core-is-pure`、`types-only-from-core`、`no-react-outside-ui`、`workers-not-imported`、`workers-isolated`、`no-circular`、`no-orphans`）。`options.tsPreCompilationDeps: "specify"` を指定する
+- テストファイル（`*.test.ts`）は sim・core・worker・app の各プロジェクトの対象から外し、`tsconfig.test.json`（lib は `ES2023` と `DOM`、types に `node` と `vitest`、sim と core を references で参照）でまとめて型検査する。composite プロジェクトの型宣言にテストが混ざらず、vitest の型が lib `ES2023` だけの環境で通らない問題も避けられる（T10）
+- `src/simulation/`・`src/dem/`・`src/shared/` の相対 import には `.ts` の拡張子を付ける。Node で直接実行できるようにするためである（03 §5）。これらのプロジェクトに `allowImportingTsExtensions: true` を置き、Biome の `useImportExtensions` をこの3ディレクトリで有効にする（T11）
+- `.dependency-cruiser.mjs` に tech-spec §4.2 の規則をすべて入れる（`core-is-pure`、`types-only-from-core`、`no-react-outside-ui`、`workers-not-imported`、`workers-isolated`、`no-circular`、`no-orphans`）。`options.tsPreCompilationDeps: "specify"` を指定する。`no-orphans` の除外には `*.test.ts` と `*.spec.ts` を入れる
 - **一度だけ行う検証**（結果を PR に記録する。恒久的なテストにはしない）
   1. `src/simulation/` に `arr[0] + 1` を書いても `tsc -b` が通り、同じ式を `src/ui/` に書くと失敗する
   2. `src/simulation/` から `react` を import すると、dependency-cruiser と `tsc -b` が失敗する
   3. `src/dem/` で `document` を参照すると、`tsc -b` が失敗する
+  4. `.ts` の拡張子を付けた相対 import が、sim・core の型宣言の出力と、それを参照する側の解決の両方で通る
 
 ### 4.6 テスト
 
 - Vitest は `node` 環境のみ。カバレッジは `@vitest/coverage-v8` で、閾値は tech-spec §11.5 のとおり（01 で対象になるのは `src/dem/` の 85%）
 - `tileMath` のテスト: 緯度経度とグローバルピクセル座標の往復、北緯 35° の z17 での地上解像度が約 0.978m（誤差 0.001m 以内）、範囲にかかるタイルの列挙
-- Playwright は Chromium のみ（R01-4）。`vite preview` で本番ビルドを配信してテストする。地理院への通信は `browserContext.route()` で自作の単色 PNG に差し替える
+- Playwright は Chromium で全件を回し、`@webkit` タグを付けたテスト（02 の DEM 復号の確認）だけを WebKit でも回す（R01-4）。`vite preview` で本番ビルドを配信してテストする。地理院への通信は `browserContext.route()` で自作の単色 PNG に差し替える
 - E2E:
   1. 地図の canvas が表示される
   2. 地図タイルのリクエストが 1 件以上、差し替えた画像で応答される
   3. 出典の文字列が表示される
   4. ルート要素に `data-worker-ready="true"` が付く
   5. 初期化スクリプトで `getContext('webgl2')` が `null` を返すようにすると、非対応の画面が出る
-  6. ページの読み込み中に CSP 違反（`securitypolicyviolation` イベント）が 1 件も起きない
+  6. 応答ヘッダに CSP が含まれ、ページの読み込み中に CSP 違反（`securitypolicyviolation` イベント）が 1 件も起きない（§4.8）
 
 ### 4.7 CI/CD
 
@@ -146,8 +149,8 @@ tech-spec §3.1 の `worker/`（Cloudflare Worker のスクリプト置き場）
 | `quality` | `biome ci`、`tsc -b`、`depcruise src` | ○ |
 | `test` | `vitest run --coverage` | ○ |
 | `build` | `vite build`、バンドル予算の検査、ライセンス検査 | ○ |
-| `e2e` | `playwright install --with-deps chromium`、`playwright test` | ○ |
-| `audit` | `pnpm audit --audit-level=high`。PR では警告のみ。`schedule` で検出したら Issue を起票 | × |
+| `e2e` | `playwright install --with-deps chromium webkit`、`playwright test`（WebKit は `@webkit` タグのテストのみ） | ○ |
+| `audit` | `pnpm audit --audit-level=high`。PR では警告のみ。`schedule` で検出したら Issue を起票（このジョブだけ `issues: write` に昇格する） | × |
 | `deploy-preview` | PR のとき。`wrangler versions upload` でプレビュー URL を発行し、ジョブのサマリに出す | × |
 | `deploy-production` | `main` への push のとき。上の必須ジョブの成功が前提。`wrangler deploy` | — |
 
@@ -167,6 +170,8 @@ Content-Security-Policy:
   img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp;
   connect-src 'self' https://cyberjapandata.gsi.go.jp;
   worker-src 'self' blob:;
+  object-src 'none';
+  form-action 'self';
   frame-ancestors 'none';
   base-uri 'self'
 X-Content-Type-Options: nosniff
@@ -176,12 +181,15 @@ Referrer-Policy: strict-origin-when-cross-origin
 - `style-src 'unsafe-inline'` は、Emotion が実行時にスタイルを挿入するために必要である
 - `worker-src blob:` は、MapLibre が内部の Worker を blob URL で起動するために必要である
 - MapLibre などが上記以外を必要とした場合は、E2E の 6（CSP 違反の検出）で気づける。追加する場合は理由を PR に書く
+- 将来 Rust WASM を入れる場合（tech-spec §6.4）は、`script-src` に `'wasm-unsafe-eval'` が必要になる
+- **`_headers` は Cloudflare 側の仕組みなので、E2E の配信元である `vite preview` で適用されるとは限らない。** 01 で、preview の応答に CSP が付くかを確かめる（E2E の 6）。付かない場合は、CSP の定義を1か所（例: `csp.config.ts`）に置き、そこから `_headers` と `vite.config.ts` の `preview.headers` の両方を生成して、二重管理を避ける。結果は R01-8 の判断に使う
 
 ### 4.9 バンドル予算
 
 - `vite build` の `build.manifest: true` で生成されるマニフェストから、初期ロードのチャンク（エントリとその静的 import）と、遅延ロードのチャンクを分ける
 - `scripts/check-bundle-size.mjs`（依存なし。`node:fs` と `node:zlib` のみ）が gzip 後のサイズを集計し、初期ロード 400KB・総量 1.2MB（tech-spec §14.2）を超えたら失敗させる。チャンクごとの表も出力する
 - `manualChunks` で「地図系（maplibre-gl）」「UI 系（react、react-dom、@mui、@emotion）」「アプリ本体」に分ける
+- チャンクの間で同じモジュールが重複して含まれていないかも報告する（05 で加わる Three.js などの遅延チャンクとの重複に気づくため）
 - 01 の実測値をもとに、チャンク別の予算を tech-spec §14.2 に書き込む（T6）
 
 ### 4.10 ライセンス検査
@@ -191,7 +199,8 @@ Referrer-Policy: strict-origin-when-cross-origin
 ### 4.11 Cloudflare
 
 - `wrangler.jsonc`: `name: "raintrace"`、`compatibility_date`（実装した日）、`assets: { directory: "./dist", not_found_handling: "single-page-application" }`
-- Worker のスクリプトは持たない（静的配信のみ）。`@cloudflare/vite-plugin` は tech-spec §3.1 のとおり使う
+- Worker のスクリプトは持たない（静的配信のみ）
+- `@cloudflare/vite-plugin` の扱いは R01-8 による。Worker のスクリプトを持たない間、このプラグインの役割は dev と preview を workerd で動かすことだけである。§4.8 の確認で preview に `_headers` が効くなら、その価値があるので入れる。効かなければ、Worker のスクリプトができるまで入れず（tech-spec §2 原則3）、`wrangler deploy` で `dist/` を配信する。結果を tech-spec §3.1 に反映する（T12）
 
 ### 4.12 Renovate（R01-2）
 
@@ -224,6 +233,8 @@ Referrer-Policy: strict-origin-when-cross-origin
 5. `allowBuilds` に加えたパッケージとその理由を、PR に記録している
 6. バンドルの実測値とチャンク別の予算を、tech-spec §14.2 に反映している
 7. Firefox と Safari で、プレビュー URL の地図が表示されることを手動で確認している（R01-4）
+8. プレビューと本番の両方で、応答ヘッダに CSP が付いている
+9. R01-8 の結果を tech-spec §3.1 に反映している（T12）
 
 ## 8. 裁定が必要な論点
 
@@ -232,10 +243,11 @@ Referrer-Policy: strict-origin-when-cross-origin
 | R01-1 | ライセンスとリポジトリの公開・非公開 | 公開、MIT | tech-spec §17 で「実装開始前に決める」とした事項。公開すれば GitHub Actions と Renovate を無料で使え、Secrets は Actions の仕組みで守られる。依存ライブラリの多くと相性がよい。tech-spec §16.3・§17 に反映する（T7） |
 | R01-2 | Renovate を 01 で導入するか | 導入する | 最初から lockfile の保守とクールダウンつきの更新を回せる。GitHub App に書き込み権限を渡すため、R01-1 と併せて判断する |
 | R01-3 | デプロイ先と方式 | `raintrace.<アカウント>.workers.dev`。`main` への push で本番、PR ごとにプレビュー | 独自ドメインは PoC には不要。後から追加できる |
-| R01-4 | CI の E2E のブラウザ | Chromium のみ | base-spec §58 は4ブラウザを対象とするが、3 ブラウザの E2E を毎回回すと CI が遅く不安定になる。WebKit と Firefox は各 spec の完了時に手動で確認する |
+| R01-4 | CI の E2E のブラウザ | Chromium で全件。WebKit では 02 の DEM 復号の確認（`@webkit` タグ）だけを回す | base-spec §58 は4ブラウザを対象とするが、全ブラウザで毎回回すと CI が遅く不安定になる。一方、R02-5 で OffscreenCanvas を必須にするので、最大のリスクは WebKit にある。その部分だけを CI で押さえ、全体は各 spec の完了時に Firefox と Safari で手動確認する |
 | R01-5 | 地図の初期表示 | 日本全体（北緯 36.0°・東経 138.0°、ズーム 5） | URL に位置が無いときの既定。国内のどこでも使うアプリなので、特定の地域に寄せない |
 | R01-6 | 最小の Worker（ping）を含めるか | 含める | Worker のバンドル、tsconfig の分割、依存規則を、中身の薄いうちに通しておける。02 で本物に置き換える |
-| R01-7 | CSP を 01 で入れるか | 入れる | 外部タイルを読むだけの静的サイトなので、許可するオリジンが少なく書きやすい。後から入れると、何が壊れるかの切り分けが難しくなる。tech-spec に方針の節を新設する（T8） |
+| R01-7 | CSP を 01 で入れるか | 入れる。フォントは外部から読まず、システムフォントにする | 外部タイルを読むだけの静的サイトなので、許可するオリジンが少なく書きやすい。後から入れると、何が壊れるかの切り分けが難しくなる。tech-spec に方針の節を新設する（T8） |
+| R01-8 | `@cloudflare/vite-plugin` を入れるか | 01 で、`vite preview` に `_headers` の CSP が効くかを確かめて決める。効くなら入れ、効かなければ Worker のスクリプトができるまで入れない | レビュー役の提案。Worker のスクリプトを持たない間、プラグインの役割は dev と preview を workerd で動かすことだけで、その価値は CSP を preview で確かめられるかにかかる。tech-spec §3.1 はプラグインの使用を決めていたので、入れない場合は改訂になる（T12） |
 
 ## 9. 後続への引き継ぎ
 
