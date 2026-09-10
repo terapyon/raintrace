@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "src",
+    "outDir": "node_modules/.tmp/tsc/sim",
+    "tsBuildInfoFile": "node_modules/.tmp/tsc/sim.tsbuildinfo",
+    "lib": ["ES2023"],
+    "noUncheckedIndexedAccess": false,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/simulation"],
+  "exclude": ["src/**/*.test.ts"]
+}
