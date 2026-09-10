@@ -49,6 +49,8 @@ export function createGsiTileFetcher(
       const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE)
       const created = canvas.getContext('2d', { willReadFrequently: true })
       if (created === null) throw new Error('OffscreenCanvas の 2D コンテキストを得られません')
+      // 前のタイルの画素が残る経路を消す（GSI の DEM PNG は RGB なので今は実害はない）
+      created.globalCompositeOperation = 'copy'
       context = created
     }
     return context

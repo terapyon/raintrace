@@ -84,11 +84,11 @@ export class SimulationClient {
         }
         break
       case 'terrainLoaded': {
-        const pending = this.takeTerrain(message.requestId)
-        if (pending !== null) {
-          this.terrain = message.terrain
-          pending.resolve(message.terrain)
-        }
+        // Worker は要求を順に処理するので terrainLoaded は単調に届き、this.terrain は Worker が保持する
+        // 地形（M1）と同じ「最後に成功した地形」になる。画面の読み込みの状態とは別
+        // （カーソル位置の標高は load が ready のときだけ読む）
+        this.terrain = message.terrain
+        this.takeTerrain(message.requestId)?.resolve(message.terrain)
         break
       }
       case 'terrainFailed':

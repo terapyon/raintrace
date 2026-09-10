@@ -160,6 +160,29 @@ describe('selectDem', () => {
     expect(result.tier.level).toBe(1)
     expect(result.seaTileCount).toBeGreaterThan(0)
   })
+
+  it('参照タイル（z14）の一方が取得できなくても失敗にせず、海とみなさず段を落とす（推奨 1）', async () => {
+    // z14 タイルの境目にちょうどかかる地点（レビュー L4 のテストの組み立てを使う）
+    const BOUNDARY_LON = 139.7021484375
+    const outcomeOf = new Map<string, 'land' | 'fail'>()
+    const fetchTile: FetchDemTile = async (dem, tile) => {
+      if (dem === 'dem1a') return { status: 'missing' }
+      if (dem === 'dem5a') return { status: 'ok', data: tileOf(true) }
+      // dem10b（z14 の参照）: 出会った順に一方は陸、もう一方は取得できないとする
+      const key = tileKey(tile.x, tile.y)
+      let outcome = outcomeOf.get(key)
+      if (outcome === undefined) {
+        outcome = outcomeOf.size === 0 ? 'land' : 'fail'
+        outcomeOf.set(key, outcome)
+      }
+      if (outcome === 'fail') throw new Error('ネットワークエラー')
+      return { status: 'ok', data: tileOf(true) }
+    }
+
+    const result = await selectDem(BOUNDARY_LON, LAT, 500, fetchTile)
+    expect(result.tier.level).toBe(2)
+    expect(outcomeOf.size).toBeGreaterThanOrEqual(2)
+  })
 })
 
 describe('isSeaTile', () => {

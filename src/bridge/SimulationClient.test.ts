@@ -157,9 +157,26 @@ describe('SimulationClient の地形の読み込み', () => {
     const second = client.loadTerrain(1, 1, 500)
     await expect(first).rejects.toMatchObject({ reason: 'superseded' })
     worker.reply({ type: 'terrainLoaded', requestId: firstId, terrain: fakeTerrain })
-    expect(client.terrain).toBeNull()
+    // 推奨 2: superseded で失敗した要求の terrainLoaded でも、terrain は最後に成功した地形になる
+    expect(client.terrain).toBe(fakeTerrain)
     worker.reply({ type: 'terrainLoaded', requestId: worker.lastRequestId(), terrain: fakeTerrain })
     await expect(second).resolves.toBe(fakeTerrain)
+  })
+
+  it('推奨 2: 古い要求の terrainLoaded で terrain が更新された後、後続の要求が失敗しても戻らない', async () => {
+    const { worker, client } = setup()
+    const first = client.loadTerrain(0, 0, 500)
+    const firstId = worker.lastRequestId()
+    const second = client.loadTerrain(1, 1, 500)
+    const secondId = worker.lastRequestId()
+    await expect(first).rejects.toMatchObject({ reason: 'superseded' })
+
+    worker.reply({ type: 'terrainLoaded', requestId: firstId, terrain: fakeTerrain })
+    expect(client.terrain).toBe(fakeTerrain)
+
+    worker.reply({ type: 'terrainFailed', requestId: secondId, reason: 'no-data', message: '' })
+    await expect(second).rejects.toMatchObject({ reason: 'no-data' })
+    expect(client.terrain).toBe(fakeTerrain)
   })
 })
 

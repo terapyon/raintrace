@@ -205,7 +205,7 @@ bridge ────→ shared（protocol）
 renderer ──→ simulation, dem（型のみ）
 workers ───→ simulation, dem, shared
 shared ────→ simulation, dem（型のみ）
-map, state ─→ shared（型のみ）
+map, state → shared（型のみ）
 state ─────→ dem（型のみ）
 
 simulation → （何にも依存しない）

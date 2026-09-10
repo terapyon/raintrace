@@ -86,6 +86,8 @@ describe('analyzeDepressions', () => {
     const first = analyzeDepressions(grid)
     expect(first.depressions).toHaveLength(1)
     expect(first.depressions[0]).toMatchObject({ spillIndex: indexOf(grid, 2, 0), cellCount: 9 })
+    // colormap の depressions[label - 1] が頼る不変条件: id は併合後も 1 から順の連番
+    expect(first.depressions.map((d) => d.id)).toEqual([1])
     const second = analyzeDepressions(grid)
     expect(second).toEqual(first) // 決定的
   })
