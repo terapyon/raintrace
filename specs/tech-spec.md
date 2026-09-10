@@ -1271,7 +1271,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 9. **質量保存を property-based テストで検証**し、CI の必須ゲートとする（§11.3）
 10. **pnpm 12 系を必須**とし、リリースクールダウン 10 日を `pnpm-workspace.yaml` でリポジトリにコミットする。GitHub Actions は SHA でピン留めする（§13）
 11. **内部の水深は Float64 の連続値で計算する**。水面標高の数値誤差は 1cm 以内を目標とする。水深の色分けは 5cm 刻み、数値は 0.01m で表示する（§6.6）
-12. **Worker と TypedArray は Phase 1 から採用し、Active Cells は Phase 3 で入れる**（§6.7）
+12. **Worker と TypedArray は Phase 1 から採用し、濡れたセルに絞った走査（base-spec の Active Cells）は Phase 3 で入れる**（§6.7）
 13. **地形の描画方式は Phase 1 の最初にスパイクで確定する**（§5.5）
 
 ---
