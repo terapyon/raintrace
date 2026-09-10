@@ -113,8 +113,8 @@ URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）
 
 | 環境 | トリガ | 手段 |
 |---|---|---|
-| プレビュー | Pull Request（ブランチごと） | `wrangler versions upload` によるプレビュー URL |
-| ステージング | `main` への push | ステージング用の Worker（`raintrace-staging`）へ `wrangler deploy --env staging` |
+| プレビュー | Pull Request（ブランチごと） | ステージング用の Worker に `wrangler versions upload --preview-alias` でバージョンを上げ、プレビュー URL を発行する（本番の Worker には触れない） |
+| ステージング | `main` への push | `CLOUDFLARE_ENV=staging` でビルドし、ステージング用の Worker（`raintrace-staging`）へ `wrangler deploy`。`@cloudflare/vite-plugin` は環境をビルド時に決めるため、デプロイ時の `--env` は使わない |
 | 本番 | `v*` のタグの push（タグ付きリリース） | 本番の Worker（`raintrace`）へ `wrangler deploy` |
 
 Cloudflare API トークンは GitHub Actions Secrets に保持する。トークンは Workers のデプロイ権限のみを持つ最小権限とする。
@@ -224,6 +224,8 @@ dem ───────→ （何にも依存しない）
 `types-only-from-core` は、dependency-cruiser の `options.tsPreCompilationDeps: "specify"` で型のみの import を区別し、`dependencyTypesNot: ["type-only"]` を持つルールで違反を検出する。§10.1 の `verbatimModuleSyntax` により型のみの import には必ず `import type` が付くため、判定は確実である。
 
 `src/simulation/` と `src/dem/` は、DOM や WebWorker の API そのものも使えない。これは §10.3 の tsconfig 分割によって型レベルでも担保する。
+
+二重の強制は役割を分けて担う。外部パッケージの import を止めるのは dependency-cruiser、DOM・WebWorker の API の使用を止めるのは tsconfig である。`@types/react` などは DOM の lib が無くても読めるため、tsconfig だけでは外部パッケージを止められない（実装 spec 01 §4.5 の検証 2 で確認）。
 
 ## 4.3 workspace 分割を採らない理由
 
@@ -645,7 +647,8 @@ cellSizeM = 2π × 6378137 × cos(φ0) / (256 × 2^z)
 Cloudflare の Static Assets の `_headers` で、CSP などのレスポンスヘッダを付ける（2026-09-10 裁定）。
 
 - 読み込みを許すのは、自サイトと地理院タイル（`https://cyberjapandata.gsi.go.jp`）のみとする。`img-src` と `connect-src` に地理院を加える
-- `style-src 'unsafe-inline'` は Emotion のため、`worker-src blob:` は MapLibre の内部の Worker のために必要である
+- `style-src 'unsafe-inline'` は Emotion のために必要である
+- MapLibre の内部の Worker は `setWorkerUrl()` で同一オリジンのファイルから起動するので、`worker-src` に `blob:` は要らない（実装 spec 01 の E2E で、`worker-src 'self'` のまま CSP 違反が 0 件であることを確認した）
 - フォントは外部から読まず、システムフォントを使う。外部のフォントを読むと許可するオリジンが増え、利用者のアクセスが外部に伝わる（base-spec §52）
 - Rust WASM を導入する場合（§6.4）は、`script-src` に `'wasm-unsafe-eval'` を加える
 - 具体的なポリシーと、`vite preview` での扱いは実装 spec 01 §4.8 で定める
@@ -839,6 +842,8 @@ TypeScript の project references で領域を分割し、`tsc -b` で一括し�
 - 純粋な層（`src/simulation/`・`src/dem/`・`src/shared/`）の相対 import には `.ts` の拡張子を付け、これらのプロジェクトに `allowImportingTsExtensions: true` を置く。エンジンを Node で直接実行できるようにするため（base-spec §61、実装 spec 03 §5）
 
 2026-09-10 に tsc 5.9.3 で、この構成なら隔離が成り立つことを確認した。Vite のテンプレートと同じ構成（各プロジェクトが `noEmit` で composite なし）では、`tsc -b` は通るものの、`src/simulation/` が import 側の設定で検査されてしまい、隔離されないことも確認した。
+
+TypeScript は 6 系を使う（2026-09-10 時点で 6.0.3。実装 spec 01 で、6.0.3 でもこの構成で隔離が成り立つことを確認した）。7 系（Go 実装）は npm パッケージが従来の JS API を公開しておらず、dependency-cruiser（§4.2）が対応していない（18.2.0 は `typescript >=2.0.0 <7.0.0` のみ）。dependency-cruiser が対応した時点で 7 系への移行を検討する。
 
 ---
 
@@ -1035,7 +1040,7 @@ pnpm 11 以降は、グローバル設定を `~/.config/pnpm/config.yaml` から
 
 ビルドスクリプトの実行が必要な依存パッケージは、`pnpm-workspace.yaml` の `allowBuilds` に明示的に列挙する。これはインストール時の任意コード実行という最大の攻撃経路を既定で塞ぐものであり、本プロジェクトはこの既定を維持する。`allowBuilds` への追加は、ビルドが必要な理由を Pull Request の説明に書いたうえで行う。
 
-pre-commit フックの lefthook（§12.2）は postinstall でフックを導入するパッケージだが、`allowBuilds` には入れない。代わりに本プロジェクト自身の `package.json` に `"prepare": "lefthook install"` を置く。ルートプロジェクト自身のライフサイクルスクリプトは実行されるためである。Biome はビルドスクリプトを持たない。
+pre-commit フックの lefthook（§12.2）は postinstall でフックを導入するパッケージだが、スクリプトの実行は許可しない（pnpm 12 は許可するかどうかが未決のパッケージがあると install を失敗させるので、`allowBuilds` に `false` で明記する）。代わりに本プロジェクト自身の `package.json` に `"prepare": "lefthook install"` を置く。ルートプロジェクト自身のライフサイクルスクリプトは実行されるためである。Biome はビルドスクリプトを持たない。wrangler と vite の依存の esbuild と workerd も `false` で明記している（スクリプトを実行しなくても build と preview が動くことを、実装 spec 01 で確認した）。
 
 ## 13.4 GitHub Actions のピン留め
 
@@ -1135,7 +1140,23 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 
 上限超過を CI の `build` ジョブで失敗として扱う。
 
-2026-09-10 時点の各パッケージの gzip サイズから試算すると（MapLibre 約 154KB、React 約 47KB、MUI 60〜100KB、Emotion 約 20KB）、初期ロードは 280〜330KB になる。400KB の上限は成立するが、余裕は大きくない。チャンクごとの予算（目安: 地図系 170KB 以下、UI 系 150KB 以下、アプリ本体 60KB 以下）は、Phase 1 の実測で確定する。
+2026-09-10 時点の各パッケージの gzip サイズから試算すると（MapLibre 約 154KB、React 約 47KB、MUI 60〜100KB、Emotion 約 20KB）、初期ロードは 280〜330KB になる。400KB の上限は成立するが、余裕は大きくない。チャンクごとの予算は、実装 spec 01 の完了時の実測で次のとおり確定した（T6）。
+
+2026-09-10 の実測（gzip level 9、1KB = 1000 バイト）とチャンク別の予算:
+
+| チャンク | 内容 | 実測 | 予算 |
+|---|---|---:|---:|
+| `map` | maplibre-gl | 242.8 KB | 260 KB |
+| `ui` | react、react-dom、scheduler、@mui/*、@emotion/* とその依存 | 101.4 KB | 120 KB |
+| `index` | アプリ本体（rolldown のランタイム 0.4 KB を含む） | 2.9 KB | 20 KB |
+| 初期ロードの合計 | | 347.0 KB | 400 KB |
+| `maplibre-gl-worker` | MapLibre の内部 Worker（地図の起動時に読まれるが、初期ロードの定義の外） | 131.8 KB | — |
+| 総量 | | 478.9 KB | 1.2 MB |
+
+- 予算は「実測を 10KB 単位で切り上げ、10KB を足す」で決めた。3 つの合計が初期ロードの上限の 400KB にちょうど一致する
+- 地図系は、上の試算（MapLibre 約 154KB）を大きく超えた。MapLibre 6 の本体の実測である。このため、02〜04 でアプリ本体と UI 系が使える余裕は、合わせて約 53KB しかない。超える見込みになったら、初期ロードの上限を見直すか、パネルなどの UI を遅延ロードにする
+- チャンク別の予算は目安であり、CI が検査するのは初期ロードと総量の上限である
+- `ui` のチャンクは、node_modules 全体ではなく、パッケージの一覧で捕まえる。05 で動的 import する Three.js などを初期ロードに吸い込まないためである。依存を足したら一覧を見直す
 
 ## 14.3 メモリ
 
