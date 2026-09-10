@@ -52,6 +52,11 @@
 | P8 tech-spec §4.2 の図に無い依存 | 図に足す。map から simulation・shared へは型のみ、の規則を足す（テストは除く） | 7 |
 | L7 E2E の地理院の差し替えが二重 | smoke.spec も `routeGsi` を使う | 7 |
 | P5 colormap のセルごとの確保、L14 読み込みのタイムアウト、窪地の閾値の案 (a)〜(c) | 04 への申し送り（`.handoff/02-dem-grid-2d.md`。実装役が書く） | — |
+| 再レビュー 推奨 1 世界のコピーの上のクリックで経度が ±180 を超える（M2 で「範囲外」になる回帰） | 純粋な関数 `wrapLongitude()` を `src/dem/tileMath.ts` に置き、`TerrainSession.select()` と `updateCursor()` の入口で正規化する（クリック・URL・再試行・カーソルが同じ扱い） | 6 |
+| 再レビュー 軽微 8 Panel の info・再試行の判定の重複 | `Record<LoadFailureReason, { severity; retryable }>` を 1 つ置く | 6 |
+| 再レビュー 推奨 2 spec 02 §7 の Worker の異常終了の行が新しい挙動と違う | spec 02 §7 の行を改め、「対応範囲の外」の行を足す | 7 |
+| 再レビュー 軽微 4・5・6・7・9、Task 2・3 のレビューで先送りにした軽微 | Task 8 | 8 |
+| 再レビュー 推奨 3、軽微 10 | 04 への申し送り（実装役が書いた） | — |
 
 ---
 
@@ -243,6 +248,7 @@
 - Modify: `src/map/TerrainOverlay.ts`、`src/map/terrainFeatures.test.ts`
 - Modify: `src/ui/terrainSession.ts`、`src/ui/components/Panel.tsx`、`src/ui/format.ts`
 - Modify: `src/dem/demSources.ts`
+- Modify: `src/dem/tileMath.ts`、`src/dem/tileMath.test.ts`
 
 **要件:**
 - P3: `setCursor` は、今の値と kind が同じで（value なら meters も同じ）なら何もしない（`set((state) => (sameCursor(state.cursor, cursor) ? state : { cursor }))`。zustand は同じ state を返すと購読者に知らせない）。null どうしも同じとみなす
@@ -252,10 +258,13 @@
 - L6: `demSources.ts` に `export const DEM_IDS = ['dem1a', 'dem5a', 'dem5b', 'dem5c', 'dem10b'] as const` を置き、`export type DemId = (typeof DEM_IDS)[number]` にする。`format.ts` の `DEM_ORDER` を消して `DEM_IDS` を使う（ui → dem の実行時の import は tech-spec §4.2 で許されている）
 - L10: `TerrainSession.attach` で、URL に地点と z の両方があるときは、`map.jumpTo({ center: [lon, lat], zoom })` をしてから `select` する。コメント: 「読み込みの間も地点の周りを見せる。範囲が出たら fitBounds で合わせ直す」。地点だけ・z だけのときは今のまま
 - P4: `terrainFeatures.test.ts` に、`src/simulation/terrain/neighbors.ts` の `NEIGHBOR_DX`・`NEIGHBOR_DY`（y は南が正）から求めた方位 `(atan2(dx, −dy) を度にしたもの + 360) % 360` が、方向の番号 k + 1 の矢印の bearing と一致することを、8 方向すべてについて確かめるテストを足す（`flowFeatures` を 1 セルずつ呼ぶ。テストからの import は依存規則の対象外）
+- 再レビュー 推奨 1: `src/dem/tileMath.ts` に `export function wrapLongitude(lon: number): number`（`((lon + 180) % 360 + 360) % 360 - 180`。値は [−180, 180)）。コメント: 「MapLibre は世界のコピーを描く（renderWorldCopies）ので、地図のクリックの経度は ±180 を超えうる」。`TerrainSession.select(lon, lat)` と `updateCursor(lon, lat)` の入口で経度をこれで正規化する（ストア・URL・Worker・マーカーには正規化した経度が渡る）
+- 再レビュー 軽微 8: Panel に `const FAILURE_DISPLAY: Record<LoadFailureReason, { severity: 'info' | 'error'; retryable: boolean }>`（no-data と out-of-range は info・再試行なし、network・internal・worker は error・再試行あり）を置き、Alert の severity と action はこれを引く（`load.reason === 'no-data' || …` の重複を消す）。理由が増えたら型が網羅を守る
 
 **テスト（先に書く）:**
 - `appStore.test.ts`: `subscribe` で知らせの回数を数える。同じ `{ kind: 'value', meters: 1 }` を 2 回 set すると 1 回、meters が違えば 2 回、`{ kind: 'outside' }` を 2 回で 1 回、null を 2 回で 0 回
 - `terrainFeatures.test.ts`: 上の P4 のテスト
+- `tileMath.test.ts`: `wrapLongitude` は −180 → −180、180 → −180、540 → −180、−540 → −180、499.7 → 139.7（toBeCloseTo）、139.7 → 139.7、NaN → NaN（NaN は伝わり、Worker の `inServiceArea` が false にする）
 - TerrainOverlay・TerrainSession・Panel はユニットテストが無い（MapLibre と DOM）。E2E の「表示のスイッチと矢印の間隔を切り替えてもエラーが出ない」「URL」などが通ることで確かめる
 
 - [ ] テストを書き、失敗を確かめる（P4 のテストは今の実装でも通る。念のため neighbors の順序を一時的に入れ替えて落ちることを確かめ、元に戻す）
@@ -271,12 +280,14 @@
 - Modify: `specs/tech-spec.md`（§4.2）
 - Modify: `.dependency-cruiser.mjs`
 - Modify: `tests/e2e/smoke.spec.ts`
+- Modify: `docs/superpowers/specs/2026-09-10-02-dem-grid-2d-design.md`（§7）
 
 **要件:**
 - P8: tech-spec §4.2 の「許可される依存方向」の図に、`map, state ─→ shared（型のみ）` と `state ─────→ dem（型のみ）` を足す（今のコードにある依存: `TerrainOverlay.ts`・`terrainFeatures.ts`・`colormap.ts` → `shared/protocol`、`appStore.ts` → `shared/protocol`・`dem/demSources`。いずれも型のみ）
 - 規則 `map-types-only` を足す: `from: { path: '^src/map/', pathNot: '\\.test\\.ts$' }`、`to: { path: '^src/(simulation|shared)/', dependencyTypesNot: ['type-only'] }`。comment は「map から simulation・shared へは型だけを import する（テストは除く）」。tech-spec §4.2 の禁止ルールの表にも同じ行を足す
 - 規則が働くことを確かめる: `src/map/terrainFeatures.ts` に一時的に `import { NEIGHBOR_DX } from '../simulation/terrain/neighbors'` と、それを使う行を足して `pnpm depcheck` が `map-types-only` で失敗することを確かめ、元に戻す（結果を報告に書く）
 - L7: `smoke.spec.ts` の独自の `gsiTiles` の fixture をやめ、`tests/e2e/support/gsi.ts` の `routeGsi(context)` を auto の fixture から呼ぶ。地図タイルの件数は `counts.pale` を使う
+- 再レビュー 推奨 2（spec 02 §7 のエラーの表）: 「Worker の異常終了」の行の対応を「読み込み中なら失敗（'worker'）として表示し、次の要求で起動し直す。待機中・表示中に落ちた場合は、メインの複製で表示を続け、次のクリックで起動し直す」に改める。「対応範囲の外」の行を足す: 「取得せずに『この地点は対応範囲（日本国内）の外です』を出す（info、再試行なし）。対応範囲は緯度 20〜46°・経度 122〜154°（`src/dem/serviceArea.ts`）」
 
 **テスト:** 規則の確かめ（上）と、E2E の全件の成功
 
@@ -284,3 +295,33 @@
 - [ ] smoke.spec を直す
 - [ ] ゲート、E2E
 - [ ] コミット: `tech-spec §4.2 に map・state → shared と state → dem（型のみ）を足し、map-types-only の規則を置く（レビュー P8）。smoke の E2E も routeGsi を使う（L7）`
+
+---
+
+### Task 8: 再レビューの軽微と、先送りにした軽微（SimulationClient・Worker・テスト）
+
+**Files:**
+- Modify: `src/bridge/SimulationClient.ts`、`src/bridge/SimulationClient.test.ts`
+- Modify: `src/workers/simulation.worker.ts`、`src/workers/terrainResult.ts`、`src/workers/terrainResult.test.ts`
+- Modify: `src/dem/gridRange.ts`、`src/dem/gridRange.test.ts`
+- Modify: `tests/e2e/dem.spec.ts`
+
+**要件:**
+- 再レビュー 軽微 4（dispose の後）: `private disposed = false`。`dispose()` で true にする。`port()` は disposed なら `new TerrainLoadError('worker', 'SimulationClient は破棄されました')` を投げる（異常終了の後の dispose でも Worker を作り直さない）
+- 再レビュー 軽微 5: `port()` の `start()` を try で囲み、同期的な例外は `TerrainLoadError('worker', \`Worker を起動できませんでした: ${String(error)}\`)` で投げ直す（crashed は true のまま）。`loadTerrain` は、前の要求を superseded で reject した直後に `this.pendingTerrain = null` にする
+- 再レビュー 軽微 6: Worker の `loadTerrain` の対応範囲の判定を try の中に移す（「失敗はすべて terrainFailed になる」を位置に依存させない）
+- 再レビュー 軽微 7: Worker は `analyzeTerrain(grid)` を直接呼ぶ（5 項目の写しをやめる）。`packTerrain` は `retained.grid = grid`（`AssembledGrid` は `TerrainGrid` に代入できる）。`post` の `as Transferable[]` を消す。`RetainedTerrain.requestId` を消す（04 で使う予定が決まっていない。テストの期待も直す）
+- 再レビュー 軽微 9: `SimulationClient.test.ts` の 20ms の実時間の待ちを、microtask を流す形（`await Promise.resolve()` など）に置き換える。`gridRange.test.ts` の自明な `expect(1206).toBeLessThan(MAX_GRID_SIZE)` を消す
+- Task 3 のレビューの軽微: `onError` のコメントに、'error' と同じく 'messageerror' も作り直しの契機にしていることを書く。`dem.spec.ts` の Worker を読めない場合の E2E で、2 回目の操作を地図のクリックではなく「再試行」のボタン（`strings.panel.retry`）にする（spec 02 §7 の再試行の経路を E2E で通す。Worker のスクリプトの要求はやはり 1 回だけ増える）
+- Task 2 のレビューの軽微: `gridRange.ts` のコメントと `gridRange.test.ts` のテスト名の「lat=90 は有限でない」を直す（実際は約 6.8e18 の有限の値で、上限の判定で止まる。`!(size <= MAX_GRID_SIZE)` の形は NaN も止める）。境界のテストを足す: `cell = groundResolutionM(35, 17)` として、`sizeM = (4096 − 0.5) × cell` は N = 4096 で投げず、`(4097 − 0.5) × cell` は投げる
+
+**テスト（先に書く）:**
+1. dispose の後の ping と loadTerrain は 'worker' で失敗し、Worker の factory は呼ばれない（異常終了の後に dispose しても同じ）
+2. 起動し直すときに factory が同期的に投げると、loadTerrain は 'worker' で失敗する。次の要求で factory が成功すれば解決する
+3. 上の gridRange の境界のテスト
+4. terrainResult.test の requestId の期待を消し、retained.grid が grid そのもの（同じ配列）であることを確かめる
+
+- [ ] テストを書き、失敗を確かめる
+- [ ] 実装し、成功を確かめる
+- [ ] ゲート、E2E、バンドル
+- [ ] コミット: `再レビューの軽微: dispose の後と Worker の起動の失敗を 'worker' に、判定を try の中へ、地形の受け渡しの写しを減らす、テストの待ちと境界（軽微 4〜7・9 ほか）`
