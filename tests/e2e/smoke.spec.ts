@@ -48,6 +48,11 @@ test('出典が表示される', async ({ page }) => {
   await expect(link).toHaveAttribute('href', strings.attribution.url)
 })
 
+test('Worker が起動し、ルート要素に data-worker-ready="true" が付く', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('html')).toHaveAttribute('data-worker-ready', 'true')
+})
+
 test('WebGL 2 が使えないと、非対応の画面が出る', async ({ page }) => {
   await page.addInitScript(() => {
     const original = HTMLCanvasElement.prototype.getContext
