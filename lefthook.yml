@@ -1,0 +1,13 @@
+# ローカルの品質ゲート（tech-spec §12.2）。重い検査は pre-push に置く
+pre-commit:
+  commands:
+    biome:
+      glob: "*.{js,mjs,ts,tsx,json,jsonc}"
+      run: pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+pre-push:
+  commands:
+    typecheck:
+      run: pnpm exec tsc -b
+    unit:
+      run: pnpm exec vitest run

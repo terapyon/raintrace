@@ -8,4 +8,7 @@ allowBuilds:
   # 動くことを実測で確認した（2026-09-10）。どちらも実行ファイルをプラットフォーム別の
   # optionalDependencies で受け取り、postinstall は主に検証を行う
   esbuild: false
+  # postinstall で git フックを入れるパッケージ。許可せず、package.json の prepare（lefthook install）で
+  # フックを入れる。ルートのプロジェクト自身のライフサイクルスクリプトは実行されるため（tech-spec §13.3）
+  lefthook: false
   workerd: false

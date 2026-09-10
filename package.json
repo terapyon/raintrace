@@ -17,7 +17,9 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "pnpm build && playwright test"
+    "test:e2e": "pnpm build && playwright test",
+    "depcheck": "depcruise src --config .dependency-cruiser.mjs",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
@@ -28,6 +30,8 @@
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.1",
     "@vitest/coverage-v8": "4.1.11",
+    "dependency-cruiser": "18.2.0",
+    "lefthook": "2.1.12",
     "typescript": "6.0.3",
     "vite": "8.2.2",
     "vitest": "4.1.11",
