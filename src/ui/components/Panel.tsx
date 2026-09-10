@@ -100,11 +100,13 @@ export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void
         )}
         {load.status === 'failed' && load.reason !== 'superseded' && (
           <Alert
-            severity={load.reason === 'no-data' ? 'info' : 'error'}
+            severity={
+              load.reason === 'no-data' || load.reason === 'out-of-range' ? 'info' : 'error'
+            }
             data-testid="load-error"
             sx={{ my: 1 }}
             action={
-              load.reason === 'no-data' ? undefined : (
+              load.reason === 'no-data' || load.reason === 'out-of-range' ? undefined : (
                 <Button color="inherit" size="small" onClick={onRetry}>
                   {strings.panel.retry}
                 </Button>

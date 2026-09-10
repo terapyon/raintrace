@@ -19,9 +19,17 @@ export interface GridRange {
   center: PixelPoint // クリックした地点のグローバルピクセル pc
 }
 
+// グリッドの大きさの上限（最後の砦。緯度は serviceArea・urlState で絞っているが、念のため）。
+// 1000m・DEM1A（z17）・北緯 46° でも N = 1206
+export const MAX_GRID_SIZE = 4096
+
 export function computeGridRange(lon: number, lat: number, sizeM: number, z: number): GridRange {
   const cellSizeM = groundResolutionM(lat, z)
   const size = Math.ceil(sizeM / cellSizeM)
+  // !(size <= MAX_GRID_SIZE) の形にして、size が NaN や Infinity（緯度 90° など）でも止める
+  if (!(size <= MAX_GRID_SIZE)) {
+    throw new RangeError(`グリッドの一辺が大きすぎます（N=${size}、緯度 ${lat}°）`)
+  }
   const center = lonLatToPixel(lon, lat, z)
   return {
     z,

@@ -61,5 +61,6 @@ export const strings = {
     network: '標高データを取得できませんでした',
     internal: '標高データの処理中にエラーが起きました',
     worker: '計算用の Worker が停止しました。再試行すると起動し直します',
+    'out-of-range': 'この地点は対応範囲（日本国内）の外です',
   },
 } as const

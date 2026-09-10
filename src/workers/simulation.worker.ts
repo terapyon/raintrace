@@ -1,6 +1,7 @@
 import { assembleGrid } from '../dem/DemGrid'
 import { selectDem, tileKey } from '../dem/demSelection'
 import { rangeCorners } from '../dem/gridRange'
+import { inServiceArea } from '../dem/serviceArea'
 import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../shared/protocol'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
@@ -45,6 +46,16 @@ async function loadTerrain(
   let started = 0
   let done = 0
   const report = (): void => post({ type: 'terrainProgress', requestId, done, started })
+  // 対応範囲（日本）の外なら、タイルを取得せずに知らせる（クリック・URL 経由のどちらも通る）
+  if (!inServiceArea(message.lon, message.lat)) {
+    post({
+      type: 'terrainFailed',
+      requestId,
+      reason: 'out-of-range',
+      message: '対応範囲（日本）の外の地点',
+    })
+    return
+  }
   try {
     const fetchTile = createGsiTileFetcher(signal, {
       onStart: () => {

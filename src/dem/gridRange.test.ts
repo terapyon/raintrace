@@ -3,6 +3,7 @@ import {
   cellAt,
   computeGridRange,
   gridPositionM,
+  MAX_GRID_SIZE,
   rangeCorners,
   rangePixelRect,
 } from './gridRange.ts'
@@ -83,5 +84,17 @@ describe('範囲の四隅・外側・タイル', () => {
       x: Math.floor((range.originX + range.size - 1) / 256),
       y: Math.floor((range.originY + range.size - 1) / 256),
     })
+  })
+})
+
+describe('グリッドの大きさの上限（最後の砦）', () => {
+  it('北緯 85°・90° は N が MAX_GRID_SIZE を超える（90° は有限でない）ので RangeError', () => {
+    expect(() => computeGridRange(139, 85, 500, 17)).toThrow(RangeError)
+    expect(() => computeGridRange(139, 90, 500, 17)).toThrow(RangeError)
+  })
+
+  it('北緯 46°・1000m・DEM1A（z17）は N = 1206 で上限内', () => {
+    expect(computeGridRange(139, 46, 1000, 17).size).toBe(1206)
+    expect(1206).toBeLessThan(MAX_GRID_SIZE)
   })
 })

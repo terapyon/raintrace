@@ -72,6 +72,16 @@ test('すべて 404 なら「この地域には標高データがありません
   await expect(page.locator('[data-range-shown="true"]')).toHaveCount(0)
 })
 
+test('対応範囲（日本）の外の地点は、取得せずに知らせる', async ({ page, context }) => {
+  const counts = await routeGsi(context)
+  await page.goto('/?lat=60.000000&lon=139.000000')
+  await expect(page.getByTestId('load-error')).toHaveText(strings.errors['out-of-range'], {
+    timeout: 20_000,
+  })
+  await expect(page.locator('[data-range-shown="true"]')).toHaveCount(0)
+  expect(counts.dem).toBe(0)
+})
+
 test('表示のスイッチと矢印の間隔を切り替えてもエラーが出ない', async ({ page, context }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))

@@ -15,6 +15,16 @@ describe('parseUrlView', () => {
     expect(parseUrlView('?lat=&lon=139')).toEqual({ point: null, zoom: null })
     expect(parseUrlView('')).toEqual({ point: null, zoom: null })
   })
+
+  it('緯度は Web Mercator の範囲（±85.051129）に絞る。範囲外は地点を読まない', () => {
+    expect(parseUrlView('?lat=90&lon=139')).toEqual({ point: null, zoom: null })
+    expect(parseUrlView('?lat=-86&lon=139')).toEqual({ point: null, zoom: null })
+  })
+
+  it('日本の対応範囲の外でも、Web Mercator の範囲内の緯度なら地点として読む（Worker が out-of-range を返す）', () => {
+    expect(parseUrlView('?lat=60&lon=139')).toEqual({ point: { lat: 60, lon: 139 }, zoom: null })
+    expect(parseUrlView('?lat=85&lon=139')).toEqual({ point: { lat: 85, lon: 139 }, zoom: null })
+  })
 })
 
 describe('formatUrlView', () => {

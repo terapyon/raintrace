@@ -7,6 +7,9 @@ export interface UrlView {
 
 const MANAGED_KEYS = ['lat', 'lon', 'z', 'size'] as const
 
+// Web Mercator（MapLibre）が扱える緯度の範囲。これを超えると地図の座標に変換できない
+const MERCATOR_LAT_LIMIT = 85.051129
+
 function readNumber(params: URLSearchParams, key: string, min: number, max: number): number | null {
   const raw = params.get(key)
   if (raw === null || raw.trim() === '') return null
@@ -16,7 +19,8 @@ function readNumber(params: URLSearchParams, key: string, min: number, max: numb
 
 export function parseUrlView(search: string): UrlView {
   const params = new URLSearchParams(search)
-  const lat = readNumber(params, 'lat', -90, 90)
+  // 日本の対応範囲の外でも、地図が扱える緯度なら地点として読む（Worker が out-of-range を返す。クリックと同じ扱い）
+  const lat = readNumber(params, 'lat', -MERCATOR_LAT_LIMIT, MERCATOR_LAT_LIMIT)
   const lon = readNumber(params, 'lon', -180, 180)
   return {
     point: lat !== null && lon !== null ? { lat, lon } : null,
