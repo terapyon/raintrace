@@ -69,7 +69,7 @@ export default defineConfig({
             { name: 'map', test: /node_modules[\\/]maplibre-gl[\\/]/, priority: 20 },
             {
               name: 'ui',
-              test: /node_modules[\\/](react|react-dom|scheduler|@mui[\\/][^\\/]+|@emotion[\\/][^\\/]+|@babel[\\/]runtime|stylis|clsx|prop-types|react-is|react-transition-group|@popperjs[\\/]core|hoist-non-react-statics|dom-helpers)[\\/]/,
+              test: /node_modules[\\/](react|react-dom|scheduler|@mui[\\/][^\\/]+|@emotion[\\/][^\\/]+|@babel[\\/]runtime|stylis|clsx|prop-types|react-is|react-transition-group|@popperjs[\\/]core|hoist-non-react-statics|dom-helpers|zustand)[\\/]/,
               priority: 10,
             },
           ],

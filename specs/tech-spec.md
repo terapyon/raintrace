@@ -199,6 +199,7 @@ base-spec §61 の「Simulation Engine を MapLibre や Three.js に依存させ
 ui ────────→ state ─────→ simulation（型のみ）
 ui ────────→ bridge
 ui ────────→ map ───────→ renderer
+ui, map ───→ dem（座標の計算などの純粋な関数。実装 spec 02 で追加）
 bridge ────→ state, renderer
 bridge ────→ shared（protocol）
 renderer ──→ simulation, dem（型のみ）
