@@ -113,8 +113,9 @@ URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）
 
 | 環境 | トリガ | 手段 |
 |---|---|---|
-| 本番 | `main` への push | GitHub Actions から `wrangler deploy` |
-| プレビュー | Pull Request | `wrangler versions upload` によるプレビュー URL |
+| プレビュー | Pull Request（ブランチごと） | `wrangler versions upload` によるプレビュー URL |
+| ステージング | `main` への push | ステージング用の Worker（`raintrace-staging`）へ `wrangler deploy --env staging` |
+| 本番 | `v*` のタグの push（タグ付きリリース） | 本番の Worker（`raintrace`）へ `wrangler deploy` |
 
 Cloudflare API トークンは GitHub Actions Secrets に保持する。トークンは Workers のデプロイ権限のみを持つ最小権限とする。
 
@@ -139,7 +140,7 @@ raintrace/
       WaterGrid.ts
       Rainfall.ts
       Boundary.ts
-      DepressionAnalysis.ts
+      terrain/            地形解析（D8 流向・窪地・spill point。実装 spec 02 §5）
       constants.ts        許容誤差などの定数（§6.6）
     dem/                  純粋 TypeScript。RGBA → 標高の変換とグリッド組み立て（I/O なし）
       GsiDemDecoder.ts    RGBA バイト列 → 標高 Float32Array + 有効セルマスク
@@ -399,6 +400,16 @@ export interface StepStats {
   outflowWater: number // 累積の領域外流出量（m³）
   maxDepth: number     // 最大水深（m）
   floodedArea: number  // 水深が描画閾値（1cm）以上のセルの面積（m²）
+  settled: boolean     // この step で、θ を超える水面差による流れが無かった（§6.6）
+  massError: number    // totalWater − storedWater − outflowWater（m³）
+  events: SimulationEvent[]  // この step で起きた越流イベント
+}
+
+export interface SimulationEvent {
+  type: 'spill'        // 窪地の最低点の水位が spill 標高 − 1cm に達した（base-spec §21）
+  step: number
+  depressionId: number
+  spillElevation: number
 }
 
 export interface SimulationEngine {
@@ -408,6 +419,10 @@ export interface SimulationEngine {
   reset(): void
   /** 内部の水深配列。呼び出し側は読み取り専用として扱い、転送バッファへのコピー元にのみ使う */
   waterDepth(): Float64Array
+  /** 越流イベントの判定に使う窪地（実装 spec 02 の地形解析の結果） */
+  setDepressions(list: { id: number; pitIndex: number; spillElevation: number }[]): void
+  /** 現在の状態から計算した、各セルの流出のベクトル（水の流れの矢印用） */
+  flowVectors(): { x: Float32Array; y: Float32Array }
 }
 ```
 
@@ -492,7 +507,8 @@ GSI の標高 PNG は 0.01m 単位で標高を記録している（地理院の�
 |---|---|---|
 | 質量保存の許容誤差 | (初期水量 + 投入水量の累計) × 1e-9 | 各 step での質量保存の検査（§11.3） |
 | 水面標高の数値誤差 | 1cm | 平衡状態の水面標高と、体積から求めた理論値との差（§11.2）。目標の 10cm に対し十分な余裕を取る |
-| 水深の比較許容値（epsilon） | 1e-5 m | 平面テストでの水面の一致判定など |
+| 水深の比較許容値（epsilon） | 1e-5 m | 水深・水面の比較の許容値。流れの閾値 θ と同じ値 |
+| 流れの閾値 θ | 1e-5 m | 水面差がこれ以下の近傍には流さない。池の水面は 1 セルあたり最大 θ まで傾いたまま止まりうるので、512 セル幅でも 5mm に収まる値とした（実装 spec 03 §3.4） |
 
 ### 表示
 
@@ -591,7 +607,7 @@ base-spec §41 のとおり自動選択する。
 
 DEM10B の PNG タイルのパスは `dem_png` である。`dem10b_png` というパスは存在しない（2026-09-10 に実測。存在しないキーとして 404 が返る）。上表のパスは地理院タイル一覧のページで確認した。
 
-上位から順に取得を試み、404 が返った場合に次へフォールバックする。全て失敗した場合は「この地域には標高データがありません」と表示し、シミュレーションを開始しない。
+DEM1A → DEM5 → DEM10B の 3 段で選ぶ。DEM5 は、タイルごとに 5A → 5B → 5C の順に 200 が返るまで試して合成する（同じズームなので解像度は混在しない）。範囲内のタイルが 404 の場合は、`dem_png` でそのタイルが海域かを判定し、海域なら無効値として扱い、未整備の陸域なら範囲全体を次の段に落とす。範囲の全画素が無効値なら「この地域には標高データがありません」と表示し、シミュレーションを開始しない。詳細は実装 spec 02 §4。
 
 ## 7.5 エラー処理方針
 
@@ -600,7 +616,7 @@ DEM10B の PNG タイルのパスは `dem_png` である。`dem10b_png` とい�
 | DEM タイルが 404（国外・海域等） | 次の DEM へフォールバック。全滅時はユーザーに明示 |
 | ネットワークエラー | 指数バックオフで最大3回リトライ。以後ユーザーに通知 |
 | WebGL 2 非対応 | 起動時に検出し、非対応である旨を表示して 3D 表示を行わない |
-| `OffscreenCanvas` 非対応 | メインスレッドの canvas でデコードするフォールバック経路を用意する |
+| `OffscreenCanvas` 非対応 | WebGL 2 と同じく起動時に検出し、非対応である旨を表示する。フォールバック経路は作らない（対象ブラウザの最新版はすべて対応している） |
 | Worker の異常終了 | エラーを UI に表示し、Reset で復帰可能にする |
 
 ## 7.6 シミュレーショングリッドの定義（決定）
@@ -623,6 +639,16 @@ cellSizeM = 2π × 6378137 × cos(φ0) / (256 × 2^z)
 - セル数は `ceil(sizeM / cellSizeM)` とし、要求された範囲を必ず覆う。DEM1A・500m・φ0 = 35° では 512 × 512 になる。base-spec §9 の「500 × 500」はこの近似である
 - 範囲は複数のタイルにまたがるため、`DemGrid` がタイルを結合して切り出す。DEM1A・500m では 1 辺あたり最大 3 タイル（計 9 タイル）になる
 - セル面積は `cellSizeM²` とする。水量（m³）は 水深（m）× セル面積 で求める
+
+## 7.7 レスポンスヘッダと CSP（決定）
+
+Cloudflare の Static Assets の `_headers` で、CSP などのレスポンスヘッダを付ける（2026-09-10 裁定）。
+
+- 読み込みを許すのは、自サイトと地理院タイル（`https://cyberjapandata.gsi.go.jp`）のみとする。`img-src` と `connect-src` に地理院を加える
+- `style-src 'unsafe-inline'` は Emotion のため、`worker-src blob:` は MapLibre の内部の Worker のために必要である
+- フォントは外部から読まず、システムフォントを使う。外部のフォントを読むと許可するオリジンが増え、利用者のアクセスが外部に伝わる（base-spec §52）
+- Rust WASM を導入する場合（§6.4）は、`script-src` に `'wasm-unsafe-eval'` を加える
+- 具体的なポリシーと、`vite preview` での扱いは実装 spec 01 §4.8 で定める
 
 ---
 
@@ -799,6 +825,7 @@ TypeScript の project references で領域を分割し、`tsc -b` で一括し�
 | `tsconfig.worker.json` | `src/workers/` | `ES2023`, `WebWorker` | 有効 |
 | `tsconfig.app.json` | 上記以外の `src/` | `ES2023`, `DOM`, `DOM.Iterable` | 有効 |
 | `tsconfig.node.json` | `vite.config.ts` など | Node 用 | 有効 |
+| `tsconfig.test.json` | `*.test.ts`（全ディレクトリ） | `ES2023`, `DOM`（types に `node`・`vitest`） | 有効 |
 
 構成上の要点:
 
@@ -808,6 +835,8 @@ TypeScript の project references で領域を分割し、`tsc -b` で一括し�
 - 実行時のバンドルは、Vite が TypeScript のソースから直接行う。型宣言の出力は型検査にだけ使う
 - 参照する側（worker・app）は `noEmit` のままでよい。参照される側は `noEmit` にできない（TS6310 になる）
 - **型検査は必ず `tsc -b` で行う。** `tsc -p` を単独で実行すると、参照先の型宣言がまだ出力されていない場合に TS6305 で失敗する。CI と pre-push（§12.2、§12.3）はどちらも `tsc -b` を使う
+- テストファイル（`*.test.ts`）は各プロジェクトの対象から外し、`tsconfig.test.json` でまとめて検査する。composite プロジェクトの型宣言にテストが混ざらないようにするため（実装 spec 01 §4.5）
+- 純粋な層（`src/simulation/`・`src/dem/`・`src/shared/`）の相対 import には `.ts` の拡張子を付け、これらのプロジェクトに `allowImportingTsExtensions: true` を置く。エンジンを Node で直接実行できるようにするため（base-spec §61、実装 spec 03 §5）
 
 2026-09-10 に tsc 5.9.3 で、この構成なら隔離が成り立つことを確認した。Vite のテンプレートと同じ構成（各プロジェクトが `noEmit` で composite なし）では、`tsc -b` は通るものの、`src/simulation/` が import 側の設定で検査されてしまい、隔離されないことも確認した。
 
@@ -928,7 +957,7 @@ pre-commit で重い検査を行わない。型検査とテストは pre-push �
 | `build` | `vite build` + バンドルサイズ検査（§14.2） |
 | `e2e` | `playwright test` |
 | `audit` | `pnpm audit --audit-level=high`。PR では警告のみで、マージはブロックしない。週次のスケジュール実行でも走らせ、検出したものは Issue として起票する（§12.4、§13.9） |
-| `deploy` | `main` への push 時のみ。上記すべての成功が前提 |
+| `deploy` | PR でプレビュー、`main` への push でステージング、`v*` のタグの push で本番（§3.4）。ステージングと本番は必須ジョブの成功が前提 |
 
 ### 共通設定
 
@@ -1022,6 +1051,8 @@ pre-commit フックの lefthook（§12.2）は postinstall でフックを導�
 バージョンの可読性のため、SHA の後にコメントでタグを併記する。
 
 ## 13.5 依存更新: Renovate
+
+**導入は後回しとする**（2026-09-10 裁定。§17）。導入するまでは、依存と GitHub Actions の SHA の更新を手で行い、どちらも公開から 10 日を過ぎた版を選ぶ。以下は導入するときの方針である。
 
 依存の更新には **Renovate** を使う。選ぶ理由は以下である。
 
@@ -1138,7 +1169,7 @@ base-spec §58 に従い、以下の最新版を対象とする。
 |---|---|
 | Chrome / Edge | 主要開発対象 |
 | Firefox | |
-| Safari | `OffscreenCanvas` の挙動差に注意（§7.5 のフォールバック経路） |
+| Safari | `OffscreenCanvas` の挙動差に注意。DEM の復号の E2E を WebKit でも回す（実装 spec 01 R01-4） |
 
 ## 15.2 必須要件と任意要件
 
@@ -1146,7 +1177,7 @@ base-spec §58 に従い、以下の最新版を対象とする。
 |---|---|---|
 | WebGL 2 | **必須** | 起動時に検出し、非対応である旨を表示 |
 | Web Worker | **必須** | 同上 |
-| `OffscreenCanvas` | 任意 | メインスレッドでデコードするフォールバック |
+| `OffscreenCanvas`（Worker 内の 2D コンテキスト） | **必須** | 起動時に検出し、非対応である旨を表示 |
 | WebGPU | 任意 | 使用しない（将来の拡張余地としてのみ確保） |
 
 WebGPU を必須要件としない方針は base-spec §58 と一致する。
@@ -1175,7 +1206,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 
 ## 16.3 本プロジェクトのライセンス
 
-**未決**。§17 参照。
+**MIT ライセンス**とし、リポジトリは公開する（2026-09-10 裁定。実装 spec 01 R01-1）。
 
 ---
 
@@ -1185,8 +1216,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 
 | 項目 | 決定時期 | 備考 |
 |---|---|---|
-| 本プロジェクトのライセンス | 実装開始前 | リポジトリを公開するか否かと併せて決定する |
-| リポジトリの公開 / 非公開 | 実装開始前 | 公開する場合、GitHub Actions の Secrets 取り扱いを再確認する。Renovate（GitHub App）に書き込み権限を渡すことも併せて判断する（§13.5） |
+| Renovate の導入時期 | 未定 | 実装 spec 01 では導入しない（R01-2）。導入までは、依存と GitHub Actions の SHA の更新を手で行う |
 | アクセス解析の導入可否 | Phase 1 完了後 | 導入する場合は Cloudflare Web Analytics を候補とする。base-spec §52 のプライバシー方針（位置情報をサーバへ保存しない）と両立することが条件 |
 | エラー監視の導入可否 | Phase 3 以降 | 導入する場合、位置情報を送信しない設定を必須とする |
 | 許容誤差の具体値 | Phase 2〜3 | §6.6 の初期値を実測で調整する（base-spec §49） |
@@ -1236,6 +1266,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 | §55 Phase 1 の「3D terrain」 | 実装 spec 02・S・05 | Phase 1 は 2D 表示までとし、3D はスパイク S と実装 spec 05 に移す |
 | §55 Phase 2 の「水の平衡計算」 | 実装 spec 03 | 別のアルゴリズムを持たず、動的モデルを収束まで回して得る |
 | §55 Phase 4 の「降雨時間」 | 実装 spec 04 | PoC では瞬時の投入のみとし、降雨時間は後回しにする |
+| §16 の threshold | 実装 spec 03 | 流れの閾値を 1e-5 m と定める（§6.6） |
 
 ---
 
