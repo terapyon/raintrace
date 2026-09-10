@@ -57,6 +57,7 @@
 | 再レビュー 推奨 2 spec 02 §7 の Worker の異常終了の行が新しい挙動と違う | spec 02 §7 の行を改め、「対応範囲の外」の行を足す | 7 |
 | 再レビュー 軽微 4・5・6・7・9、Task 2・3 のレビューで先送りにした軽微 | Task 8 | 8 |
 | 再レビュー 推奨 3、軽微 10 | 04 への申し送り（実装役が書いた） | — |
+| 最終レビュー 推奨 1・2、軽微 3・4・9（2026-09-11、3861c00 で承認済み。push の前に足す） | Task 9。軽微 5〜8 は任意のため採らない | 9 |
 
 ---
 
@@ -329,3 +330,33 @@
 - [ ] 実装し、成功を確かめる
 - [ ] ゲート、E2E、バンドル
 - [ ] コミット: `再レビューの軽微: dispose の後と Worker の起動の失敗を 'worker' に、判定を try の中へ、地形の受け渡しの写しを減らす、テストの待ちと境界（軽微 4〜7・9 ほか）`
+
+---
+
+### Task 9: 最終レビューの推奨（push の前）
+
+02 は 3861c00 で最終承認済み。承認の条件ではないが、push の前に同じブランチへ足す。
+
+**Files:**
+- Modify: `src/dem/demSelection.ts`、`src/dem/demSelection.test.ts`
+- Modify: `src/bridge/SimulationClient.ts`、`src/bridge/SimulationClient.test.ts`
+- Modify: `src/workers/demLoader.ts`
+- Modify: `src/simulation/terrain/analyzeDepressions.test.ts`
+- Modify: `docs/superpowers/specs/2026-09-10-02-dem-grid-2d-design.md`（§7）、`specs/tech-spec.md`（§4.2）
+
+**要件:**
+- 推奨 1（Task 4 の L4 の副作用）: `allSea` は `Promise.all` にしたため、参照タイル（z14 の dem_png）の 1 枚が再試行の後も失敗すると、読み込み全体が 'network' になり段 2・3 へ落ちない（逐次の実装なら、陸のタイルで false になり、その参照は取得しなかった）。海域判定は `isSeaTile(tile, fetchReference).catch(() => false)` にする。コメント: 「参照が取れないタイルは海とみなさない（段を下げる）。段 3 で本当に要るなら、fetchFor が同じ失敗を返して 'network' になる」
+- 推奨 2: `SimulationClient` の 'terrainLoaded' で、`this.terrain = message.terrain` を pending の一致の外へ出し、resolve だけを一致に縛る。コメント: 「Worker は要求を順に処理するので terrainLoaded は単調に届き、this.terrain は Worker が保持する地形（M1）と同じ『最後に成功した地形』になる。画面の読み込みの状態とは別（カーソル位置の標高は load が ready のときだけ読む）」
+- 軽微 3: `demLoader.ts` の使い回す 2D コンテキストを作るときに、一度だけ `context.globalCompositeOperation = 'copy'` を設定する（前のタイルの画素が残る経路を消す。GSI の DEM PNG は RGB なので今は実害なし）
+- 軽微 4: `analyzeDepressions.test.ts` の併合のケースに、`depressions.map((d) => d.id)` が 1 から順の連番であることの検査を 1 行足す（colormap の `depressions[label - 1]` が頼る不変条件）
+- 軽微 9: spec 02 §7 の「対応範囲の外」の行の『』を、隣の行と同じ「」にする。tech-spec §4.2 の図の `map, state ─→ shared（型のみ）` の矢印の位置を、ほかの行と同じ桁に揃える
+
+**テスト（先に書く）:**
+1. `demSelection.test.ts`: 段 1 の欠けが z14 の親 2 枚にまたがり、一方の参照は陸（有効な画素あり）、もう一方の参照の取得は reject する取得関数で、`selectDem` は失敗せず段 2 を採用する（Task 4 の z14 の境目の地点のテストの組み立てを使う）
+2. `SimulationClient.test.ts`: A の `loadTerrain` の後に B を送り、A の requestId の `terrainLoaded` が届くと `client.terrain` は A になる（A の promise は superseded で失敗済み、B は待ったまま）。その後 B の `terrainFailed` が届いても `client.terrain` は A のまま。既存のテスト「新しい読み込みは古いものを superseded で失敗させ、古い結果は無視する」の `client.terrain` が null の期待は、この仕様に合わせて直す（superseded で失敗させることと、B の結果で解決することはそのまま確かめる）
+3. `analyzeDepressions.test.ts`: 上の軽微 4 の 1 行
+
+- [ ] テストを書き、失敗を確かめる（3 は今の実装でも通る）
+- [ ] 実装し、成功を確かめる
+- [ ] ゲート、E2E、バンドル
+- [ ] コミット: `最終レビューの推奨: 参照タイルが取れなくても段を下げる、terrain は最後に成功した地形（推奨 1・2）、canvas の copy・窪地の id の順の検査・表記（軽微 3・4・9）`
