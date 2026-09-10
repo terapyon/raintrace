@@ -19,11 +19,12 @@ describe('wrapLongitude', () => {
   })
 
   // ±180 の足し引きで下の桁が丸まる（139.7 は 139.70000000000005 になる）ので、近さで比べる
-  it.each([
-    [499.7, 139.7],
-    [139.7, 139.7],
-  ])('経度 %f は %f（世界のコピーの上の経度も、範囲の中の経度も）', (lon, expected) => {
-    expect(wrapLongitude(lon)).toBeCloseTo(expected, 9)
+  it('経度 499.7 は 139.7（世界のコピーの上の経度）', () => {
+    expect(wrapLongitude(499.7)).toBeCloseTo(139.7, 9)
+  })
+
+  it('経度 139.7 は 139.7 のまま（範囲の中は早期に返すので、式の丸めが乗らない）', () => {
+    expect(wrapLongitude(139.7)).toBe(139.7)
   })
 
   it('NaN はそのまま伝わる（Worker の inServiceArea が false にする）', () => {

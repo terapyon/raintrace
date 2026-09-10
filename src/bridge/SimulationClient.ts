@@ -63,6 +63,7 @@ export class SimulationClient {
   private readonly pendingPings = new Map<number, PendingPing>()
   private pendingTerrain: PendingTerrain | null = null
   private crashed = false
+  private disposed = false
   private nextId = 1
 
   private readonly onMessage = (event: MessageEvent<WorkerToMainMessage>): void => {
@@ -100,6 +101,7 @@ export class SimulationClient {
 
   private readonly onError = (): void => {
     // 'error' は Worker の未捕捉の例外でも発火し、Worker が止まったとは限らない。
+    // 'messageerror'（返ってきたメッセージを構造化複製できなかった場合）も同じ扱いにする。
     // どちらも作り直しの契機にして扱いを決定的にする
     this.stop(new TerrainLoadError('worker', 'Worker が異常終了しました'))
     this.crashed = true
@@ -135,6 +137,8 @@ export class SimulationClient {
     this.pendingTerrain?.reject(
       new TerrainLoadError('superseded', '新しい地点の読み込みに置き換わりました'),
     )
+    // port() が投げた場合に、reject 済みの古い entry を pendingTerrain に残さない
+    this.pendingTerrain = null
     const requestId = this.nextId++
     return new Promise((resolve, reject) => {
       const worker = this.port()
@@ -143,19 +147,30 @@ export class SimulationClient {
     })
   }
 
-  /** Worker を終了する。待っている要求は失敗させ、タイマーを残さない */
+  /** Worker を終了する。待っている要求は失敗させ、タイマーを残さない。破棄した後は Worker を作り直さない */
   dispose(): void {
+    this.disposed = true
     this.stop(new TerrainLoadError('worker', 'SimulationClient は破棄されました'))
   }
 
   /**
    * 要求を送る Worker。異常終了の後は、次の要求のときに起動し直す（spec 02 §7）。
-   * すぐに起動し直すと、スクリプトを読めない Worker（CSP で塞がれた場合など）で作り直しが止まらない
+   * すぐに起動し直すと、スクリプトを読めない Worker（CSP で塞がれた場合など）で作り直しが止まらない。
+   * 破棄した後は、異常終了の後の dispose でも Worker を作り直さない
    */
   private port(): WorkerPort {
+    if (this.disposed) {
+      throw new TerrainLoadError('worker', 'SimulationClient は破棄されました')
+    }
     if (this.crashed) {
-      this.worker = this.start()
-      this.crashed = false
+      try {
+        this.worker = this.start()
+        this.crashed = false
+      } catch (error) {
+        // 起動を同期的に投げる factory（CSP で塞がれた場合など）でも、crashed は true のままにし、
+        // 次の要求でまた起動を試みる
+        throw new TerrainLoadError('worker', `Worker を起動できませんでした: ${String(error)}`)
+      }
     }
     return this.worker
   }

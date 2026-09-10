@@ -48,7 +48,7 @@ function makeAnalysis(): TerrainAnalysis {
 describe('packTerrain', () => {
   it('payload の elevation・validMask は retained.grid と中身が同じで、buffer は別', () => {
     const grid = makeGrid()
-    const { retained, payload } = packTerrain(7, grid, makeAnalysis(), geo)
+    const { retained, payload } = packTerrain(grid, makeAnalysis(), geo)
     expect(payload.elevation).toEqual(retained.grid.elevation)
     expect(payload.elevation.buffer).not.toBe(retained.grid.elevation.buffer)
     expect(payload.validMask).toEqual(retained.grid.validMask)
@@ -58,7 +58,7 @@ describe('packTerrain', () => {
   it('transfer は payload の elevation・validMask と analysis の flowDirection・fill・labels の buffer を含み、retained.grid の buffer を含まない', () => {
     const grid = makeGrid()
     const analysis = makeAnalysis()
-    const { retained, payload, transfer } = packTerrain(7, grid, analysis, geo)
+    const { retained, payload, transfer } = packTerrain(grid, analysis, geo)
     expect(transfer).toEqual([
       payload.elevation.buffer,
       payload.validMask.buffer,
@@ -70,11 +70,11 @@ describe('packTerrain', () => {
     expect(transfer).not.toContain(retained.grid.validMask.buffer)
   })
 
-  it('retained は requestId・width・height・cellSizeM・depressions を持つ', () => {
+  it('retained.grid は渡した grid そのもの（複製しない）で、depressions を持つ', () => {
     const grid = makeGrid()
     const analysis = makeAnalysis()
-    const { retained } = packTerrain(7, grid, analysis, geo)
-    expect(retained.requestId).toBe(7)
+    const { retained } = packTerrain(grid, analysis, geo)
+    expect(retained.grid).toBe(grid)
     expect(retained.grid.width).toBe(2)
     expect(retained.grid.height).toBe(2)
     expect(retained.grid.cellSizeM).toBe(1)
@@ -83,7 +83,7 @@ describe('packTerrain', () => {
 
   it('payload は geo をそのまま持ち、meta を持たない', () => {
     const grid = makeGrid()
-    const { payload } = packTerrain(7, grid, makeAnalysis(), geo)
+    const { payload } = packTerrain(grid, makeAnalysis(), geo)
     expect(payload.geo).toBe(geo)
     expect(payload).not.toHaveProperty('meta')
   })

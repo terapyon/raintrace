@@ -54,9 +54,12 @@ export function pixelToLonLat(x: number, y: number, z: number): LonLat {
 
 /**
  * 経度を [−180, 180) に収める。MapLibre は世界のコピーを描く（renderWorldCopies）ので、
- * 地図のクリックの経度は ±180 を超えうる。NaN は NaN のまま
+ * 地図のクリックの経度は ±180 を超えうる。範囲の中はそのまま返す（式の ±180 の足し引きで
+ * 下の桁が丸まるのを避ける）。範囲の外はいまの式のまま。NaN は比較がすべて false になるので
+ * 式を通り、NaN のまま
  */
 export function wrapLongitude(lon: number): number {
+  if (lon >= -180 && lon < 180) return lon
   return ((((lon + 180) % 360) + 360) % 360) - 180
 }
 

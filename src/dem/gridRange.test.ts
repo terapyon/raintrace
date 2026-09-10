@@ -7,7 +7,7 @@ import {
   rangeCorners,
   rangePixelRect,
 } from './gridRange.ts'
-import { lonLatToPixel, pixelToLonLat, tilesInPixelRect } from './tileMath.ts'
+import { groundResolutionM, lonLatToPixel, pixelToLonLat, tilesInPixelRect } from './tileMath.ts'
 
 const points: [number, number][] = [
   [139.7016, 35.658],
@@ -88,13 +88,20 @@ describe('範囲の四隅・外側・タイル', () => {
 })
 
 describe('グリッドの大きさの上限（最後の砦）', () => {
-  it('北緯 85°・90° は N が MAX_GRID_SIZE を超える（90° は有限でない）ので RangeError', () => {
+  it('北緯 85°・90° は N が MAX_GRID_SIZE を超える（90° は cos が 0 に近づいて N が約 6.8e18 の有限の値になるが、上限の判定で止まる）ので RangeError', () => {
     expect(() => computeGridRange(139, 85, 500, 17)).toThrow(RangeError)
     expect(() => computeGridRange(139, 90, 500, 17)).toThrow(RangeError)
   })
 
   it('北緯 46°・1000m・DEM1A（z17）は N = 1206 で上限内', () => {
     expect(computeGridRange(139, 46, 1000, 17).size).toBe(1206)
-    expect(1206).toBeLessThan(MAX_GRID_SIZE)
+  })
+
+  it('N が MAX_GRID_SIZE（4096）ちょうどなら通り、4097 なら RangeError', () => {
+    const cell = groundResolutionM(35, 17)
+    const atLimit = (MAX_GRID_SIZE - 0.5) * cell
+    const overLimit = (MAX_GRID_SIZE + 1 - 0.5) * cell
+    expect(computeGridRange(139, 35, atLimit, 17).size).toBe(MAX_GRID_SIZE)
+    expect(() => computeGridRange(139, 35, overLimit, 17)).toThrow(RangeError)
   })
 })

@@ -46,17 +46,18 @@ async function loadTerrain(
   let started = 0
   let done = 0
   const report = (): void => post({ type: 'terrainProgress', requestId, done, started })
-  // 対応範囲（日本）の外なら、タイルを取得せずに知らせる（クリック・URL 経由のどちらも通る）
-  if (!inServiceArea(message.lon, message.lat)) {
-    post({
-      type: 'terrainFailed',
-      requestId,
-      reason: 'out-of-range',
-      message: '対応範囲（日本）の外の地点',
-    })
-    return
-  }
   try {
+    // 対応範囲（日本）の外なら、タイルを取得せずに知らせる（クリック・URL 経由のどちらも通る）。
+    // try の中に置き、「失敗はすべて terrainFailed になる」を位置に依存させない
+    if (!inServiceArea(message.lon, message.lat)) {
+      post({
+        type: 'terrainFailed',
+        requestId,
+        reason: 'out-of-range',
+        message: '対応範囲（日本）の外の地点',
+      })
+      return
+    }
     const fetchTile = createGsiTileFetcher(signal, {
       onStart: () => {
         started++
@@ -74,13 +75,7 @@ async function loadTerrain(
       post({ type: 'terrainFailed', requestId, reason: 'no-data', message: '範囲の全画素が無効値' })
       return
     }
-    const analysis = analyzeTerrain({
-      elevation: grid.elevation,
-      validMask: grid.validMask,
-      width: grid.width,
-      height: grid.height,
-      cellSizeM: grid.cellSizeM,
-    })
+    const analysis = analyzeTerrain(grid)
     const { range, tier } = selection
     const geo: TerrainGeo = {
       level: tier.level,
@@ -93,10 +88,10 @@ async function loadTerrain(
       breakdown: selection.breakdown,
       invalidRatio: grid.invalidRatio,
     }
-    const { retained, payload, transfer } = packTerrain(requestId, grid, analysis, geo)
+    const { retained, payload, transfer } = packTerrain(grid, analysis, geo)
     // 読み込みに成功したので、post の前に保持する地形を差し替える
     terrain = retained
-    post({ type: 'terrainLoaded', requestId, terrain: payload }, transfer as Transferable[])
+    post({ type: 'terrainLoaded', requestId, terrain: payload }, transfer)
   } catch (error) {
     if (signal.aborted) return // 新しい読み込みに置き換わった
     const reason =

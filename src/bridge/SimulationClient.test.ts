@@ -101,6 +101,24 @@ describe('SimulationClient の ping', () => {
   })
 })
 
+describe('SimulationClient の dispose の後', () => {
+  it('dispose の後の ping と loadTerrain は worker で失敗し、Worker を作り直さない', async () => {
+    const { workers, client } = setupMany()
+    client.dispose()
+    await expect(client.ping()).rejects.toMatchObject({ reason: 'worker' })
+    await expect(client.loadTerrain(0, 0, 500)).rejects.toMatchObject({ reason: 'worker' })
+    expect(workers).toHaveLength(1)
+  })
+
+  it('異常終了の後に dispose しても、次の要求で Worker を作り直さない', async () => {
+    const { workers, client } = setupMany()
+    nth(workers, 0).crash()
+    client.dispose()
+    await expect(client.ping()).rejects.toMatchObject({ reason: 'worker' })
+    expect(workers).toHaveLength(1)
+  })
+})
+
 describe('SimulationClient の地形の読み込み', () => {
   it('同じ requestId の terrainLoaded で解決し、terrain に保持する。進捗も伝える', async () => {
     const { worker, client } = setup()
@@ -219,8 +237,30 @@ describe('SimulationClient の Worker の異常終了', () => {
     expect(workers).toHaveLength(1)
     await expect(client.loadTerrain(0, 0, 500)).rejects.toMatchObject({ reason: 'worker' })
     expect(workers).toHaveLength(2)
-    // 要求が無ければ、それ以上は作らない
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 要求が無ければ、それ以上は作らない（マイクロタスクを流すだけで確かめる。実時間は待たない）
+    await Promise.resolve()
     expect(workers).toHaveLength(2)
+  })
+
+  it('起動し直すときに factory が同期的に投げると、loadTerrain は worker で失敗する。次の要求で factory が成功すれば解決する', async () => {
+    let shouldThrow = false
+    const workers: FakeWorker[] = []
+    const client = new SimulationClient(() => {
+      if (shouldThrow) throw new Error('CSP で読み込めません')
+      const worker = new FakeWorker()
+      workers.push(worker)
+      return worker
+    })
+    nth(workers, 0).crash()
+    shouldThrow = true
+    await expect(client.loadTerrain(0, 0, 500)).rejects.toMatchObject({ reason: 'worker' })
+    expect(workers).toHaveLength(1)
+
+    shouldThrow = false
+    const done = client.loadTerrain(0, 0, 500)
+    expect(workers).toHaveLength(2)
+    const next = nth(workers, 1)
+    next.reply({ type: 'terrainLoaded', requestId: next.lastRequestId(), terrain: fakeTerrain })
+    await expect(done).resolves.toBe(fakeTerrain)
   })
 })

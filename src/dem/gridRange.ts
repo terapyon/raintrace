@@ -26,7 +26,9 @@ export const MAX_GRID_SIZE = 4096
 export function computeGridRange(lon: number, lat: number, sizeM: number, z: number): GridRange {
   const cellSizeM = groundResolutionM(lat, z)
   const size = Math.ceil(sizeM / cellSizeM)
-  // !(size <= MAX_GRID_SIZE) の形にして、size が NaN や Infinity（緯度 90° など）でも止める
+  // !(size <= MAX_GRID_SIZE) の形にして、size が NaN でも止める。緯度 90° は cos(φ) が
+  // 0 に近づいて cellSizeM がほぼ 0 になり、size は Infinity ではなく約 6.8e18 の有限の値になるが、
+  // それでも上限の判定で止まる
   if (!(size <= MAX_GRID_SIZE)) {
     throw new RangeError(`グリッドの一辺が大きすぎます（N=${size}、緯度 ${lat}°）`)
   }

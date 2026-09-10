@@ -144,12 +144,17 @@ test('Worker のスクリプトを読めなくても、クリックのたびに�
   await page.goto('/')
   await expect(page.locator('html')).toHaveAttribute('data-worker-ready', 'false')
   expect(workerRequests).toBe(1)
-  for (const expected of [2, 3]) {
-    await clickMap(page)
-    // クリックのたびに Worker を 1 回だけ作り直し、それも失敗する
-    await expect.poll(() => workerRequests).toBe(expected)
-    await expect(page.getByTestId('load-error')).toContainText(strings.errors.worker)
-  }
+
+  await clickMap(page)
+  // クリックで Worker を 1 回だけ作り直し、それも失敗する
+  await expect.poll(() => workerRequests).toBe(2)
+  await expect(page.getByTestId('load-error')).toContainText(strings.errors.worker)
+
+  // 再試行のボタン（spec 02 §7 の再試行の経路）でも、同じく Worker を 1 回だけ作り直す
+  await page.getByRole('button', { name: strings.panel.retry }).click()
+  await expect.poll(() => workerRequests).toBe(3)
+  await expect(page.getByTestId('load-error')).toContainText(strings.errors.worker)
+
   // 要求が無ければ作り直さない。表示も読み込み中に戻らない
   await page.waitForTimeout(1000)
   expect(workerRequests).toBe(3)

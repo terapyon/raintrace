@@ -30,13 +30,8 @@ export class TerrainOverlay {
   private marker: Marker | null = null
   private terrain: TerrainPayload | null = null
   // 最新の表示の設定。地形が無い間や描画を待つ間に変わっても覚えておき、描くときに使う。
-  // 初期値はストアの既定と同じ（showTerrain・setDisplay が必ず上書きする）
-  private display: OverlayDisplay = {
-    elevation: true,
-    depressions: true,
-    flow: true,
-    flowSpacingM: 10,
-  }
+  // showTerrain・setDisplay が呼ばれるまでは null（ストアの既定値の写しを持たない）
+  private display: OverlayDisplay | null = null
   // 描いた矢印の間隔。表示の設定の間隔と違えば、矢印を作り直す
   private flowSpacingM = 10
   private generation = 0
@@ -59,8 +54,8 @@ export class TerrainOverlay {
       if (generation !== this.generation) return
       this.removeLayers()
       this.terrain = terrain
-      // 待つ間に表示の設定が変わりうるので、描く時点で覚えている設定を使う
-      this.flowSpacingM = this.display.flowSpacingM
+      // 待つ間に表示の設定が変わりうるので、描く時点で覚えている設定を使う（無ければ引数の display）
+      this.flowSpacingM = (this.display ?? display).flowSpacingM
       const { corners } = terrain.geo
       const range = terrain.elevationRange ?? { min: 0, max: 0 }
       this.addCanvasLayer(
@@ -109,7 +104,7 @@ export class TerrainOverlay {
           'circle-stroke-width': 2,
         },
       })
-      this.setDisplay(this.display)
+      this.setDisplay(this.display ?? display)
       this.map.getContainer().dataset.rangeShown = 'true'
       this.map.fitBounds([corners[3], corners[1]], { padding: 40, duration: 0 })
     })
