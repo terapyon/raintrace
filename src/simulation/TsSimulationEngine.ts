@@ -1,6 +1,7 @@
 /**
  * SimulationEngine の TypeScript 実装（tech-spec §6.2、spec 03）
  */
+import { SPILL_TOLERANCE_M } from './constants.ts'
 import {
   computeFlowVectors,
   createScratch,
@@ -9,7 +10,13 @@ import {
   type TerrainArrays,
 } from './FlowSolver.ts'
 import { planRainfall } from './Rainfall.ts'
-import type { RainfallInput, SimulationEngine, StepStats, TerrainMeta } from './types.ts'
+import type {
+  RainfallInput,
+  SimulationEngine,
+  SimulationEvent,
+  StepStats,
+  TerrainMeta,
+} from './types.ts'
 import { WaterGrid } from './WaterGrid.ts'
 
 /** 'bbox': 濡れたセルの外接矩形だけを走査する（既定）。'full': 全セルを走査する（比較用） */
@@ -17,6 +24,12 @@ export type ScanMode = 'bbox' | 'full'
 
 export interface EngineOptions {
   scanMode?: ScanMode
+}
+
+interface Depression {
+  id: number
+  pitIndex: number
+  spillElevation: number
 }
 
 interface Loaded {
@@ -28,6 +41,8 @@ interface Loaded {
 export class TsSimulationEngine implements SimulationEngine {
   readonly scanMode: ScanMode
   private loaded: Loaded | null = null
+  private depressions: Depression[] = []
+  private notified = new Uint8Array(0)
   private stepCount = 0
   private totalWater = 0
   private outflowWater = 0
@@ -56,6 +71,8 @@ export class TsSimulationEngine implements SimulationEngine {
       meta: { width, height, cellSizeM },
       grid: new WaterGrid(width, height, this.scanMode === 'full'),
     }
+    this.depressions = []
+    this.notified = new Uint8Array(0)
     this.resetCounters()
   }
 
@@ -85,12 +102,13 @@ export class TsSimulationEngine implements SimulationEngine {
       floodedArea: summary.floodedCells * area,
       settled: !flow.flowed,
       massError: this.totalWater - storedWater - this.outflowWater,
-      events: [],
+      events: this.detectSpills(terrain.elevation, grid.current),
     }
   }
 
   reset(): void {
     this.require().grid.clear()
+    this.notified.fill(0)
     this.resetCounters()
   }
 
@@ -106,11 +124,36 @@ export class TsSimulationEngine implements SimulationEngine {
         throw new RangeError(`窪地 ${d.id} の最低点のセル番号が範囲外です: ${d.pitIndex}`)
       }
     }
+    this.depressions = list.map(({ id, pitIndex, spillElevation }) => ({
+      id,
+      pitIndex,
+      spillElevation,
+    }))
+    this.notified = new Uint8Array(list.length)
   }
 
   flowVectors(): { x: Float32Array; y: Float32Array } {
     const { terrain, grid } = this.require()
     return computeFlowVectors(terrain, grid.current, grid, this.scratch)
+  }
+
+  /** まだ通知していない窪地のうち、最低点の水面標高が spill 標高 − 1cm に達したもの（§3.7） */
+  private detectSpills(elevation: Float32Array, w: Float64Array): SimulationEvent[] {
+    const events: SimulationEvent[] = []
+    for (let k = 0; k < this.depressions.length; k++) {
+      if (this.notified[k] !== 0) continue
+      const d = this.depressions[k]
+      if (elevation[d.pitIndex] + w[d.pitIndex] >= d.spillElevation - SPILL_TOLERANCE_M) {
+        this.notified[k] = 1
+        events.push({
+          type: 'spill',
+          step: this.stepCount,
+          depressionId: d.id,
+          spillElevation: d.spillElevation,
+        })
+      }
+    }
+    return events
   }
 
   private resetCounters(): void {
