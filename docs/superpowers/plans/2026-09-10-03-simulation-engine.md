@@ -2563,21 +2563,19 @@ superpowers の writing-pr-descriptions のスキルで PR 本文の下書きを
 spec 03 §6.1 の最後の行「満水との一致」は、02 の `analyzeDepressions` の `fill`（満水時の水面 F）を使う。**02 のブランチ（`feat/02-dem-grid-2d`）の実装とレビューが終わってから**、03 のブランチを 02 の上に載せ替えて行う。それまでこの Task には手を付けない。
 
 **Files:**
-- Modify: `src/simulation/testing/fixtures.ts`（`outletDistances` を足す）、`src/simulation/FlowSolver.ts` と 02 の近傍の順序を定義するファイル（先頭のコメント。P2）、`docs/superpowers/specs/2026-09-10-03-simulation-engine-design.md`（§6.1 の許容）
+- Modify: `src/simulation/testing/fixtures.ts`（`outletDistances` を足す）、`src/simulation/FlowSolver.ts` と 02 の近傍の順序を定義するファイル（先頭のコメント。P2）
 - Create: `src/simulation/fillMatch.test.ts`
 
 **Interfaces:**
 - Consumes: 02 の `analyzeDepressions(grid: TerrainGrid): { fill: Float32Array; labels: Int32Array; depressions: Depression[] }`（`src/simulation/terrain/analyzeDepressions.ts`。2026-09-11 にコーディネーターから受けた情報）。**満水時の水面は `fill`**（本計画の最初の版で仮定した `filled` ではない）。無効セルの `fill` は 0。近傍は 8 近傍で、起点はグリッドの端のセルと無効セルに接するセル。**使うのは `fill` だけ**で、窪地の成分と流出口からの距離は、`fill` と標高から本 Task で独立に求める（02 のラベルの表し方に依存しないため）
 - Produces: `outletDistances(t: Terrain, fill: ArrayLike<number>): Int32Array`（`fixtures.ts`）。窪地のセル（`fill` が標高より高い有効セル）を 8 近傍でつないだ成分ごとに、流出口（成分の外にあって、標高が `fill` と同じ有効セル）に接する成分内のセルを 0 として、成分の中を 8 近傍で数えた距離 d(i)。窪地でないセルは −1
 
-**許容（要確認）:** レビュー役の推奨は、距離に基づく **θ × (d(i) + 1) + 1e-9** である。根拠は「流出口の先が θ より大きく下っていれば、settled では流出口は乾く。+1 は流出口から池のセルへの 1 ホップ。旧式の『幅』は経路長の下限にすぎず、凸でない池では足りない」。
-
-ところが、2026-09-11 に計画の 3 つの地形で試作した（02 の代わりに、8 近傍・端と無効セルに接するセルが起点・無効セルの fill が 0 の素朴な Priority-Flood を使った）ところ、この式は 3 つとも約 1.97 倍超えた。超えたのはどれも d = 0 のセル（流出口に接する池のセル）で、原因は次のとおり。
-- 濡れたまま残った流出口は、3 つの地形とも**すべてグリッドの端か無効セルに接する流出口**だった（内側の流出口は乾いていた。レビュー役の説明どおり）
-- 端と無効セルの隣は、標高が流出口と同じ仮想セル（§3.3）なので、流出口から仮想セルへの水面差は流出口の水深そのものになる。θ 以下になると流れが止まるので、**流出口は θ 以下の水を持ったまま settled になる**（試作で最大 1.00θ）。池のセルはさらにそこから θ まで高くなりうる
-- **θ × (d(i) + 2) + 1e-9** にすると、3 つの地形で誤差は許容の最大 0.983・0.982・0.990 倍に収まった。H が F を下回ることは無かった
-
-本計画は θ × (d(i) + 2) + 1e-9 で書く。**実装の前に、レビュー役とコーディネーターにこの差異を確かめる**（Step 2 の後）。流出口の種類で分ける式（端・無効セルに接する流出口なら +2、内側の流出口なら +1）も考えられるが、テストが複雑になるわりに得るものが少ないので採らない。
+**許容（確定）:** 有効なセルで **F − 1e-9 ≤ H ≤ F + θ × (d(i) + 2) + 1e-9**（2026-09-11、レビュー役 raintrace-19 が承認）。
+- レビュー役の最初の推奨 θ × (d(i) + 1) + 1e-9 は、計画の 3 つの地形の試作（02 の代わりに素朴な Priority-Flood）で約 1.97 倍超えた。超えたのは d = 0 のセルで、濡れたまま残った流出口はすべてグリッドの端か無効セルに接していた（内側の流出口は乾いていた）。端と無効セルの隣は標高が同じ仮想セル（§3.3）なので、流出口から仮想セルへの水面差は流出口の水深そのものになり、θ 以下で流れが止まる。池のセルはさらに 1 ホップ分高くなりうる
+- d + 2 なら、3 つの地形で誤差は許容の最大 0.983・0.982・0.990 倍に収まり、H が F を下回ることは無かった（(H − F)/θ の最小 0.93・0.95・1.84）
+- 下限 F − 1e-9 ≤ H は、水面が低すぎる不具合（降雨の正規化や境界の流出の誤り）を捕まえるために置く（レビュー役の推奨）
+- 確認の結果（Step 5）には、02 の本物の `analyzeDepressions` で「d + 2 なら通る」ことと「d + 1 なら、端・無効セルに接する d = 0 のセルで落ちる」ことの両方を入れる
+- spec 03 §6.1 の記述は、実装レビューの反映（18f1e8f）で既にこの式に改めてある
 
 - [ ] **Step 1: 03 のブランチを 02 の上に載せ替える**
 
@@ -2587,12 +2585,14 @@ Expected: 成功。`package.json` と `pnpm-lock.yaml` が衝突した場合は�
 Run: `pnpm install --frozen-lockfile && pnpm test && pnpm typecheck && pnpm lint && pnpm depcheck`
 Expected: すべて成功（02 と 03 のテストがともに通る）
 
-- [ ] **Step 2: 02 の API を確かめ、許容をレビュー役・コーディネーターと確かめる**
+`specs/tech-spec.md` の衝突の有無を記録する（02 は §4.2、03 は §6・§8・§14・§18 を触る。2026-09-11 の `git merge-tree` の事前確認では衝突なし）。レビュー役への確認結果に 1 行入れる
+
+- [ ] **Step 2: 02 の API を確かめる**
 
 Run: `grep -n "export function analyzeDepressions\|export interface TerrainGrid" -A 8 src/simulation/terrain/*.ts`
 確かめること: (1) `analyzeDepressions(grid: TerrainGrid)` の `TerrainGrid` の組み立て方、(2) 戻り値の `fill` が満水時の水面で、無効セルは 0 であること、(3) 8 近傍で、グリッドの端のセルと無効セルに接するセルを起点にしていること。(3) が違う場合は、この Task を止めてレビュー役に相談する（03 の境界の扱い R03-2 と一致しなくなる）。下の Step 4 のコードは、`filledSurface` の中だけを (1) に合わせる
 
-上の「許容（要確認）」を、レビュー役とコーディネーターに送り、θ × (d(i) + 2) + 1e-9 でよいかを確かめる。別の式に決まったら、Step 4 のコードの `tolerance` の 1 行と、Step 7 の文言をそれに合わせる
+許容は上の「許容（確定）」のとおりで、確かめ直しは要らない。02 の実装レビューの反映で、`analyzeDepressions(grid, criteria?)` は窪地に `significant` を持ち、`GridMeta` は無くなった（この Task は `fill` だけを使うので影響しない）
 
 - [ ] **Step 3: 流出口からの距離を求める関数を足す**
 
@@ -2731,10 +2731,12 @@ describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', ()
       const di = d[i] ?? -1
       if (di < 0) continue
       const h = (t.elevation[i] ?? 0) + (w[i] ?? 0)
-      // 許容: θ × (d(i) + 2) + 1e-9。端・無効セルに接する流出口は θ 以下の水を持ったまま止まり、
-      // 池のセルは流出口から 1 ホップごとに最大 θ まで高くなりうる（本 Task の「許容（要確認）」）
-      const tolerance = FLOW_THRESHOLD_M * (di + 2) + 1e-9
-      expect(Math.abs(h - (F[i] ?? 0))).toBeLessThanOrEqual(tolerance)
+      const f = F[i] ?? 0
+      // 許容: F − 1e-9 ≤ H ≤ F + θ × (d(i) + 2) + 1e-9。池の水面は流出口から 1 ホップごとに最大 θ 高くなりうる。
+      // さらに、端・無効セルに接する流出口は、仮想セルが同じ標高なので水面差がその水深そのものになり、
+      // θ 以下の水を持ったまま止まる（+2 のうちの 1 つ分）。下限は、水面が低すぎる不具合を捕まえる
+      expect(h).toBeGreaterThanOrEqual(f - 1e-9)
+      expect(h - f).toBeLessThanOrEqual(FLOW_THRESHOLD_M * (di + 2) + 1e-9)
       checked++
     }
     expect(checked).toBeGreaterThan(0)
@@ -2746,6 +2748,8 @@ describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', ()
 
 Run: `pnpm vitest run src/simulation/fillMatch.test.ts`
 Expected: PASS（3 件。平衡までの step は、試作で順に約 3,300・4,900・54,000。全体で 1 秒以内。誤差は許容の最大で約 0.98〜0.99 倍）。失敗した場合は許容を緩めず、(a) 02 の fill が 8 近傍の Priority-Flood の F と同じか（端と無効セルに接するセルが起点か）、(b) 失敗したセルの d と、その流出口が端・無効セルに接するか、を調べてレビュー役に報告する
+
+確かめ（テストには残さない）: 上限の式を一時的に `di + 1` にして同じテストを回し、落ちること、落ちたセルが d = 0 で、その流出口がグリッドの端か無効セルに接することを記録してから、`di + 2` に戻す。結果はレビュー役への確認結果に入れる
 
 - [ ] **Step 6: 近傍の順序のコメントを足す（P2）**
 
@@ -2764,13 +2768,9 @@ Expected: PASS（3 件。平衡までの step は、試作で順に約 3,300・4
 
 02 の近傍の順序を定義しているファイル（Step 2 で場所を確かめる）の先頭のコメントにも、同じ趣旨（「03 の FlowSolver.ts は北西から行優先の順序を使う。意図的に別の順序」）を足す
 
-- [ ] **Step 7: spec 03 §6.1 の許容を改める（Step 2 で確かめた式で）**
+- [ ] **Step 7: spec 03 §6.1 の許容の記述を確かめる**
 
-`docs/superpowers/specs/2026-09-10-03-simulation-engine-design.md` の §6.1 の表の「満水との一致」の行の「（許容は θ × 窪地の幅 + 1e-9）」を、次に置き換える:
-
-```markdown
-（許容は θ × (d(i) + 2) + 1e-9。d(i) は、窪地の成分ごとに、流出口（成分の外にあって標高が F と同じセル）に接する成分内のセルを 0 として、成分の中を 8 近傍で数えた距離。池の水面は流出口から 1 ホップごとに最大 θ まで高くなりうる。さらに、グリッドの端や無効セルに接する流出口は、仮想セルとの水面差が水深そのものになるため、θ 以下の水を持ったまま止まる。流出口の先が平らな地形では θ の傾きが流出口の先まで積み上がるので、流出口が下り続ける地形で確かめる）
-```
+`docs/superpowers/specs/2026-09-10-03-simulation-engine-design.md` の §6.1 の「満水との一致」の行が、上の「許容（確定）」の式（下限を含む）と一致することを確かめる。実装レビューの反映（18f1e8f）で改めてあるので、変更は要らない。食い違っていたら止めて報告する
 
 - [ ] **Step 8: 全体の検査**
 
@@ -2780,15 +2780,15 @@ Expected: すべて成功（テストファイルから `./terrain/` を import 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/simulation/testing/fixtures.ts src/simulation/fillMatch.test.ts src/simulation/FlowSolver.ts src/simulation/terrain docs/superpowers/specs/2026-09-10-03-simulation-engine-design.md
-git commit -m "エンジンのテスト: 満水との一致（02 の analyzeDepressions の fill）、近傍の順序のコメント、spec 03 §6.1 の許容を改める"
+git add src/simulation/testing/fixtures.ts src/simulation/fillMatch.test.ts src/simulation/FlowSolver.ts src/simulation/terrain/neighbors.ts
+git commit -m "エンジンのテスト: 満水との一致（02 の analyzeDepressions の fill）、近傍の順序のコメント"
 ```
 
 - [ ] **Step 10: 記録を仕上げ、レビューを依頼する**
 
 `/home/terapyon/dev/terapyon/raintrace/.handoff/03-simulation-engine.md` に、満水との一致の結果と許容の差異を足す。03 の `testing/fixtures.ts` と 02 の `terrain/testGrids.ts` の統合（P4）を、この Task で行うか 04 に回すかを書く。
 
-SendMessage でレビュー役（`raintrace-ab`。名前は ListAgents で確かめる）に、ブランチ名、コミットの一覧（`git log --oneline feat/02-dem-grid-2d..HEAD`）、記録の場所を送り、spec 03 と本計画に照らしたレビューを依頼する。指摘は superpowers:receiving-code-review に従って検証してから反映する
+SendMessage でレビュー役（`raintrace-19`。名前は ListAgents で確かめる）に、Task 10 のコミット、確認の結果（d + 2 で通ること・d + 1 で落ちるセル・`tech-spec.md` の衝突の有無）、記録の場所を送り、差分のレビューを依頼する（Task 1〜9 と実装レビューの反映は承認済み）。指摘は superpowers:receiving-code-review に従って検証してから反映する
 
 ## spec 03 の完了条件との対応
 
