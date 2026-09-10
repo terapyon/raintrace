@@ -67,6 +67,76 @@ export function cone(size: number, slope: number, rim: number): Terrain {
   )
 }
 
+/**
+ * 峠でつながった 2 つの盆地（31 × 11、セル 1m）。床は 0m、外周と仕切り（列 15）は 5m、
+ * 峠（列 15・行 5）は passZ。西の盆地 A は列 1〜14、東の盆地 B は列 16〜29（どちらも行 1〜9）
+ */
+export function twoBasins(passZ: number): Terrain {
+  return buildTerrain(31, 11, 1, (x, y) => {
+    if (x === 0 || y === 0 || x === 30 || y === 10) return 5
+    if (x === 15) return y === 5 ? passZ : 5
+    return 0
+  })
+}
+
+/** 水のあるセル（W > 0）の数と、その水面標高 Z + W の最小・最大 */
+export function wetSurfaceRange(
+  t: Terrain,
+  w: Float64Array,
+): { cells: number; min: number; max: number } {
+  let cells = 0
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (let i = 0; i < w.length; i++) {
+    if (w[i] === 0) continue
+    const h = t.elevation[i] + w[i]
+    cells++
+    if (h < min) min = h
+    if (h > max) max = h
+  }
+  return { cells, min, max }
+}
+
+/** Σ max(0, h − Z) × A = volumeM3 となる水面標高 h（有効セルすべてが対象。二分法） */
+export function levelForVolume(t: Terrain, volumeM3: number): number {
+  const area = t.meta.cellSizeM * t.meta.cellSizeM
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  for (let i = 0; i < t.elevation.length; i++) {
+    if (t.validMask[i] === 0) continue
+    lo = Math.min(lo, t.elevation[i])
+    hi = Math.max(hi, t.elevation[i])
+  }
+  for (let n = 0; n < 200; n++) {
+    const mid = (lo + hi) / 2
+    let v = 0
+    for (let i = 0; i < t.elevation.length; i++) {
+      if (t.validMask[i] !== 0) v += Math.max(0, mid - t.elevation[i]) * area
+    }
+    if (v < volumeM3) lo = mid
+    else hi = mid
+  }
+  return (lo + hi) / 2
+}
+
+/** 水の重心の列番号（水深で重み付け） */
+export function centroidX(t: Terrain, w: Float64Array): number {
+  let sum = 0
+  let moment = 0
+  for (let i = 0; i < w.length; i++) {
+    sum += w[i]
+    moment += w[i] * (i % t.meta.width)
+  }
+  return moment / sum
+}
+
+/** 水のあるセルの標高の最大 */
+export function maxWetElevation(t: Terrain, w: Float64Array): number {
+  let max = Number.NEGATIVE_INFINITY
+  for (let i = 0; i < w.length; i++) if (w[i] > 0 && t.elevation[i] > max) max = t.elevation[i]
+  return max
+}
+
 /** 2 つの配列がビット単位で一致する（+0 と −0、NaN の違いも区別する） */
 export function sameBits(a: Float64Array, b: Float64Array): boolean {
   if (a.length !== b.length) return false
