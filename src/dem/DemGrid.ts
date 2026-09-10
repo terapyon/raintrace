@@ -1,13 +1,6 @@
 import type { GridRange } from './gridRange.ts'
 import { TILE_SIZE } from './tileMath.ts'
 
-/** src/simulation/types.ts の TerrainMeta と同じ形。dem は simulation の型を import できないので独自に持つ */
-export interface GridMeta {
-  width: number
-  height: number
-  cellSizeM: number
-}
-
 /** 復号済みの 256 × 256 のタイル */
 export interface DemTileData {
   elevation: Float32Array
@@ -17,10 +10,16 @@ export interface DemTileData {
 /** タイル座標からタイルを引く。無いタイル（海域・国外）は undefined で、その範囲は全画素無効 */
 export type TileLookup = (tx: number, ty: number) => DemTileData | undefined
 
+/**
+ * width・height・cellSizeM を持つので simulation の TerrainGrid にそのまま代入できる
+ * （dem は simulation の型を import できないので独自に持つ）
+ */
 export interface AssembledGrid {
   elevation: Float32Array
   validMask: Uint8Array
-  meta: GridMeta
+  width: number
+  height: number
+  cellSizeM: number
   invalidRatio: number // 無効セルの割合（0〜1）
 }
 
@@ -59,7 +58,9 @@ export function assembleGrid(range: GridRange, lookup: TileLookup): AssembledGri
   return {
     elevation,
     validMask,
-    meta: { width: n, height: n, cellSizeM: range.cellSizeM },
+    width: n,
+    height: n,
+    cellSizeM: range.cellSizeM,
     invalidRatio: invalid / (n * n),
   }
 }

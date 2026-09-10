@@ -31,7 +31,9 @@ describe('assembleGrid', () => {
       ].map(([x, y]) => [`${x}/${y}`, labeledTile(x ?? 0, y ?? 0)]),
     )
     const grid = assembleGrid(range, (tx, ty) => tiles.get(`${tx}/${ty}`))
-    expect(grid.meta).toEqual({ width: 4, height: 4, cellSizeM: 2 })
+    expect(grid.width).toBe(4)
+    expect(grid.height).toBe(4)
+    expect(grid.cellSizeM).toBe(2)
     expect(grid.invalidRatio).toBe(0)
     for (let row = 0; row < 4; row++) {
       for (let col = 0; col < 4; col++) {

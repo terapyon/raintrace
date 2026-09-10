@@ -2,7 +2,6 @@
  * メインスレッドと Worker の間のメッセージ（tech-spec §5）。判別可能な union 型。
  * shared は simulation・dem の型だけを import する（types-only-from-core）
  */
-import type { GridMeta } from '../dem/DemGrid.ts'
 import type { DemId } from '../dem/demSources.ts'
 import type { Corners } from '../dem/gridRange.ts'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain.ts'
@@ -36,7 +35,6 @@ export interface TerrainGeo {
 export interface TerrainPayload extends TerrainAnalysis {
   elevation: Float32Array
   validMask: Uint8Array
-  meta: GridMeta
   geo: TerrainGeo
 }
 
