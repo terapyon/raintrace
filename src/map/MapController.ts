@@ -13,6 +13,8 @@ export const INITIAL_VIEW = { center: [138.0, 36.0] as [number, number], zoom: 5
 /** MapLibre を React の外で生成・破棄する（tech-spec §5.3） */
 export class MapController {
   readonly map: MapLibreMap
+  private loaded = false
+  private readonly waiting: (() => void)[] = []
 
   constructor(container: HTMLElement, attribution: Attribution) {
     this.map = new MapLibreMap({
@@ -30,6 +32,17 @@ export class MapController {
     this.map.on('error', (event) => {
       console.error(event.error)
     })
+    // 地図と同時に購読するので、load を取り逃さない。isStyleLoaded() はタイルの読み込み中に false を返すので使わない
+    this.map.once('load', () => {
+      this.loaded = true
+      for (const run of this.waiting.splice(0)) run()
+    })
+  }
+
+  /** 地図の最初の読み込みが済んでいればすぐに、まだなら済んだときに run を呼ぶ */
+  whenLoaded(run: () => void): void {
+    if (this.loaded) run()
+    else this.waiting.push(run)
   }
 
   destroy(): void {
