@@ -137,6 +137,70 @@ export function maxWetElevation(t: Terrain, w: Float64Array): number {
   return max
 }
 
+/**
+ * 窪地のセル（満水時の水面 fill が標高より高い有効セル）を 8 近傍でつないだ成分ごとに、
+ * 流出口（成分の外にあって、標高が fill と同じ有効セル）に接する成分内のセルを 0 として、
+ * 成分の中を 8 近傍で数えた距離を返す。窪地でないセルは −1
+ */
+export function outletDistances(t: Terrain, fill: ArrayLike<number>): Int32Array {
+  const { width, height } = t.meta
+  const n = width * height
+  const inDepression = (i: number) => t.validMask[i] !== 0 && fill[i] > t.elevation[i]
+  const neighbors = (c: number): number[] => {
+    const cx = c % width
+    const cy = (c - cx) / width
+    const out: number[] = []
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = cx + dx
+        const ny = cy + dy
+        if ((dx !== 0 || dy !== 0) && nx >= 0 && ny >= 0 && nx < width && ny < height) {
+          out.push(ny * width + nx)
+        }
+      }
+    }
+    return out
+  }
+  // 成分に分ける
+  const label = new Int32Array(n).fill(-1)
+  let count = 0
+  for (let s = 0; s < n; s++) {
+    if (label[s] !== -1 || !inDepression(s)) continue
+    const queue = [s]
+    label[s] = count
+    for (let q = 0; q < queue.length; q++) {
+      for (const j of neighbors(queue[q])) {
+        if (label[j] !== -1 || !inDepression(j)) continue
+        label[j] = count
+        queue.push(j)
+      }
+    }
+    count++
+  }
+  // 流出口に接するセルを 0 として、成分の中で幅優先に数える
+  const dist = new Int32Array(n).fill(-1)
+  const queue: number[] = []
+  for (let i = 0; i < n; i++) {
+    if (label[i] < 0) continue
+    const touchesOutlet = neighbors(i).some(
+      (j) => label[j] !== label[i] && t.validMask[j] !== 0 && t.elevation[j] === fill[i],
+    )
+    if (touchesOutlet) {
+      dist[i] = 0
+      queue.push(i)
+    }
+  }
+  for (let q = 0; q < queue.length; q++) {
+    const c = queue[q]
+    for (const j of neighbors(c)) {
+      if (label[j] !== label[c] || dist[j] >= 0) continue
+      dist[j] = dist[c] + 1
+      queue.push(j)
+    }
+  }
+  return dist
+}
+
 /** 2 つの配列がビット単位で一致する（+0 と −0、NaN の違いも区別する） */
 export function sameBits(a: Float64Array, b: Float64Array): boolean {
   if (a.length !== b.length) return false
