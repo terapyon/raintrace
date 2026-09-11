@@ -41,14 +41,16 @@ const TERRAINS: [string, Terrain][] = [
 ]
 
 describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', () => {
-  // 入れ子の窪地は平衡まで約 54,000 step かかり、カバレッジの計測（pnpm test:coverage）の
-  // v8 の計測のオーバーヘッドで既定の 5,000ms を超えるため、余裕を見てタイムアウトを延ばす
+  // この 30,000ms は it.each の 3 つすべてに効く。必要なのは入れ子の窪地だけ（平衡まで約 54,000 step
+  // かかり、カバレッジの計測（pnpm test:coverage）の v8 の計測のオーバーヘッドで既定の 5,000ms を超える）
   it.each(TERRAINS)(
     '%s: 十分な水を入れて平衡させた水面が F と一致する',
     (_, t) => {
       const F = filledSurface(t)
       const d = outletDistances(t, F)
       const { width, height, cellSizeM } = t.meta
+      let validCells = 0
+      for (let i = 0; i < t.validMask.length; i++) if ((t.validMask[i] ?? 0) !== 0) validCells++
       const engine = engineOn(t)
       // グリッド全体に 2m の雨。窪地を満たした残りは領域外へ流れ出る
       engine.addRainfall({
@@ -60,9 +62,22 @@ describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', ()
       runUntilSettled(engine, 200_000)
       const w = engine.waterDepth()
       let checked = 0
+      let checkedOutside = 0
       for (let i = 0; i < w.length; i++) {
         const di = d[i] ?? -1
-        if (di < 0) continue
+        if (di < 0) {
+          if ((t.validMask[i] ?? 0) === 0) continue
+          // 窪地の外の有効セル（F_i = Z_i）: そこからは、標高が Z_i 以下のセルだけを通ってグリッドの
+          // 端か無効セルの隣まで届く経路がある。平衡では、経路を下流から 1 ホップさかのぼるごとに
+          // 水面は高々 θ しか上がらず（乾いたセルの水面は標高で Z_i 以下）、終点は仮想セルと同じ標高
+          // なので水深は θ 以下。したがって w_i ≤ θ × (経路長 + 1) ≤ θ × (有効セルの数 + 1)。
+          // 24 × 24 なら約 5.8mm で、DEM の刻み 1cm より小さいので、本物の不一致は捕まえる
+          const wi = w[i] ?? 0
+          expect(wi).toBeGreaterThanOrEqual(0)
+          expect(wi).toBeLessThanOrEqual(FLOW_THRESHOLD_M * (validCells + 1) + 1e-9)
+          checkedOutside++
+          continue
+        }
         const h = (t.elevation[i] ?? 0) + (w[i] ?? 0)
         const f = F[i] ?? 0
         // 許容: F − 1e-9 ≤ H ≤ F + θ × (d(i) + 2) + 1e-9。池の水面は流出口から 1 ホップごとに最大 θ 高くなりうる。
@@ -73,6 +88,7 @@ describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', ()
         checked++
       }
       expect(checked).toBeGreaterThan(0)
+      expect(checkedOutside).toBeGreaterThan(0)
     },
     30_000,
   )
