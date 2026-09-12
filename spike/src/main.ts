@@ -21,6 +21,7 @@ setWorkerUrl(workerUrl)
 /** 候補は動的 import で読み、候補ごとのチャンクにする（計画 D3、Task 9 で大きさを測る） */
 const candidates: Partial<Record<CandidateId, () => Promise<{ mount: MountCandidate }>>> = {
   a: () => import('./candidates/a'),
+  a2: () => import('./candidates/a'),
 }
 
 const status = document.getElementById('status')
@@ -31,9 +32,10 @@ const show = (text: string): void => {
 async function buildScene(params: SpikeParams): Promise<Scene> {
   if (params.scene === 'real') {
     const range = shibuyaRange()
-    return buildRealScene(range, await loadDemTiles(range))
+    return buildRealScene(range, await loadDemTiles(range), params.demFill === 'nearest')
   }
-  return buildSyntheticScene(params.water === 'film' ? 'film' : 'fixed')
+  const water = params.water === 'film' || params.water === 'bowlFilm' ? params.water : 'fixed'
+  return buildSyntheticScene(water)
 }
 
 function rendererName(map: MapLibreMap): string {

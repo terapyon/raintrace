@@ -1,15 +1,24 @@
-import { addProtocol, type CustomRenderMethodInput, MercatorCoordinate } from 'maplibre-gl'
+import {
+  addProtocol,
+  type CustomRenderMethodInput,
+  LngLat,
+  type Map as MapLibreMap,
+  MercatorCoordinate,
+} from 'maplibre-gl'
 import { pixelToLonLat } from '../../../src/dem/tileMath.ts'
 import { projectToScreen } from '../mat4'
+import { MIN_DEPTH_M } from '../scenes'
 import type {
   ApiProbeResult,
   CandidateHandle,
   ElevationSampler,
   MountCandidate,
   ProbePoint,
+  ResampleInfo,
   Scene,
 } from '../types'
 import { waitIdle } from '../waitIdle'
+import { setArrowLayer } from './arrows'
 import { terrariumTile } from './terrarium'
 import { createThreeWater } from './threeWater'
 
@@ -54,6 +63,62 @@ function probeCells(scene: Scene): { label: string; col: number; row: number }[]
       ]
 }
 
+/**
+ * A': 全セルの中心で MapLibre の地形の高さ（倍率込み）を読む。queryTerrainElevation は呼ぶたびに
+ * 視点の覆うタイルを数え直すので、同じ値を返すズームを 3 点で探し、そのズームで Terrain を直接読む。
+ * 見つからなければ全セルで queryTerrainElevation を呼ぶ（遅いが正しい）
+ */
+function resampleHeights(
+  map: MapLibreMap,
+  scene: Scene,
+  exaggeration: number,
+): { heights: Float32Array; info: ResampleInfo } {
+  const start = performance.now()
+  const { range } = scene
+  const n = range.size
+  const lons = new Float64Array(n)
+  const lats = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    lons[i] = pixelToLonLat(range.originX + i + 0.5, range.originY, range.z).lon
+    lats[i] = pixelToLonLat(range.originX, range.originY + i + 0.5, range.z).lat
+  }
+  const at = (col: number, row: number): LngLat => new LngLat(lons[col] ?? 0, lats[row] ?? 0)
+  const checks = [at(n >> 1, n >> 1), at(n >> 2, n >> 2), at((3 * n) >> 2, (3 * n) >> 2)]
+  const terrain = map.getTerrain() === null ? null : map.terrain
+  let zoom: number | null = null
+  if (terrain !== null) {
+    for (let z = 17; z >= 0 && zoom === null; z--) {
+      const same = checks.every((ll) => {
+        const q = map.queryTerrainElevation(ll)
+        return q !== null && Math.abs(terrain.getElevationForLngLatZoom(ll, z) - q) < 1e-6
+      })
+      if (same) zoom = z
+    }
+  }
+  const heights = new Float32Array(n * n)
+  let wetCells = 0
+  let maxDiffM = 0
+  for (let row = 0; row < n; row++) {
+    for (let col = 0; col < n; col++) {
+      const i = row * n + col
+      const ll = at(col, row)
+      const h =
+        terrain !== null && zoom !== null
+          ? terrain.getElevationForLngLatZoom(ll, zoom)
+          : (map.queryTerrainElevation(ll) ?? 0)
+      heights[i] = h
+      if ((scene.depth[i] ?? 0) >= MIN_DEPTH_M) {
+        wetCells++
+        maxDiffM = Math.max(maxDiffM, Math.abs(h / exaggeration - (scene.elevation[i] ?? 0)))
+      }
+    }
+  }
+  return {
+    heights,
+    info: { ms: performance.now() - start, zoom, fallback: zoom === null, wetCells, maxDiffM },
+  }
+}
+
 export const mount: MountCandidate = async (map, scene, params) => {
   registerProtocol(scene.sample)
   const dem = {
@@ -87,12 +152,13 @@ export const mount: MountCandidate = async (map, scene, params) => {
   })
 
   const renderTimes: number[] = []
-  // A: 水面の高さはシミュレーションの標高から（spec S §2）。地形（MapLibre の 3D terrain）の後に描く
+  const variant = params.candidate === 'a2' ? 'a2' : 'a'
+  // A: 水面の高さはシミュレーションの標高から。A': MapLibre の地形の高さ（倍率込み）に水深 × 倍率を足す（spec S §2）
   const water = createThreeWater(map, {
     id: 'spike-water',
     scene,
     elevation: scene.elevation,
-    elevScale: 'exaggeration',
+    elevScale: variant === 'a2' ? 'one' : 'exaggeration',
     zfix: params.zfix,
     renderTimes,
   })
@@ -145,17 +211,46 @@ export const mount: MountCandidate = async (map, scene, params) => {
     }
   }
 
+  let lastResample: ResampleInfo | null = null
+  let frozen = false
+  // 取り直しは視点（中心・ズーム・pitch・bearing・倍率）が変わったときだけ行い、そのときだけ記録する。
+  // measure の中の idle（同じ視点、または固定中）では取り直さないので、記録は setView の時の値になる（R2）
+  let resampledView = ''
+  const viewKey = (): string => {
+    const c = map.getCenter()
+    return [c.lng, c.lat, map.getZoom(), map.getPitch(), map.getBearing(), exaggeration].join(',')
+  }
+  const whenIdle = async (): Promise<void> => {
+    await waitIdle(map)
+    if (variant !== 'a2' || frozen) return
+    const key = viewKey()
+    if (key === resampledView) return
+    resampledView = key
+    const { heights, info } = resampleHeights(map, scene, exaggeration)
+    lastResample = info
+    water.setElevation(heights)
+    await waitIdle(map)
+  }
+
   return {
     renderTimes,
     setExaggeration(value) {
       exaggeration = value
-      // 合格基準 2: 地形と水面に同じ倍率を掛ける
+      // 合格基準 2: 地形と水面に同じ倍率を掛ける（A' の水面の地形の分は、次の whenIdle で取り直す）
       map.setTerrain({ source: DEM_SOURCE, exaggeration: value })
       water.setExaggeration(value)
     },
     setDepth: (depth) => water.setDepth(depth),
     setDebug: (mode) => water.setDebug(mode),
-    whenIdle: () => waitIdle(map),
+    whenIdle,
     apiProbe,
+    lastResample: () => lastResample,
+    freezeElevation(value) {
+      frozen = value
+    },
+    async showArrows(placement, pitchAlignment) {
+      setArrowLayer(map, scene, placement, pitchAlignment)
+      await whenIdle()
+    },
   } satisfies CandidateHandle
 }

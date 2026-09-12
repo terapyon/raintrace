@@ -6,7 +6,8 @@ import type { SpikeParams } from './params'
 export type ElevationSampler = (gx: number, gy: number) => number | null
 
 export type SceneName = 'synthetic' | 'real'
-export type WaterMode = 'fixed' | 'film' | 'dynamic'
+/** bowlFilm: すり鉢の面（曲面）だけに 1cm の膜（中間の判定の反映 M1） */
+export type WaterMode = 'fixed' | 'film' | 'bowlFilm' | 'dynamic'
 export type CandidateId = 'a' | 'a2' | 'b' | 'braw'
 /** z-fighting の対策（spec S §3）。offset は水面に polygonOffset(−1, −4)、offset2 は (−2, −8) を付ける */
 export type ZFix = 'none' | 'offset' | 'offset2'
@@ -53,6 +54,21 @@ export interface ApiProbeResult {
   points: ProbePoint[]
 }
 
+/**
+ * A' の高さの取り直しの記録（Task 5）。ms はメインスレッドを止めた時間（tech-spec §14.1 の 50ms と比べる）。
+ * 視点が変わったとき（setView）の取り直しだけを記録する（R2）
+ */
+export interface ResampleInfo {
+  ms: number
+  zoom: number | null // queryTerrainElevation と同じ値を返す DEM のズーム。見つからなければ null
+  fallback: boolean // true なら全セルで queryTerrainElevation を呼んだ
+  wetCells: number
+  maxDiffM: number // 水のあるセルでの |地形の高さ ÷ 倍率 − シミュレーションの標高| の最大（m）
+}
+
+/** A の流れの矢印の置き方（Task 5 Step 7）。above: 水面のレイヤーの後、below: 水面のレイヤーの前 */
+export type ArrowPlacement = 'none' | 'above' | 'below'
+
 export interface CandidateHandle {
   /** 地形と水面に同じ倍率を掛ける（合格基準 2） */
   setExaggeration(value: number): void
@@ -65,6 +81,12 @@ export interface CandidateHandle {
   readonly renderTimes: number[]
   /** A・A' だけ。直近の render の引数から判定 (1) の記録を作る。まだ描いていなければ null */
   apiProbe?(): ApiProbeResult | null
+  /** A' だけ。直近の高さの取り直しの記録 */
+  lastResample?(): ResampleInfo | null
+  /** A' だけ。true の間は whenIdle で高さを取り直さない（視点を動かしている間の見え方を測る。Task 5 Step 8） */
+  freezeElevation?(frozen: boolean): void
+  /** A・A' だけ。流れの矢印の symbol レイヤーを置き直し、描き終えるまで待つ */
+  showArrows?(placement: ArrowPlacement, pitchAlignment: 'map' | 'viewport'): Promise<void>
 }
 
 export type MountCandidate = (

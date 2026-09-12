@@ -53,6 +53,8 @@ export async function measureWater(
   const bearing = map.getBearing()
   candidate.setDebug('mask-nodepth')
   await candidate.whenIdle()
+  // A' は、ここから終わりまで高さを取り直さない（bearing を ±0.002° 動かしても同じ高さで比べる）
+  candidate.freezeElevation?.(true)
   const footprint = readMask(map)
   candidate.setDebug('mask')
   const visible: Uint8Array[] = []
@@ -64,6 +66,7 @@ export async function measureWater(
   map.jumpTo({ bearing })
   candidate.setDebug('off')
   await candidate.whenIdle()
+  candidate.freezeElevation?.(false)
 
   const footprintPx = count(footprint.mask)
   const first = visible[0] ?? new Uint8Array(0)
