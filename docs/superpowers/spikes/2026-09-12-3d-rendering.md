@@ -16,7 +16,7 @@
 |---|---|
 | 起点のコミット | f199a02 |
 | MapLibre GL JS | 6.6.0 |
-| three | 0.185.1（@types/three 0.185.4、推移的依存 0 個。開発時のみ） |
+| three | 0.185.1（@types/three 0.185.4、推移的依存 6 個: @dimforge/rapier3d-compat・@tweenjs/tween.js・@types/stats.js・@types/webxr・fflate・meshoptimizer。pnpm-lock.yaml による。開発時のみで、バンドルには入らない） |
 | three の扱い | スパイクのブランチ（`spike/3d-rendering`）だけの依存。`main` には入っていない |
 | 自動の計測 | Playwright 1.62.1 の Chromium、`--enable-unsafe-swiftshader`、960 × 600、deviceScaleFactor 1 |
 | 本番のバンドル（スパイクの前） | 初期ロード 388.7 KB / 総量 525.0 KB |
