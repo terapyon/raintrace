@@ -17,7 +17,7 @@ export interface RainfallPlan {
   cells: Int32Array
   /** 各セルに足す水深（m） */
   depthM: number
-  /** 投入総量（m³）。π · radiusM² · amountMm / 1000 */
+  /** 投入総量（m³）。π · radiusM² · amountMm / 1000 × |S| / |C|（R04-8。円がすべて有効なら π · radiusM² · amountMm / 1000） */
   volumeM3: number
   /** cells の外接矩形（列 [x0, x1)、行 [y0, y1)） */
   x0: number
@@ -43,28 +43,37 @@ export function planRainfall(
   }
   const { width, height, cellSizeM } = meta
   const r2 = radiusM * radiusM
-  const cx0 = Math.max(0, Math.floor((x - radiusM) / cellSizeM))
-  const cx1 = Math.min(width - 1, Math.floor((x + radiusM) / cellSizeM))
-  const cy0 = Math.max(0, Math.floor((y - radiusM) / cellSizeM))
-  const cy1 = Math.min(height - 1, Math.floor((y + radiusM) / cellSizeM))
-
+  // C（中心が円内にあるセル）は、グリッドの外のセルも含めて数える。外接矩形をグリッドで切らない（R04-8）。
+  // S（雨を入れるセル）は、C のうちグリッドの中の有効セル
+  const gx0 = Math.floor((x - radiusM) / cellSizeM)
+  const gx1 = Math.floor((x + radiusM) / cellSizeM)
+  const gy0 = Math.floor((y - radiusM) / cellSizeM)
+  const gy1 = Math.floor((y + radiusM) / cellSizeM)
   const cells: number[] = []
-  for (let cy = cy0; cy <= cy1; cy++) {
+  let inCircle = 0
+  for (let cy = gy0; cy <= gy1; cy++) {
     const dy = (cy + 0.5) * cellSizeM - y
-    for (let cx = cx0; cx <= cx1; cx++) {
+    for (let cx = gx0; cx <= gx1; cx++) {
       const dx = (cx + 0.5) * cellSizeM - x
+      if (dx * dx + dy * dy > r2) continue
+      inCircle++
+      if (cx < 0 || cx >= width || cy < 0 || cy >= height) continue
       const i = cy * width + cx
-      if (dx * dx + dy * dy <= r2 && validMask[i] !== 0) cells.push(i)
+      if (validMask[i] !== 0) cells.push(i)
     }
   }
-  if (cells.length === 0) {
-    // 半径がセルより小さいなど、中心が円内に入るセルが無いときは、降雨中心を含むセル1つに入れる
+  if (inCircle === 0) {
+    // 半径がセルより小さいなど、中心が円内に入るセルが無いときは、降雨中心を含むセル1つを C = S とする
     const cx = Math.floor(x / cellSizeM)
     const cy = Math.floor(y / cellSizeM)
     const inside = cx >= 0 && cx < width && cy >= 0 && cy < height
     if (!inside || validMask[cy * width + cx] === 0) throw new NoElevationAtRainCenterError()
     cells.push(cy * width + cx)
+    inCircle = 1
   }
+  // 円内のセルがあっても、すべてグリッドの外か無効セル（正方格子では、降雨中心を含むセルの中心が最も近いので、
+  // そのセルも無効かグリッドの外）
+  if (cells.length === 0) throw new NoElevationAtRainCenterError()
 
   let x0 = width
   let y0 = height
@@ -79,7 +88,10 @@ export function planRainfall(
     if (cy + 1 > y1) y1 = cy + 1
   }
 
-  const volumeM3 = (Math.PI * r2 * amountMm) / 1000
+  // 円が切れていなければ割合を掛けない（円がすべて有効なら投入量は従来の値とビット単位で同じ）
+  const fullVolumeM3 = (Math.PI * r2 * amountMm) / 1000
+  const volumeM3 =
+    cells.length === inCircle ? fullVolumeM3 : (fullVolumeM3 * cells.length) / inCircle
   const depthM = volumeM3 / (cells.length * cellSizeM * cellSizeM)
   return { cells: Int32Array.from(cells), depthM, volumeM3, x0, y0, x1, y1 }
 }

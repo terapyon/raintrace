@@ -66,6 +66,17 @@ describe('addRainfall（spec 03 §3.6）', () => {
     )
     expect(engine.step().totalWater).toBe(0)
   })
+
+  it('降雨中心がグリッドの西の端なら、totalWater は πr² × 雨量の半分で、質量は保存される（R04-8）', () => {
+    // 250 × 250・セル 1m。中心の x = 0 はセルの境界なので、円内のセルは左右で同数になる
+    const engine = engineOn(buildTerrain(250, 250, 1, () => 0))
+    engine.addRainfall({ x: 0, y: 125, radiusM: 10, amountMm: 100 })
+    const half = (Math.PI * 100 * 100) / 1000 / 2
+    let stats = engine.step()
+    expect(Math.abs(stats.totalWater - half) / half).toBeLessThanOrEqual(1e-12)
+    for (let n = 0; n < 20; n++) stats = engine.step()
+    expect(Math.abs(stats.massError)).toBeLessThanOrEqual(massTolerance(stats.totalWater))
+  })
 })
 
 describe('step の統計（spec 03 §3.8）', () => {
