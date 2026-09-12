@@ -15,7 +15,6 @@ export interface DisplaySettings {
   elevation: boolean
   depressions: boolean
   flow: boolean
-  flowSpacingM: 5 | 10 | 20
 }
 
 export type CursorElevation =
@@ -66,7 +65,7 @@ export function createAppStore(): AppStore {
     selected: null,
     load: { status: 'idle' },
     summary: null,
-    display: { elevation: true, depressions: true, flow: true, flowSpacingM: 10 },
+    display: { elevation: true, depressions: true, flow: true },
     cursor: null,
     selectPoint: (lon, lat) =>
       set({

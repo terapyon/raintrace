@@ -3,12 +3,11 @@ import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationCli
 import { cellAt } from '../dem/gridRange'
 import { wrapLongitude } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
-import { TerrainOverlay } from '../map/TerrainOverlay'
+import { type OverlayDisplay, TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
+import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import type { SimulationSession } from './simulationSession'
-
-const RANGE_SIZE_M = 500 // R02-4
 
 /**
  * 地図のクリック → Worker での読み込み → 地図とパネルへの反映をつなぐ（spec 02）。React の外に置く。
@@ -18,15 +17,30 @@ export class TerrainSession {
   readonly store: AppStore
   private readonly client: SimulationClient
   private readonly simulation: SimulationSession
+  private readonly settings: SettingsStore
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
 
   // Worker が異常終了してもストアは変えない。読み込み中なら、その要求の失敗（'worker'）が load() で
   // failed になる。表示中なら、メインは地形の複製を持つので、重ね描きもカーソル位置の標高もそのまま動く
-  constructor(client: SimulationClient, store: AppStore, simulation: SimulationSession) {
+  constructor(
+    client: SimulationClient,
+    store: AppStore,
+    simulation: SimulationSession,
+    settings: SettingsStore,
+  ) {
     this.client = client
     this.store = store
     this.simulation = simulation
+    this.settings = settings
+  }
+
+  /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通。計画で決めたこと 10） */
+  private overlayDisplay(): OverlayDisplay {
+    return {
+      ...this.store.getState().display,
+      flowSpacingM: this.settings.getState().display.flowVectorSpacingM,
+    }
   }
 
   /** 地図のクリック・カーソル・移動を購読し、URL の地点を読む。戻り値で外す */
@@ -49,17 +63,22 @@ export class TerrainSession {
         if (pending !== null) this.updateCursor(pending.lng, pending.lat)
       })
     }
-    let urlTimer: ReturnType<typeof setTimeout> | undefined
-    const onMoveEnd = (): void => {
-      clearTimeout(urlTimer)
-      urlTimer = setTimeout(() => this.writeUrl(), 300)
-    }
     const unsubscribe = this.store.subscribe((state, previous) => {
-      if (state.display !== previous.display) this.overlay?.setDisplay(state.display)
+      if (state.display !== previous.display) this.overlay?.setDisplay(this.overlayDisplay())
+    })
+    const unsubscribeSettings = this.settings.subscribe((state, previous) => {
+      // 範囲の大きさの変更は、同じ地点を読み込み直してリセットする（spec 04 §3）
+      if (state.area.sizeM !== previous.area.sizeM) this.retry()
+      if (state.display.flowVectorSpacingM !== previous.display.flowVectorSpacingM) {
+        this.overlay?.setDisplay(this.overlayDisplay())
+      }
+      if (state.rainfall !== previous.rainfall || state.area !== previous.area) {
+        this.scheduleUrlWrite()
+      }
     })
     map.on('click', onClick)
     map.on('mousemove', onMove)
-    map.on('moveend', onMoveEnd)
+    map.on('moveend', this.scheduleUrlWrite)
 
     const view = parseUrlView(window.location.search)
     if (view.point !== null) {
@@ -73,10 +92,11 @@ export class TerrainSession {
     return () => {
       map.off('click', onClick)
       map.off('mousemove', onMove)
-      map.off('moveend', onMoveEnd)
+      map.off('moveend', this.scheduleUrlWrite)
       cancelAnimationFrame(frame)
-      clearTimeout(urlTimer)
+      clearTimeout(this.urlTimer)
       unsubscribe()
+      unsubscribeSettings()
       detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()
@@ -92,7 +112,7 @@ export class TerrainSession {
     this.simulation.terrainCleared()
     this.overlay?.clearTerrain()
     this.overlay?.showSelection(wrappedLon, lat)
-    this.writeUrl()
+    this.scheduleUrlWrite()
     void this.load(wrappedLon, lat)
   }
 
@@ -106,12 +126,13 @@ export class TerrainSession {
     // zustand のアクションは変わらないので、ここで一度だけ取り出してよい
     const actions = this.store.getState()
     try {
-      const terrain = await this.client.loadTerrain(lon, lat, RANGE_SIZE_M, (done, started) =>
+      const sizeM = this.settings.getState().area.sizeM
+      const terrain = await this.client.loadTerrain(lon, lat, sizeM, (done, started) =>
         actions.setProgress(done, started),
       )
       actions.setTerrain(summarizeTerrain(terrain))
       // 表示の切り替えは読み込みの間にも変わりうるので、描く直前の値を取り直す
-      this.overlay?.showTerrain(terrain, this.store.getState().display)
+      this.overlay?.showTerrain(terrain, this.overlayDisplay())
       this.simulation.terrainReady(terrain, { lon, lat })
     } catch (error) {
       const reason = error instanceof TerrainLoadError ? error.reason : 'internal'
@@ -143,11 +164,22 @@ export class TerrainSession {
       )
   }
 
+  private urlTimer: ReturnType<typeof setTimeout> | undefined
+
+  /** URL の書き込みは、変更から 300ms 置いてまとめて行う（spec 04 §7） */
+  private readonly scheduleUrlWrite = (): void => {
+    clearTimeout(this.urlTimer)
+    this.urlTimer = setTimeout(() => this.writeUrl(), 300)
+  }
+
   private writeUrl(): void {
-    const zoom = this.controller?.map.getZoom() ?? null
+    const { rainfall, area } = this.settings.getState()
     const next = formatUrlView(window.location.search, {
       point: this.store.getState().selected,
-      zoom,
+      zoom: this.controller?.map.getZoom() ?? null,
+      sizeM: area.sizeM,
+      amountMm: rainfall.amountMm,
+      radiusM: rainfall.radiusM,
     })
     window.history.replaceState(
       null,

@@ -2,7 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SimulationClient } from './bridge/SimulationClient'
 import { createAppStore } from './state/appStore'
+import { createSettingsStore, safeLocalStorage } from './state/settingsStore'
 import { createSimulationStore } from './state/simulationStore'
+import { parseUrlView } from './state/urlState'
 import { App } from './ui/App'
 import type { MissingFeature } from './ui/components/WebGLUnsupported'
 import { SimulationSession } from './ui/simulationSession'
@@ -35,6 +37,10 @@ function checkWorker(client: SimulationClient): void {
 const container = document.getElementById('root')
 if (container === null) throw new Error('#root が見つかりません')
 
+// 設定は localStorage から読み、URL の値で上書きする（URL > localStorage。spec 04 §7）
+const settings = createSettingsStore(safeLocalStorage())
+settings.getState().applyUrl(parseUrlView(window.location.search))
+
 const missingFeatures = detectMissingFeatures()
 let session: TerrainSession | null = null
 if (missingFeatures.length === 0) {
@@ -44,8 +50,8 @@ if (missingFeatures.length === 0) {
     // Worker の生成は、CSP で塞がれた場合などに同期的に例外を投げる。
     // TerrainSession の生成は代入だけなので、Worker を作った後に例外は出ない
     const client = new SimulationClient()
-    const simulation = new SimulationSession(client, createSimulationStore())
-    session = new TerrainSession(client, store, simulation)
+    const simulation = new SimulationSession(client, createSimulationStore(), settings)
+    session = new TerrainSession(client, store, simulation, settings)
     checkWorker(client)
   } catch (error) {
     console.error(error)
@@ -55,6 +61,6 @@ if (missingFeatures.length === 0) {
 
 createRoot(container).render(
   <StrictMode>
-    <App missingFeatures={missingFeatures} session={session} />
+    <App missingFeatures={missingFeatures} session={session} settings={settings} />
   </StrictMode>,
 )

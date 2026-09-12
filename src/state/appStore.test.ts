@@ -70,21 +70,11 @@ describe('createAppStore', () => {
     expect(store.getState().summary).toBeNull()
   })
 
-  it('表示の切り替えは一部だけを変える。既定はすべて表示、矢印の間隔 10m', () => {
+  it('表示の切り替えは一部だけを変える。既定はすべて表示（矢印の間隔は設定のストア）', () => {
     const store = createAppStore()
-    expect(store.getState().display).toEqual({
-      elevation: true,
-      depressions: true,
-      flow: true,
-      flowSpacingM: 10,
-    })
-    store.getState().setDisplay({ flow: false, flowSpacingM: 20 })
-    expect(store.getState().display).toEqual({
-      elevation: true,
-      depressions: true,
-      flow: false,
-      flowSpacingM: 20,
-    })
+    expect(store.getState().display).toEqual({ elevation: true, depressions: true, flow: true })
+    store.getState().setDisplay({ flow: false })
+    expect(store.getState().display).toEqual({ elevation: true, depressions: true, flow: false })
   })
 
   describe('setCursor は同じ値なら購読者に知らせない', () => {

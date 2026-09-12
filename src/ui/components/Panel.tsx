@@ -13,12 +13,9 @@ import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import type { ReactNode } from 'react'
 import { useStore } from 'zustand'
-import type {
-  AppStore,
-  CursorElevation,
-  DisplaySettings,
-  LoadFailureReason,
-} from '../../state/appStore'
+import type { AppStore, CursorElevation, LoadFailureReason } from '../../state/appStore'
+import { ARROW_SPACINGS } from '../../state/persistedSettings'
+import type { SettingsStore } from '../../state/settingsStore'
 import {
   formatCellSize,
   formatCoordinate,
@@ -32,7 +29,6 @@ import { DepressionLegend } from './DepressionLegend'
 import { WaterLegend } from './WaterLegend'
 
 const PANEL_WIDTH = 320
-const FLOW_SPACINGS = [5, 10, 20] as const
 
 /**
  * 失敗の理由ごとの出し方。データが無い・対応範囲の外は、再試行しても変わらないので知らせるだけ。
@@ -70,7 +66,15 @@ function cursorText(cursor: CursorElevation | null): string {
 }
 
 /** 地点・DEM 情報・標高・窪地・表示の切り替え（spec 02 §6.2） */
-export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void }) {
+export function Panel({
+  store,
+  settings,
+  onRetry,
+}: {
+  store: AppStore
+  settings: SettingsStore
+  onRetry: () => void
+}) {
   const theme = useTheme()
   const wide = useMediaQuery(theme.breakpoints.up('md'))
   const selected = useStore(store, (s) => s.selected)
@@ -79,6 +83,8 @@ export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void
   const cursor = useStore(store, (s) => s.cursor)
   const display = useStore(store, (s) => s.display)
   const setDisplay = useStore(store, (s) => s.setDisplay)
+  const sizeM = useStore(settings, (s) => s.area.sizeM)
+  const flowVectorSpacingM = useStore(settings, (s) => s.display.flowVectorSpacingM)
   const toggle =
     (key: 'elevation' | 'depressions' | 'flow') =>
     (_: unknown, checked: boolean): void =>
@@ -108,7 +114,7 @@ export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void
             <Row label={strings.panel.point} testId="selected-point">
               {formatCoordinate(selected.lat)}, {formatCoordinate(selected.lon)}
             </Row>
-            <Row label={strings.panel.range}>{strings.panel.rangeValue}</Row>
+            <Row label={strings.panel.range}>{strings.panel.rangeValue(sizeM)}</Row>
           </>
         )}
         {load.status === 'loading' && (
@@ -207,12 +213,12 @@ export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void
               <ToggleButtonGroup
                 size="small"
                 exclusive
-                value={display.flowSpacingM}
-                onChange={(_, value: DisplaySettings['flowSpacingM'] | null) => {
-                  if (value !== null) setDisplay({ flowSpacingM: value })
+                value={flowVectorSpacingM}
+                onChange={(_, value: (typeof ARROW_SPACINGS)[number] | null) => {
+                  if (value !== null) settings.getState().setDisplay({ flowVectorSpacingM: value })
                 }}
               >
-                {FLOW_SPACINGS.map((m) => (
+                {ARROW_SPACINGS.map((m) => (
                   <ToggleButton key={m} value={m}>
                     {m} m
                   </ToggleButton>

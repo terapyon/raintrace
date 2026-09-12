@@ -5,6 +5,7 @@ import { WaterOverlay } from '../map/WaterOverlay'
 import type { WaterPalette } from '../map/waterColormap'
 import { waterArrowFeatures } from '../map/waterFeatures'
 import type { ArrowSpacingM, PlaybackSpeed, TerrainPayload } from '../shared/protocol'
+import type { SettingsState, SettingsStore } from '../state/settingsStore'
 import type { DisplayStats, SimulationStore } from '../state/simulationStore'
 import { createThrottle, type Throttle } from '../state/throttle'
 
@@ -48,7 +49,7 @@ export class SimulationSession {
   }
   private palette: WaterPalette = 'stepped'
 
-  constructor(client: SimulationClient, store: SimulationStore) {
+  constructor(client: SimulationClient, store: SimulationStore, settings: SettingsStore) {
     this.client = client
     this.store = store
     this.statsThrottle = createThrottle<StatsUpdate>(STATS_INTERVAL_MS, (u) =>
@@ -74,6 +75,16 @@ export class SimulationSession {
       }
     })
     client.onCrash(() => this.onCrash())
+
+    // 矢印の表示・間隔と水深の配色は設定のストアが持つ（tech-spec §8.1）。ここで初期値を反映し、以後の変更も購読する
+    const apply = (display: SettingsState['display']): void => {
+      this.setArrows(display.showFlowVectors, display.flowVectorSpacingM)
+      this.setPalette(display.waterDepthPalette)
+    }
+    apply(settings.getState().display)
+    settings.subscribe((state, previous) => {
+      if (state.display !== previous.display) apply(state.display)
+    })
   }
 
   /** 新しい地点の読み込みを始めた。前の地形の水と統計を消す（地点の変更はリセット。spec 04 §3） */

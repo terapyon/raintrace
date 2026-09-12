@@ -10,6 +10,8 @@ import { lonLatToPixel } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
 import type { WaterOverlay } from '../map/WaterOverlay'
 import type { TerrainPayload } from '../shared/protocol'
+import { memoryStorage } from '../state/memoryStorage.test-support'
+import { createSettingsStore } from '../state/settingsStore'
 import { createSimulationStore } from '../state/simulationStore'
 import { SimulationSession, STATS_INTERVAL_MS } from './simulationSession'
 
@@ -70,11 +72,12 @@ function setup() {
   const worker = new FakeWorker()
   const client = new SimulationClient(() => worker)
   const store = createSimulationStore()
-  const session = new SimulationSession(client, store)
+  const settings = createSettingsStore(memoryStorage())
+  const session = new SimulationSession(client, store, settings)
   void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
   const terrainId = worker.loaded(terrain)
   session.terrainReady(terrain, CENTER)
-  return { worker, client, store, session, terrainId }
+  return { worker, client, store, settings, session, terrainId }
 }
 
 describe('SimulationSession: 命令（spec 04 §3）', () => {
@@ -156,7 +159,7 @@ describe('SimulationSession: Worker の作り直しの後の速度の立て直�
     const worker = new FakeWorker()
     const client = new SimulationClient(() => worker)
     const store = createSimulationStore()
-    const session = new SimulationSession(client, store)
+    const session = new SimulationSession(client, store, createSettingsStore(memoryStorage()))
     session.setSpeed('max')
     worker.crash()
     void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
@@ -174,7 +177,7 @@ describe('SimulationSession: Worker の作り直しの後の速度の立て直�
       const worker = new FakeWorker()
       const client = new SimulationClient(() => worker)
       const store = createSimulationStore()
-      const session = new SimulationSession(client, store)
+      const session = new SimulationSession(client, store, createSettingsStore(memoryStorage()))
       void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
       worker.loaded(terrain)
       session.terrainReady(terrain, CENTER)
@@ -367,6 +370,12 @@ describe('SimulationSession: 水の流れの矢印の設定', () => {
     const count = worker.posted.length
     session.setArrows(true, 5)
     expect(worker.posted).toHaveLength(count)
+  })
+
+  it('設定の矢印の表示と間隔の変更を Worker に送る', () => {
+    const { worker, settings } = setup()
+    settings.getState().setDisplay({ showFlowVectors: false, flowVectorSpacingM: 5 })
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: false, spacingM: 5 })
   })
 })
 

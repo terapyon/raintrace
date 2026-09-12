@@ -31,7 +31,7 @@ export const strings = {
     notSelected: '地図をクリックして地点を選んでください',
     point: '地点',
     range: '範囲',
-    rangeValue: '500 m 四方',
+    rangeValue: (sizeM: number) => `${sizeM} m 四方`,
     dem: '使った DEM',
     cellSize: 'セルの大きさ',
     invalidRatio: '無効セル',
