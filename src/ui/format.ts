@@ -7,8 +7,9 @@ export const formatCoordinate = (value: number): string => value.toFixed(6)
 export const formatCellSize = (value: number): string => `約 ${value.toFixed(2)} m`
 export const formatPercent = (ratio: number): string => `${(ratio * 100).toFixed(1)}%`
 export const formatCubicMeters = (value: number): string => `${value.toFixed(2)} m³`
-/** 水量（base-spec §38、spec 04 §6.3）: 小数 1 桁、1 m³ 未満は小数 2 桁 */
-export const formatVolume = (m3: number): string => `${m3.toFixed(Math.abs(m3) < 1 ? 2 : 1)} m³`
+/** 水量（base-spec §38、spec 04 §6.3）: 小数 1 桁、1 m³ 未満は小数 2 桁。桁は丸めた後の値で決める */
+export const formatVolume = (m3: number): string =>
+  `${m3.toFixed(Math.abs(Number(m3.toFixed(2))) < 1 ? 2 : 1)} m³`
 export const formatArea = (m2: number): string => `${Math.round(m2)} m²`
 export const formatStepsPerSecond = (rate: number): string => `${Math.round(rate)} step/秒`
 /** base-spec §33。実時間との対応を示す表現は使わない */

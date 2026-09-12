@@ -107,7 +107,7 @@ dist/           ビルド成果物
 
 シミュレーション結果そのものは URL に載せない。同じ URL から同じ初期条件で再現できることのみを保証する。
 
-URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）は、URL の値を優先する。
+URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）は、URL の値を優先する。URL の値は設定に適用するので、localStorage にも保存される（保存値は『最後に使った値』のため。実装 spec 04）。
 
 ## 3.4 デプロイ
 
@@ -292,6 +292,8 @@ Worker                          Main
 
 メインスレッドからバッファがまだ返却されていない場合、Worker はそのフレームの送信を見送る（新しいバッファを確保しない）。描画が遅れても Worker 側のメモリは増えない。
 
+frame（と失敗の通知 `simFailed`）は、`terrainId`（その地形を読み込んだ要求の番号）と `runId`（実行の通し番号）を持つ。`runId` はメイン側だけが開始とリセットのたびに振り、Worker は写して返す。地形を読み込み直すと両側で 0 に戻る。メインは今の地形・今の実行でない frame を表示せずに、バッファだけ返す。スケジューラの保留枠は 1 つしかなく、特定の frame（step 0 など）を目印にすると取りこぼしうるためである（実装 spec 04 §5.1）。
+
 ## 5.3 MapLibre と React の接続
 
 MapLibre は React の外で命令的に生成・破棄する。
@@ -305,6 +307,7 @@ map.addLayer(new MapCustomLayer(renderer))   // Three.js をこの中で使う
 - React は `useEffect` でインスタンスを生成し、Context で子孫に配る
 - 地図の状態（中心・ズーム・pitch）を React state に同期しない。同期が必要なのは URL 更新（§3.3）のみで、これは `moveend` を debounce して行う
 - React の再レンダリングが地図の再生成を引き起こさないよう、生成は依存配列を空にした `useEffect` に限定する
+- `MapController` は地図の生成・破棄とベースマップの切り替え（`setStyle` の後に重ね描きを足し直す購読 `onRestyle`）を受け持つ。実装 spec 04 では、E2E のため、重ね描きのレイヤー ID を知っていて、今のスタイルに実在するものをコンテナの `data-overlay-layers` に、今のベースマップを `data-basemap` に書く（重ね描きの中身は各 Overlay が持つ。この 2 つの印のために役割を少し広げた）
 
 ## 5.4 データフロー全体
 
@@ -627,7 +630,8 @@ DEM1A → DEM5 → DEM10B の 3 段で選ぶ。DEM5 は、タイルごとに 5A 
 | ネットワークエラー | 指数バックオフで最大3回リトライ。以後ユーザーに通知 |
 | WebGL 2 非対応 | 起動時に検出し、非対応である旨を表示して 3D 表示を行わない |
 | `OffscreenCanvas` 非対応 | WebGL 2 と同じく起動時に検出し、非対応である旨を表示する。フォールバック経路は作らない（対象ブラウザの最新版はすべて対応している） |
-| Worker の異常終了 | エラーを UI に表示し、Reset で復帰可能にする |
+| Worker の異常終了 | エラーを UI に表示し、「再読み込み」で同じ地点を選び直して復帰する（地形の読み込みからやり直す。DEM は HTTP キャッシュから読む）。異常終了の後、再生の命令では Worker を起動し直さない（実装 spec 04） |
+| 地形の読み込みが進まない | 進捗が 30 秒届かなければ、Worker の異常終了と同じに扱う。生きている Worker を止めないよう、タイルの 1 回の取得に 20 秒の上限を置き（超えたら再試行、尽きたらネットワークエラー）、再試行の各回で進捗を送り直す（実装 spec 04） |
 
 ## 7.6 シミュレーショングリッドの定義（決定）
 
@@ -710,6 +714,8 @@ interface PersistedSettings {
 }
 ```
 
+保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。
+
 ### バージョニング方針（決定）
 
 `schemaVersion` が一致しない場合、**マイグレーションを書かず、保存値を破棄して既定値にリセットする**。
@@ -740,10 +746,13 @@ Phase 5（Performance）において、DEM 再取得が体感性能上のボト�
 
 SSR を行わないため Emotion のランタイムコストは許容範囲である。
 
+実装 spec 04 の時点ではアイコンを使わず、ボタンは文字にする（`@mui/icons-material` を依存に足さない。読み上げにも向く）。アイコンを入れるときは上のとおりアイコンごとのパスから import する。
+
 ## 9.2 テーマ
 
 - MUI の CSS variables 機能（`colorSchemes`）を用い、light / dark の両方を定義する
 - 既定はシステム設定に追従。ユーザーによる切り替えを可能とし、選択は localStorage に保存する
+- 手動の切り替えのため、`cssVariables` の `colorSchemeSelector` を `'class'` にする（light と dark の両方があると MUI の既定は `'media'` で、`setMode` では変わらない）。選んだテーマは §8.3 の `map.theme` に保存し、MUI 自身の保存（`mui-mode`）は使わない（`storageManager={null}`）
 - 地図が画面の主役であるため、UI パネルは地図の視認性を損なわない配色とする（半透明の `Paper` + 適切な elevation）
 
 ## 9.3 レイアウト
@@ -760,12 +769,14 @@ base-spec §37 の構成に従う。
 | コンポーネント | 用途 | 主な MUI 要素 |
 |---|---|---|
 | `RainfallControls` | 降雨量・半径の入力 | `TextField` + `Slider` |
-| `PlaybackControls` | Play / Pause / Reset / 速度 | `IconButton`, `ToggleButtonGroup` |
+| `PlaybackControls` | Play / Pause / Reset / 速度 | `Button`（文字。開始・一時停止・再開は 1 つのボタン）, `ToggleButtonGroup` |
 | `StatisticsPanel` | base-spec §38 の統計表示 | `Table` |
 | `CellInfoPopover` | base-spec §39 のセル情報 | `Popover` |
 | `DemInfoBadge` | base-spec §40 の DEM 情報 | `Chip`, `Tooltip` |
 | `DisclaimerDialog` | base-spec §59 の注意表示 | `Dialog` |
-| `DisplaySettings` | 垂直強調・水深表示・流向表示 | `Select`, `Switch` |
+| `DisplaySettings` | 垂直強調・水深表示・流向表示 | `Switch`, `ToggleButtonGroup`（水深の配色・矢印の間隔・背景地図・画面の配色） |
+
+列挙の選択は `ToggleButtonGroup` にし、`Select` を使わない（Menu・Popover を引き込み、`ui` チャンクが増えるため。実装 spec 04）。
 
 ## 9.4 文言と多言語化
 
@@ -848,7 +859,7 @@ TypeScript の project references で領域を分割し、`tsc -b` で一括し�
 - 実行時のバンドルは、Vite が TypeScript のソースから直接行う。型宣言の出力は型検査にだけ使う
 - 参照する側（worker・app）は `noEmit` のままでよい。参照される側は `noEmit` にできない（TS6310 になる）
 - **型検査は必ず `tsc -b` で行う。** `tsc -p` を単独で実行すると、参照先の型宣言がまだ出力されていない場合に TS6305 で失敗する。CI と pre-push（§12.2、§12.3）はどちらも `tsc -b` を使う
-- テストファイル（`*.test.ts`）は各プロジェクトの対象から外し、`tsconfig.test.json` でまとめて検査する。composite プロジェクトの型宣言にテストが混ざらないようにするため（実装 spec 01 §4.5）
+- テストファイル（`*.test.ts`・`*.test.tsx`）は各プロジェクトの対象から外し、`tsconfig.test.json` でまとめて検査する。composite プロジェクトの型宣言にテストが混ざらないようにするため（実装 spec 01 §4.5）
 - 純粋な層（`src/simulation/`・`src/dem/`・`src/shared/`）の相対 import には `.ts` の拡張子を付け、これらのプロジェクトに `allowImportingTsExtensions: true` を置く。エンジンを Node で直接実行できるようにするため（base-spec §61、実装 spec 03 §5）
 
 2026-09-10 に tsc 5.9.3 で、この構成なら隔離が成り立つことを確認した。Vite のテンプレートと同じ構成（各プロジェクトが `noEmit` で composite なし）では、`tsc -b` は通るものの、`src/simulation/` が import 側の設定で検査されてしまい、隔離されないことも確認した。
@@ -904,9 +915,12 @@ WebGL の描画結果に対するスクリーンショット比較は環境差�
 1. アプリが起動し、地図タイルが読み込まれる
 2. 地図をクリックすると降雨マーカーが表示される
 3. DEM 情報バッジに使用中の DEM が表示される
-4. Start を押すと統計値（投入水量）が 0 から変化する
+4. 既定の設定（100mm・10m）で Start を押すと、投入水量が 31.4 m³ になり、Step が進む
 5. Reset を押すと統計値が 0 に戻る
 6. 免責ダイアログが初回に表示され、了解後は再表示されない
+7. `?mm=50&r=20` を付けて開くと入力欄にその値が入る
+8. 範囲内のクリックでセル情報が開き、『ここを降雨中心にする』で範囲を読み込み直す
+9. キーボードだけで雨量・半径の入力から Start・Pause・Reset まで操作できる（実装 spec 04 §11.2）
 
 外部（GSI）へのネットワーク依存を避けるため、E2E ではタイルリクエストを Playwright の `route()` で固定のフィクスチャに差し替える。DEM の取得は Worker 内で行われるため、`page.route()` ではなく `browserContext.route()` を使う。Worker から出るリクエストも差し替えられることを、E2E を作る最初に確かめる。
 
@@ -1165,9 +1179,23 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 | 総量 | | 525.0 KB | 1.2 MB |
 
 - 予算は「実測を 10KB 単位で切り上げ、10KB を足す」で決めた。3 つの合計は 430KB で、500KB の上限に対して 70KB の余裕があり、04 以降で足す UI に使える
-- 地図系は、上の試算（MapLibre 約 154KB）を大きく超えた。MapLibre 6 の本体（`maplibre-gl.mjs`）に、それが import する `maplibre-gl-shared.mjs` を合わせたものの実測である（試算は shared を数え落としていた）。Worker 側のチャンクにも同じ shared が複製されている（約 130KB）。上流の配布の形なら 1 回で済むので、06 でバンドル全体を詰めるときの候補になる。04 以降でアプリ本体と UI 系が使える余裕は、上の予算のとおり約 70KB である。超える見込みになったら、初期ロードの上限を見直すか、パネルなどの UI を遅延ロードにする
+- 地図系は、上の試算（MapLibre 約 154KB）を大きく超えた。MapLibre 6 の本体（`maplibre-gl.mjs`）に、それが import する `maplibre-gl-shared.mjs` を合わせたものの実測である（試算は shared を数え落としていた）。Worker 側のチャンクにも同じ shared が複製されている（約 130KB）。上流の配布の形なら 1 回で済むので、06 でバンドル全体を詰めるときの候補になる。04 以降でアプリ本体と UI 系が使える余裕は、上の予算のとおり約 70KB である。超える見込みになったら、パネルなどの UI の遅延ロードを先に検討し、それでも足りなければ上限を見直す（裁定 RB-1）
 - チャンク別の予算は目安であり、CI が検査するのは初期ロードと総量の上限である
 - `ui` のチャンクは、node_modules 全体ではなく、パッケージの一覧で捕まえる。05 で動的 import する Three.js などを初期ロードに吸い込まないためである。依存を足したら一覧を見直す
+
+04 完了時点、2026-09-13 の実測（`pnpm build && pnpm size`。gzip level 9、1KB = 1000 バイト）:
+
+| チャンク | 実測 | 予算 |
+|---|---:|---:|
+| `map` | 246.6 KB | 260 KB |
+| `ui` | 160.0 KB | 150 KB（超過） |
+| `index` | 18.0 KB（別に rolldown のランタイム 0.4 KB） | 20 KB |
+| 初期ロードの合計 | 424.9 KB | 500 KB |
+| `maplibre-gl-worker` | 131.8 KB | — |
+| `simulation.worker` | 8.7 KB | — |
+| 総量 | 565.3 KB | 1.2 MB |
+
+- `ui` がチャンクの予算（150 KB）を 10 KB 超えた。実装 spec 04 で足した MUI の部品（`TextField`・`Slider`・`ToggleButtonGroup`・`Popover`・`Dialog`・`Snackbar` など）による。とくに `TextField` は、使わなくても `Select`・`Menu`・`Popover` の実装を静的に import する（本アプリのコードはこれらを使わず、列挙の選択は §9.3 のとおり `ToggleButtonGroup` にしている）。予算が詰まってきたら、パネルの遅延ロードと合わせて、`TextField` を `OutlinedInput`（または `InputBase`）と `FormControl` の組み合わせに置き換えることを検討する（裁定 RB-1 の順序）
 
 ## 14.3 メモリ
 

@@ -39,6 +39,12 @@ describe('表示の書式', () => {
     expect(formatVolume(1)).toBe('1.0 m³')
   })
 
+  it('水量の桁は丸めた後の値で決める（0.999 は 1 m³ に丸まるので小数 1 桁）', () => {
+    expect(formatVolume(0.999)).toBe('1.0 m³')
+    expect(formatVolume(0.994)).toBe('0.99 m³')
+    expect(formatVolume(-0.999)).toBe('-1.0 m³')
+  })
+
   it('湛水面積は m²、実行速度は step／秒、Step は「Step N」', () => {
     expect(formatArea(82.4)).toBe('82 m²')
     expect(formatStepsPerSecond(59.6)).toBe('60 step/秒')
