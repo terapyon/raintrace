@@ -5,6 +5,7 @@ import { wrapLongitude } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
+import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import type { SimulationSession } from './simulationSession'
@@ -20,6 +21,8 @@ export class TerrainSession {
   private readonly settings: SettingsStore
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
+  // URL の書き込みは、変更（地点の選択・地図の移動・雨量や範囲の変更）から 300ms 置いてまとめて行う（spec 04 §7）
+  private readonly urlDebounce: Debounce = createDebounce(() => this.writeUrl(), 300)
 
   // Worker が異常終了してもストアは変えない。読み込み中なら、その要求の失敗（'worker'）が load() で
   // failed になる。表示中なら、メインは地形の複製を持つので、重ね描きもカーソル位置の標高もそのまま動く
@@ -73,12 +76,12 @@ export class TerrainSession {
         this.overlay?.setDisplay(this.overlayDisplay())
       }
       if (state.rainfall !== previous.rainfall || state.area !== previous.area) {
-        this.scheduleUrlWrite()
+        this.urlDebounce.schedule()
       }
     })
     map.on('click', onClick)
     map.on('mousemove', onMove)
-    map.on('moveend', this.scheduleUrlWrite)
+    map.on('moveend', this.urlDebounce.schedule)
 
     const view = parseUrlView(window.location.search)
     if (view.point !== null) {
@@ -92,9 +95,9 @@ export class TerrainSession {
     return () => {
       map.off('click', onClick)
       map.off('mousemove', onMove)
-      map.off('moveend', this.scheduleUrlWrite)
+      map.off('moveend', this.urlDebounce.schedule)
       cancelAnimationFrame(frame)
-      clearTimeout(this.urlTimer)
+      this.urlDebounce.cancel()
       unsubscribe()
       unsubscribeSettings()
       detachWater()
@@ -112,7 +115,7 @@ export class TerrainSession {
     this.simulation.terrainCleared()
     this.overlay?.clearTerrain()
     this.overlay?.showSelection(wrappedLon, lat)
-    this.scheduleUrlWrite()
+    this.urlDebounce.schedule()
     void this.load(wrappedLon, lat)
   }
 
@@ -162,14 +165,6 @@ export class TerrainSession {
           ? { kind: 'value', meters: terrain.elevation[index] ?? 0 }
           : { kind: 'no-data' },
       )
-  }
-
-  private urlTimer: ReturnType<typeof setTimeout> | undefined
-
-  /** URL の書き込みは、変更から 300ms 置いてまとめて行う（spec 04 §7） */
-  private readonly scheduleUrlWrite = (): void => {
-    clearTimeout(this.urlTimer)
-    this.urlTimer = setTimeout(() => this.writeUrl(), 300)
   }
 
   private writeUrl(): void {
