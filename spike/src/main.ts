@@ -18,7 +18,9 @@ import { waitIdle } from './waitIdle'
 setWorkerUrl(workerUrl)
 
 /** 候補は動的 import で読み、候補ごとのチャンクにする（計画 D3、Task 9 で大きさを測る） */
-const candidates: Partial<Record<CandidateId, () => Promise<{ mount: MountCandidate }>>> = {}
+const candidates: Partial<Record<CandidateId, () => Promise<{ mount: MountCandidate }>>> = {
+  a: () => import('./candidates/a'),
+}
 
 const status = document.getElementById('status')
 const show = (text: string): void => {

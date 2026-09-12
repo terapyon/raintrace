@@ -30,6 +30,29 @@ export interface View {
   zoom: number
 }
 
+/** 判定 (1) の 1 地点の記録（Task 2）。位置は CSS 画素、標高は m */
+export interface ProbePoint {
+  label: string
+  lngLat: [number, number]
+  simElevation: number // シミュレーションのグリッドの標高（倍率なし）
+  terrainElevation: number | null // queryTerrainElevation（倍率込み）
+  projected: { x: number; y: number } // map.project（地形を考慮する）
+  viaMatrixZ0: { x: number; y: number } | null // mainMatrix、z = 0
+  viaMatrixTerrain: { x: number; y: number } | null // z = queryTerrainElevation
+  viaMatrixSim: { x: number; y: number } | null // z = シミュレーションの標高 × 倍率
+}
+
+export interface ApiProbeResult {
+  optionKeys: string[] // CustomRenderMethodInput の実際のキー
+  nearZ: number
+  farZ: number
+  fovRad: number
+  mvpEqualsMain: boolean // modelViewProjectionMatrix と defaultProjectionData.mainMatrix が同じか
+  centerElevation: number // map.getCenterElevation()
+  exaggeration: number
+  points: ProbePoint[]
+}
+
 export interface CandidateHandle {
   /** 地形と水面に同じ倍率を掛ける（合格基準 2） */
   setExaggeration(value: number): void
@@ -40,6 +63,8 @@ export interface CandidateHandle {
   whenIdle(): Promise<void>
   /** Custom Layer の render の CPU 時間（ms）。新しいものを末尾に足す（Task 8 が読む） */
   readonly renderTimes: number[]
+  /** A・A' だけ。直近の render の引数から判定 (1) の記録を作る。まだ描いていなければ null */
+  apiProbe?(): ApiProbeResult | null
 }
 
 export type MountCandidate = (

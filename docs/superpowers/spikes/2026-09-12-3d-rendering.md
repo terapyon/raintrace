@@ -38,12 +38,61 @@
 | 複雑さ（行数・回避策の数） | | | | |
 | 継ぎ目 | — | — | | |
 | z-fighting の対策の効果 | | | | |
-| Custom Layer の API | | | | |
+| Custom Layer の API | 絶対標高。地形の高さは自前で与える（台地で誤差 0.06px 以下、16 通り全て。判定 (1) 合格 → A を A 系の本線にする） | matrix は地形の高さを含まない（台地の z=0 は最大 730.6px ずれる）ため、地形任せの前提が成立せず不採用 | | |
 | 流れの矢印（symbol レイヤー） | | | — | — |
 
 ## 5. Custom Layer の API（MapLibre 6.6.0）
 
-（Task 2 で書く）
+型（maplibre-gl.d.ts、計画の「事前に確かめた事実」より）:
+
+- `CustomLayerInterface`（7110 行）: `id`、`type: "custom"`、`renderingMode?: "2d" | "3d"`、`render: CustomRenderMethod`、`prerender?`、`onAdd?(map, gl: WebGL2RenderingContext)`、`onRemove?(map, gl)`。`CustomRenderMethod = (gl: WebGL2RenderingContext, options: CustomRenderMethodInput) => void`
+- `CustomRenderMethodInput`（6926 行）: `farZ`、`nearZ`、`fov`（ラジアン）、`modelViewProjectionMatrix: mat4`、`projectionMatrix: mat4`、`shaderData: { variantName; vertexShaderPrelude; define }`、`defaultProjectionData: CustomLayerProjectionData`、`getProjectionData(params: CustomLayerProjectionDataParams) => RendererProjectionData`。型の説明: メルカトルでは `projectTile` が 0..1 のメルカトル座標を受け、`renderingMode: "3d"` なら z は等角（x・y と同じ単位）。「行列だけでよければ `defaultProjectionData.mainMatrix`」
+- `Map.setTerrain(options: TerrainSpecification | null, styleOptions?): this`、`TerrainSpecification = { source: string; exaggeration?: number }`（既定 1）。`Map.queryTerrainElevation(lngLatLike): number | null` は「海抜の m、垂直強調を掛けた値」。実装は `terrain.getElevationForLngLat(lngLat, transform)` で、今の視点の覆うタイルの最大ズームの DEM から取る（LOD に依存する）。`Map.getCenterElevation(): number` がある
+- `addProtocol(customProtocol: string, loadFn: AddProtocolAction): void`、`AddProtocolAction = (requestParameters: RequestParameters, abortController: AbortController) => Promise<GetResourceResponse<any>>`、`GetResourceResponse<T> = ExpiryData & { data: T }`
+
+実測（`spike/results/api-probe.json`、16 通り = zoom {15, 16, 17, 18} × exaggeration {1, 10} × pitch {0, 60}、合成の場面）:
+
+- `optionKeys`（実際のキー、事前の想定どおり）: `defaultProjectionData`、`farZ`、`fov`、`getProjectionData`、`modelViewProjectionMatrix`、`nearZ`、`projectionMatrix`、`shaderData`
+- `nearZ`: 常に 12（16 通り全て同じ）
+- `farZ`: 929.85 〜 10045.13（pitch・zoom で変わる）
+- `fov`: 常に 0.6435011087932844 rad（≈ 36.87°、固定）
+- `mvpEqualsMain`（`modelViewProjectionMatrix` と `defaultProjectionData.mainMatrix` が同じか）: 16 通り全て **false**（事前に確かめた事実の想定と異なり、両者は同じ行列ではなかった。ただし本 Task は `mainMatrix` だけを使っており、下の判定はその `mainMatrix` に対するもの）
+
+判定 (1) の 16 行（合成の場面、`flat`＝台地の 1 地点。距離は CSS px、`map.project` からの誤差）:
+
+| zoom | 倍率 | pitch | z=0 の距離 | 地形の距離 | シミュの距離 | bowl の 地形−シミュ×倍率 (m) |
+|---|---|---|---|---|---|---|
+| 15 | 1 | 0 | 0.289 | 0.000 | 0.000 | 0.056 |
+| 15 | 1 | 60 | 17.535 | 0.000 | 0.001 | 0.056 |
+| 15 | 10 | 0 | 2.405 | 0.000 | 0.000 | 0.564 |
+| 15 | 10 | 60 | 159.292 | 0.000 | 0.008 | 0.564 |
+| 16 | 1 | 0 | 1.131 | 0.000 | 0.000 | 0.016 |
+| 16 | 1 | 60 | 34.408 | 0.000 | 0.002 | 0.016 |
+| 16 | 10 | 0 | 8.107 | 0.000 | 0.001 | 0.163 |
+| 16 | 10 | 60 | 287.434 | 0.000 | 0.016 | 0.163 |
+| 17 | 1 | 0 | 4.333 | 0.000 | 0.000 | 0.006 |
+| 17 | 1 | 60 | 66.318 | 0.000 | 0.003 | −0.001 |
+| 17 | 10 | 0 | 24.670 | 0.000 | 0.002 | 0.056 |
+| 17 | 10 | 60 | 481.632 | 0.000 | 0.032 | −0.012 |
+| 18 | 1 | 0 | 15.989 | 0.000 | 0.001 | −0.001 |
+| 18 | 1 | 60 | 123.725 | 0.000 | 0.006 | −0.001 |
+| 18 | 10 | 0 | 66.743 | 0.000 | 0.009 | −0.012 |
+| 18 | 10 | 60 | 730.601 | 0.000 | 0.061 | −0.012 |
+
+判定 (1) の結果: **16 通りすべてで「シミュ」の列が 1px 以下（最大 0.061px）。判定の規則の 1 行目に当たる → 合格。A を A 系の本線にする**。`mainMatrix` は絶対標高（メルカトルの等角の z）で、MapLibre の地形の高さは含まれない。地形の高さをシミュレーションの標高 × 倍率で自前に与えれば、MapLibre の地形（hillshade・`queryTerrainElevation`）と同じ位置に描ける。「z=0」の列は台地でも 0.289px 〜 730.6px と大きく外れており、A'（地形任せ）の前提は成立しない。「地形」の列（`queryTerrainElevation` の値をそのまま高さにした場合）は 16 通り全て 0.000px で `map.project` と一致する。これは `map.project` 自身が地形有効時に同じ `terrain.getElevationForLngLat` の値で高さを補正して投影しているためで、`mainMatrix` の z の意味づけ（等角・絶対標高）の裏付けになる。
+
+すり鉢の中心での LOD のずれ（`queryTerrainElevation` − シミュの標高 × 倍率、ズームごとの最大の絶対値、m）:
+
+| zoom | 最大の絶対値 (m) |
+|---|---|
+| 15 | 0.564 |
+| 16 | 0.163 |
+| 17 | 0.056 |
+| 18 | 0.012 |
+
+ズームが上がるほど地形の DEM タイルの解像度が上がり、シミュレーションの標高（z17 のグリッド）との差が小さくなる。合成の場面はなだらかなすり鉢なので、この値は判定 (2)（陰影・水面の見た目のずれ）の上限の目安として小さめに出ている可能性がある。
+
+Terrarium の刻み（1/256 m ≈ 0.0039 m ≈ 3.9mm、切り捨て）は 1cm の膜（`MIN_DEPTH_M` = 9.9mm、`spike/src/scenes.ts`）より 1 桁小さく、量子化誤差が膜の可視性を左右することはない。
 
 ## 6. 1 日目の中間の判定
 

@@ -1,0 +1,1490 @@
+[
+  {
+    "view": {
+      "zoom": 15,
+      "exaggeration": 1,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 929.8535828777399,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 480.30903999964397,
+            "y": 287.11507644547356
+          },
+          "viaMatrixZ0": {
+            "x": 480.30210924086373,
+            "y": 287.4040432524786
+          },
+          "viaMatrixTerrain": {
+            "x": 480.30904000004125,
+            "y": 287.1150764450431
+          },
+          "viaMatrixSim": {
+            "x": 480.30904032233633,
+            "y": 287.1150630074717
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.08595275878906,
+          "projected": {
+            "x": 480.3085198894752,
+            "y": 235.7234355585629
+          },
+          "viaMatrixZ0": {
+            "x": 480.30210924086373,
+            "y": 237.059020270344
+          },
+          "viaMatrixTerrain": {
+            "x": 480.3085198891444,
+            "y": 235.72343555820743
+          },
+          "viaMatrixSim": {
+            "x": 480.30850993395137,
+            "y": 235.72550960797668
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.52587890625,
+          "projected": {
+            "x": 480.3071910791558,
+            "y": 364.2284979632631
+          },
+          "viaMatrixZ0": {
+            "x": 480.30210924086373,
+            "y": 363.1659710411277
+          },
+          "viaMatrixTerrain": {
+            "x": 480.3071910783841,
+            "y": 364.22849796263273
+          },
+          "viaMatrixSim": {
+            "x": 480.3072681338533,
+            "y": 364.2446089677919
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 15,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 2249.397305737366,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 480.30525528479734,
+            "y": 293.6364370070552
+          },
+          "viaMatrixZ0": {
+            "x": 480.301835447159,
+            "y": 311.17180024506297
+          },
+          "viaMatrixTerrain": {
+            "x": 480.30525528522253,
+            "y": 293.63643700764806
+          },
+          "viaMatrixSim": {
+            "x": 480.30525544244693,
+            "y": 293.6356308322338
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.08595275878906,
+          "projected": {
+            "x": 480.29077980338485,
+            "y": 270.94602204364963
+          },
+          "viaMatrixZ0": {
+            "x": 480.2879008675496,
+            "y": 286.6674076386953
+          },
+          "viaMatrixTerrain": {
+            "x": 480.290779803416,
+            "y": 270.94602204416765
+          },
+          "viaMatrixSim": {
+            "x": 480.2907753817166,
+            "y": 270.9701682038924
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.52587890625,
+          "projected": {
+            "x": 480.3284746909976,
+            "y": 339.32547895059986
+          },
+          "viaMatrixZ0": {
+            "x": 480.3255469453656,
+            "y": 352.8692089657825
+          },
+          "viaMatrixTerrain": {
+            "x": 480.32847469349656,
+            "y": 339.32547895107945
+          },
+          "viaMatrixSim": {
+            "x": 480.32851873979484,
+            "y": 339.1217212688299
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 15,
+      "exaggeration": 10,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 1117.535828777399,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 480.30903999964397,
+            "y": 287.11507644547356
+          },
+          "viaMatrixZ0": {
+            "x": 480.2513721285741,
+            "y": 289.5194451847961
+          },
+          "viaMatrixTerrain": {
+            "x": 480.30904000004125,
+            "y": 287.1150764450431
+          },
+          "viaMatrixSim": {
+            "x": 480.3090432230221,
+            "y": 287.11494206806793
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.8595275878906,
+          "projected": {
+            "x": 480.3039164947112,
+            "y": 236.68249942792224
+          },
+          "viaMatrixZ0": {
+            "x": 480.2513721285741,
+            "y": 247.62951307298664
+          },
+          "viaMatrixTerrain": {
+            "x": 480.30391649627313,
+            "y": 236.6824994271888
+          },
+          "viaMatrixSim": {
+            "x": 480.3038199205687,
+            "y": 236.7026198625565
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 295.2587890625,
+          "projected": {
+            "x": 480.2914954694036,
+            "y": 360.94680986399277
+          },
+          "viaMatrixZ0": {
+            "x": 480.2513721285741,
+            "y": 352.55769253751913
+          },
+          "viaMatrixTerrain": {
+            "x": 480.2914954707019,
+            "y": 360.9468098636641
+          },
+          "viaMatrixSim": {
+            "x": 480.2921907761963,
+            "y": 361.09218657110824
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 15,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 3137.519229013188,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 480.30525528479734,
+            "y": 293.6364370067935
+          },
+          "viaMatrixZ0": {
+            "x": 480.2741892568314,
+            "y": 452.9288017570978
+          },
+          "viaMatrixTerrain": {
+            "x": 480.30525528522253,
+            "y": 293.63643700764806
+          },
+          "viaMatrixSim": {
+            "x": 480.3052568574757,
+            "y": 293.62837521486966
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.8595275878906,
+          "projected": {
+            "x": 480.28871893525735,
+            "y": 282.2000746492502
+          },
+          "viaMatrixZ0": {
+            "x": 480.2626415812349,
+            "y": 424.60413092745506
+          },
+          "viaMatrixTerrain": {
+            "x": 480.28871893572136,
+            "y": 282.2000746494784
+          },
+          "viaMatrixSim": {
+            "x": 480.2886753491871,
+            "y": 282.4380933981321
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 295.2587890625,
+          "projected": {
+            "x": 480.31928320647074,
+            "y": 381.84518945750057
+          },
+          "viaMatrixZ0": {
+            "x": 480.2936162530757,
+            "y": 500.58023335727006
+          },
+          "viaMatrixTerrain": {
+            "x": 480.31928320763393,
+            "y": 381.84518945794537
+          },
+          "viaMatrixSim": {
+            "x": 480.31969985233815,
+            "y": 379.9177957299265
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 16,
+      "exaggeration": 1,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 950.7071657554798,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 480.61807999928794,
+            "y": 274.2301528909471
+          },
+          "viaMatrixZ0": {
+            "x": 480.5909650629683,
+            "y": 275.3606663895321
+          },
+          "viaMatrixTerrain": {
+            "x": 480.61808000008267,
+            "y": 274.2301528900862
+          },
+          "viaMatrixSim": {
+            "x": 480.61808128926424,
+            "y": 274.23009913974454
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.0458984375,
+          "projected": {
+            "x": 480.61597486699486,
+            "y": 171.66873342439862
+          },
+          "viaMatrixZ0": {
+            "x": 480.5909650629683,
+            "y": 176.8792376463299
+          },
+          "viaMatrixTerrain": {
+            "x": 480.6159748655138,
+            "y": 171.66873342423196
+          },
+          "viaMatrixSim": {
+            "x": 480.61596336617816,
+            "y": 171.67112917831798
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.72119140625,
+          "projected": {
+            "x": 480.61086343445254,
+            "y": 427.72128965553253
+          },
+          "viaMatrixZ0": {
+            "x": 480.5909650629683,
+            "y": 423.56087469240924
+          },
+          "viaMatrixTerrain": {
+            "x": 480.61086343205994,
+            "y": 427.72128965426623
+          },
+          "viaMatrixSim": {
+            "x": 480.61103293931956,
+            "y": 427.75673077690925
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 16,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 2348.0775194346797,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 480.60312429769857,
+            "y": 287.4268533515199
+          },
+          "viaMatrixZ0": {
+            "x": 480.5899183131546,
+            "y": 321.8345778055507
+          },
+          "viaMatrixTerrain": {
+            "x": 480.6031242985387,
+            "y": 287.4268533526913
+          },
+          "viaMatrixSim": {
+            "x": 480.6031249123112,
+            "y": 287.42525418890057
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.0458984375,
+          "projected": {
+            "x": 480.54910298360676,
+            "y": 245.16681927256403
+          },
+          "viaMatrixZ0": {
+            "x": 480.53893705175625,
+            "y": 275.0420063661922
+          },
+          "viaMatrixTerrain": {
+            "x": 480.54910298648974,
+            "y": 245.1668192734098
+          },
+          "viaMatrixSim": {
+            "x": 480.54909841740886,
+            "y": 245.18024668118306
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.72119140625,
+          "projected": {
+            "x": 480.7011246459103,
+            "y": 383.74174130656667
+          },
+          "viaMatrixZ0": {
+            "x": 480.6878335722202,
+            "y": 411.7049856589719
+          },
+          "viaMatrixTerrain": {
+            "x": 480.7011246486899,
+            "y": 383.74174130683895
+          },
+          "viaMatrixSim": {
+            "x": 480.70123628595076,
+            "y": 383.50686642623225
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 1326.071657554798,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 480.6180799992879,
+            "y": 274.23015289094707
+          },
+          "viaMatrixZ0": {
+            "x": 480.42368352937365,
+            "y": 282.33519969342706
+          },
+          "viaMatrixTerrain": {
+            "x": 480.61808000008267,
+            "y": 274.2301528900862
+          },
+          "viaMatrixSim": {
+            "x": 480.61809289214,
+            "y": 274.22961537657983
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.458984375,
+          "projected": {
+            "x": 480.5976547528617,
+            "y": 175.48551714090195
+          },
+          "viaMatrixZ0": {
+            "x": 480.42368352937365,
+            "y": 211.73041791817752
+          },
+          "viaMatrixTerrain": {
+            "x": 480.597654756166,
+            "y": 175.48551714062975
+          },
+          "viaMatrixSim": {
+            "x": 480.59754651886016,
+            "y": 175.50806713631368
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 297.2119140625,
+          "projected": {
+            "x": 480.55277653878824,
+            "y": 415.57629579830194
+          },
+          "viaMatrixZ0": {
+            "x": 480.42368352937365,
+            "y": 388.5851140154046
+          },
+          "viaMatrixTerrain": {
+            "x": 480.55277654106675,
+            "y": 415.57629579756406
+          },
+          "viaMatrixSim": {
+            "x": 480.5541676795012,
+            "y": 415.8671594924762
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 4124.321365986323,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 480.60312429769857,
+            "y": 287.42685335100293
+          },
+          "viaMatrixZ0": {
+            "x": 480.49280447121873,
+            "y": 574.8612332771895
+          },
+          "viaMatrixTerrain": {
+            "x": 480.6031242985387,
+            "y": 287.4268533526913
+          },
+          "viaMatrixSim": {
+            "x": 480.603130436327,
+            "y": 287.41086156574096
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.458984375,
+          "projected": {
+            "x": 480.5417018417878,
+            "y": 266.9169629479043
+          },
+          "viaMatrixZ0": {
+            "x": 480.4567134556745,
+            "y": 516.6769746039797
+          },
+          "viaMatrixTerrain": {
+            "x": 480.5417018431809,
+            "y": 266.9169629492829
+          },
+          "viaMatrixSim": {
+            "x": 480.5416573790451,
+            "y": 267.0476321314171
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 297.2119140625,
+          "projected": {
+            "x": 480.66124839953125,
+            "y": 467.6378227280919
+          },
+          "viaMatrixZ0": {
+            "x": 480.55931775244323,
+            "y": 682.0908554303618
+          },
+          "viaMatrixTerrain": {
+            "x": 480.6612484018694,
+            "y": 467.6378227299784
+          },
+          "viaMatrixSim": {
+            "x": 480.66224273381886,
+            "y": 465.54583662736735
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 17,
+      "exaggeration": 1,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 992.4143315109596,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 481.23615999857583,
+            "y": 248.46030578189425
+          },
+          "viaMatrixZ0": {
+            "x": 481.1322583768409,
+            "y": 252.7923161140827
+          },
+          "viaMatrixTerrain": {
+            "x": 481.23616000016534,
+            "y": 248.46030578017232
+          },
+          "viaMatrixSim": {
+            "x": 481.23616515690225,
+            "y": 248.46009077835745
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.03515625,
+          "projected": {
+            "x": 481.2277380155756,
+            "y": 44.21492957903189
+          },
+          "viaMatrixZ0": {
+            "x": 481.1322583768409,
+            "y": 64.10701194792446
+          },
+          "viaMatrixTerrain": {
+            "x": 481.22773801393913,
+            "y": 44.214929580574406
+          },
+          "viaMatrixSim": {
+            "x": 481.2277223595064,
+            "y": 44.21819100128077
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.818359375,
+          "projected": {
+            "x": 481.2078897418561,
+            "y": 552.5494683186387
+          },
+          "viaMatrixZ0": {
+            "x": 481.1322583768409,
+            "y": 536.7362204417965
+          },
+          "viaMatrixTerrain": {
+            "x": 481.2078897370887,
+            "y": 552.5494683171474
+          },
+          "viaMatrixSim": {
+            "x": 481.2082895233307,
+            "y": 552.6330569095052
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 17,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 2545.437946829307,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 481.1777505281724,
+            "y": 275.4477971414155
+          },
+          "viaMatrixZ0": {
+            "x": 481.1284221317567,
+            "y": 341.76615691347536
+          },
+          "viaMatrixTerrain": {
+            "x": 481.1777505298129,
+            "y": 275.44779714370276
+          },
+          "viaMatrixSim": {
+            "x": 481.17775287027064,
+            "y": 275.44465056965595
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.0283203125,
+          "projected": {
+            "x": 480.9879357919425,
+            "y": 201.37027224549647
+          },
+          "viaMatrixZ0": {
+            "x": 480.955522803012,
+            "y": 255.75006031443286
+          },
+          "viaMatrixTerrain": {
+            "x": 480.9879357953299,
+            "y": 201.37027224737545
+          },
+          "viaMatrixSim": {
+            "x": 480.9879369139396,
+            "y": 201.36839553773754
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.916015625,
+          "projected": {
+            "x": 481.62037134394075,
+            "y": 493.0794721586072
+          },
+          "viaMatrixZ0": {
+            "x": 481.5506681885384,
+            "y": 551.8303478607445
+          },
+          "viaMatrixTerrain": {
+            "x": 481.620371357657,
+            "y": 493.079472160452
+          },
+          "viaMatrixSim": {
+            "x": 481.6204932111295,
+            "y": 492.97676523246594
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 17,
+      "exaggeration": 10,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 1743.1433151095962,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 481.23615999857583,
+            "y": 248.46030578189425
+          },
+          "viaMatrixZ0": {
+            "x": 480.64462252209006,
+            "y": 273.12350531380275
+          },
+          "viaMatrixTerrain": {
+            "x": 481.23616000016534,
+            "y": 248.46030578017232
+          },
+          "viaMatrixSim": {
+            "x": 481.2362115694705,
+            "y": 248.45815568129973
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.3515625,
+          "projected": {
+            "x": 481.15680590604813,
+            "y": 58.99281644301919
+          },
+          "viaMatrixZ0": {
+            "x": 480.64462252209006,
+            "y": 165.70032422657997
+          },
+          "viaMatrixTerrain": {
+            "x": 481.15680590897443,
+            "y": 58.99281644032389
+          },
+          "viaMatrixSim": {
+            "x": 481.1566669456197,
+            "y": 59.02176785427626
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 298.18359375,
+          "projected": {
+            "x": 481.0017124762585,
+            "y": 509.4412647809657
+          },
+          "viaMatrixZ0": {
+            "x": 480.64462252209006,
+            "y": 434.77974869748755
+          },
+          "viaMatrixTerrain": {
+            "x": 481.0017124800846,
+            "y": 509.44126478115675
+          },
+          "viaMatrixSim": {
+            "x": 481.00446866926126,
+            "y": 510.01753767242207
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 17,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 6097.925639932593,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 481.1777505281724,
+            "y": 275.4477971404059
+          },
+          "viaMatrixZ0": {
+            "x": 480.81950715573,
+            "y": 757.0793502469174
+          },
+          "viaMatrixTerrain": {
+            "x": 481.1777505298129,
+            "y": 275.44779714370276
+          },
+          "viaMatrixSim": {
+            "x": 481.1777739348364,
+            "y": 275.41633083514415
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.283203125,
+          "projected": {
+            "x": 480.96409684741155,
+            "y": 241.36525140958818
+          },
+          "viaMatrixZ0": {
+            "x": 480.7243228024199,
+            "y": 643.6379452259341
+          },
+          "viaMatrixTerrain": {
+            "x": 480.9640968471017,
+            "y": 241.36525141122814
+          },
+          "viaMatrixSim": {
+            "x": 480.96410749996886,
+            "y": 241.347378928284
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 299.16015625,
+          "projected": {
+            "x": 481.42546058802884,
+            "y": 657.3643709677119
+          },
+          "viaMatrixZ0": {
+            "x": 481.0215175475227,
+            "y": 997.8368054027643
+          },
+          "viaMatrixTerrain": {
+            "x": 481.4254605933746,
+            "y": 657.3643709697928
+          },
+          "viaMatrixSim": {
+            "x": 481.42640416302265,
+            "y": 656.5690621845442
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 18,
+      "exaggeration": 1,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 1075.8286630219193,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 482.47231999715166,
+            "y": 196.9206115637885
+          },
+          "viaMatrixZ0": {
+            "x": 482.0889375395409,
+            "y": 212.90512391773152
+          },
+          "viaMatrixTerrain": {
+            "x": 482.4723200003307,
+            "y": 196.92061156034472
+          },
+          "viaMatrixSim": {
+            "x": 482.4723406273643,
+            "y": 196.91975154949753
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.0283203125,
+          "projected": {
+            "x": 482.438784610443,
+            "y": -208.09267693634922
+          },
+          "viaMatrixZ0": {
+            "x": 482.0889375395409,
+            "y": -135.20606968816858
+          },
+          "viaMatrixTerrain": {
+            "x": 482.4387846134167,
+            "y": -208.09267693775706
+          },
+          "viaMatrixSim": {
+            "x": 482.43879824667755,
+            "y": -208.09551727056962
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.916015625,
+          "projected": {
+            "x": 482.3627778894838,
+            "y": 794.0171943585761
+          },
+          "viaMatrixZ0": {
+            "x": 482.0889375395409,
+            "y": 736.7617744897171
+          },
+          "viaMatrixTerrain": {
+            "x": 482.3627778866002,
+            "y": 794.0171943596854
+          },
+          "viaMatrixSim": {
+            "x": 482.36329614599975,
+            "y": 794.125553700589
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 18,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 2940.1588016185615,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 40.02734375,
+      "exaggeration": 1,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 40.02734375,
+          "projected": {
+            "x": 482.24922358553385,
+            "y": 253.1111280144904
+          },
+          "viaMatrixZ0": {
+            "x": 482.07591712911807,
+            "y": 376.83567887767117
+          },
+          "viaMatrixTerrain": {
+            "x": 482.2492235886669,
+            "y": 253.11112801885858
+          },
+          "viaMatrixSim": {
+            "x": 482.2492321247813,
+            "y": 253.10503402868474
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 37.0283203125,
+          "projected": {
+            "x": 481.6454590457333,
+            "y": 135.72699862128167
+          },
+          "viaMatrixZ0": {
+            "x": 481.55746472952,
+            "y": 227.87433211806535
+          },
+          "viaMatrixTerrain": {
+            "x": 481.6454590513752,
+            "y": 135.72699862441118
+          },
+          "viaMatrixSim": {
+            "x": 481.6454621544741,
+            "y": 135.7237490696381
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 29.916015625,
+          "projected": {
+            "x": 484.70225114628414,
+            "y": 860.3087049624766
+          },
+          "viaMatrixZ0": {
+            "x": 484.1596489339559,
+            "y": 975.5319066705279
+          },
+          "viaMatrixTerrain": {
+            "x": 484.7022511860881,
+            "y": 860.30870496783
+          },
+          "viaMatrixSim": {
+            "x": 484.70327750555145,
+            "y": 860.0907629716564
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 18,
+      "exaggeration": 10,
+      "pitch": 0
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 2577.2866302191924,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 482.4723199971517,
+            "y": 196.92061156378853
+          },
+          "viaMatrixZ0": {
+            "x": 480.8719786359615,
+            "y": 263.64425943431917
+          },
+          "viaMatrixTerrain": {
+            "x": 482.4723200003307,
+            "y": 196.9206115603447
+          },
+          "viaMatrixSim": {
+            "x": 482.4725262861573,
+            "y": 196.9120108060536
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.283203125,
+          "projected": {
+            "x": 482.17345168974754,
+            "y": -152.8136194762119
+          },
+          "viaMatrixZ0": {
+            "x": 480.8719786359615,
+            "y": 118.3332972740301
+          },
+          "viaMatrixTerrain": {
+            "x": 482.1734516910975,
+            "y": -152.81361947641614
+          },
+          "viaMatrixSim": {
+            "x": 482.17355997703015,
+            "y": -152.83617960292665
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 299.16015625,
+          "projected": {
+            "x": 481.6891864706628,
+            "y": 653.1805375225114
+          },
+          "viaMatrixZ0": {
+            "x": 480.8719786359615,
+            "y": 482.3160956949484
+          },
+          "viaMatrixTerrain": {
+            "x": 481.6891864768345,
+            "y": 653.1805375226583
+          },
+          "viaMatrixSim": {
+            "x": 481.69183889959123,
+            "y": 653.7351145973593
+          }
+        }
+      ]
+    }
+  },
+  {
+    "view": {
+      "zoom": 18,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "probe": {
+      "optionKeys": [
+        "defaultProjectionData",
+        "farZ",
+        "fov",
+        "getProjectionData",
+        "modelViewProjectionMatrix",
+        "nearZ",
+        "projectionMatrix",
+        "shaderData"
+      ],
+      "nearZ": 12,
+      "farZ": 10045.134187825135,
+      "fovRad": 0.6435011087932844,
+      "mvpEqualsMain": false,
+      "centerElevation": 400.2734375,
+      "exaggeration": 10,
+      "points": [
+        {
+          "label": "flat",
+          "lngLat": [139.701606631279, 35.65822464312151],
+          "simElevation": 40.0291633605957,
+          "terrainElevation": 400.2734375,
+          "projected": {
+            "x": 482.24922358553385,
+            "y": 253.11112801256235
+          },
+          "viaMatrixZ0": {
+            "x": 481.2258398996256,
+            "y": 983.7110584209055
+          },
+          "viaMatrixTerrain": {
+            "x": 482.2492235886669,
+            "y": 253.11112801885858
+          },
+          "viaMatrixSim": {
+            "x": 482.24930895282773,
+            "y": 253.0501860244111
+          }
+        },
+        {
+          "label": "bowl",
+          "lngLat": [139.701606631279, 35.65912251724537],
+          "simElevation": 37.02955627441406,
+          "terrainElevation": 370.283203125,
+          "projected": {
+            "x": 481.5803735097213,
+            "y": 203.8843414225009
+          },
+          "viaMatrixZ0": {
+            "x": 481.0244625982574,
+            "y": 786.0322235470742
+          },
+          "viaMatrixTerrain": {
+            "x": 481.58037350921325,
+            "y": 203.88434142518915
+          },
+          "viaMatrixSim": {
+            "x": 481.580402134361,
+            "y": 203.85436527502955
+          }
+        },
+        {
+          "label": "slope",
+          "lngLat": [139.701606631279, 35.656873454296836],
+          "simElevation": 29.966060638427734,
+          "terrainElevation": 299.16015625,
+          "projected": {
+            "x": 483.3664451005071,
+            "y": 1143.9710966710722
+          },
+          "viaMatrixZ0": {
+            "x": 481.74077336203914,
+            "y": 1489.187327071967
+          },
+          "viaMatrixTerrain": {
+            "x": 483.3664451131322,
+            "y": 1143.971096675987
+          },
+          "viaMatrixSim": {
+            "x": 483.3717125365195,
+            "y": 1142.852543668268
+          }
+        }
+      ]
+    }
+  }
+]
