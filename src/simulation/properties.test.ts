@@ -72,7 +72,9 @@ const scenarioArb: fc.Arbitrary<Scenario> = fc
     terrain.validMask.forEach((v, i) => {
       if (v !== 0) valid.push(i)
     })
-    const { width, cellSizeM } = terrain.meta
+    const { width, height, cellSizeM } = terrain.meta
+    // 半径の上限（(width + height) × cellSizeM。04 の planRainfall の検査。レビューの推奨 A7）を超えない
+    const maxRadiusCells = width + height
     return {
       terrain,
       steps,
@@ -84,7 +86,7 @@ const scenarioArb: fc.Arbitrary<Scenario> = fc
           rain: {
             x: ((c % width) + 0.5) * cellSizeM,
             y: (Math.floor(c / width) + 0.5) * cellSizeM,
-            radiusM: r.radiusCells * cellSizeM,
+            radiusM: Math.min(r.radiusCells, maxRadiusCells) * cellSizeM,
             amountMm: r.amountMm,
           },
         }

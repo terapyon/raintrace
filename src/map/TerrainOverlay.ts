@@ -63,6 +63,9 @@ export class TerrainOverlay {
         elevationRgba(terrain.elevation, terrain.validMask, range.min, range.max),
         0.75,
       )
+      // depressions は地形解析の配列のまま渡す（絞り込み・並べ替えをしない）。depressionRgba はラベル label の
+      // 窪地を depressions[label − 1] で引く（窪地の id は 1 から順）。エンジンの setDepressions に
+      // significant だけを渡すのは Worker（workers/simulationRunner.ts）で、ここは絞らない
       this.addCanvasLayer(
         ID.depressions,
         depressionRgba(terrain.fill, terrain.elevation, terrain.labels, terrain.depressions),

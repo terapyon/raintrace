@@ -1,36 +1,19 @@
 import type { AssembledGrid } from '../dem/DemGrid'
 import type { TerrainGeo, TerrainPayload } from '../shared/protocol'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain'
-import type { Depression, TerrainGrid } from '../simulation/terrain/types'
-
-/** Worker が保持する地形（spec 02 §4.4）。04 でエンジンに渡す（loadTerrain と、significant の窪地を setDepressions） */
-export interface RetainedTerrain {
-  grid: TerrainGrid
-  depressions: Depression[]
-}
 
 /**
- * 読み込んだグリッドと解析の結果を、Worker が保持する分とメインスレッドへ送る分に分ける。
- * 標高・validMask は複製（.slice()）してメインへ送り、元の配列は Worker が保持する（tech-spec §5.4）。
- * grid（AssembledGrid）は TerrainGrid に代入できるので、retained.grid はそのまま渡した grid を持つ
+ * メインスレッドへ送る地形を作る。標高・validMask は複製（.slice()）して送る（tech-spec §5.4）。
+ * 元の grid は Worker がエンジンに渡す（エンジンが複製を持つので、Worker は grid を保持しない。spec 04）
  */
 export function packTerrain(
   grid: AssembledGrid,
   analysis: TerrainAnalysis,
   geo: TerrainGeo,
-): { retained: RetainedTerrain; payload: TerrainPayload; transfer: ArrayBuffer[] } {
-  const retained: RetainedTerrain = {
-    grid,
-    depressions: analysis.depressions,
-  }
+): { payload: TerrainPayload; transfer: ArrayBuffer[] } {
   const elevation = grid.elevation.slice()
   const validMask = grid.validMask.slice()
-  const payload: TerrainPayload = {
-    ...analysis,
-    elevation,
-    validMask,
-    geo,
-  }
+  const payload: TerrainPayload = { ...analysis, elevation, validMask, geo }
   // flowDirection・fill・labels は TerrainAnalysis の型が ArrayBufferLike（SharedArrayBuffer を含む）を
   // 許すが、analyzeTerrain が new Uint8Array 等で作るので実体は必ず ArrayBuffer
   const transfer: ArrayBuffer[] = [
@@ -40,5 +23,5 @@ export function packTerrain(
     analysis.fill.buffer as ArrayBuffer,
     analysis.labels.buffer as ArrayBuffer,
   ]
-  return { retained, payload, transfer }
+  return { payload, transfer }
 }

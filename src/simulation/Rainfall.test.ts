@@ -74,6 +74,14 @@ describe('planRainfall（spec 03 §3.6）', () => {
     expect(() => planRainfall(rain, mask5(), META_5)).toThrow(RangeError)
   })
 
+  it('半径が (width + height) × セルの大きさを超えたら RangeError（外接矩形の走査を抑える。Worker に届く値の検査）', () => {
+    // 5 × 5・セル 1m の上限は 10m。ちょうど 10m は受け付ける
+    const at = (radiusM: number) => ({ x: 2.5, y: 2.5, radiusM, amountMm: 1 })
+    expect(() => planRainfall(at(10.000001), mask5(), META_5)).toThrow(RangeError)
+    expect(() => planRainfall(at(1e9), mask5(), META_5)).toThrow(RangeError)
+    expect(planRainfall(at(10), mask5(), META_5).cells).toHaveLength(25)
+  })
+
   it('円がすべて有効なら、投入量は π · radiusM² · amountMm / 1000 と厳密に一致する（R04-8 の前と同じ）', () => {
     const plan = planRainfall({ x: 2.5, y: 2.5, radiusM: 1, amountMm: 10 }, mask5(), META_5)
     expect(plan.volumeM3).toBe((Math.PI * 1 * 10) / 1000)

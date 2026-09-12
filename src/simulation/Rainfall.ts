@@ -42,6 +42,11 @@ export function planRainfall(
     throw new RangeError(`雨量が不正です: ${amountMm}`)
   }
   const { width, height, cellSizeM } = meta
+  // 外接矩形はグリッドで切らずに走査する（R04-8）ので、半径に上限を置き、走査を 1 辺
+  // 2 × (width + height) + 2 セル以下に抑える。Worker に postMessage で届く値もここで止める（レビューの推奨 A7）
+  if (radiusM > (width + height) * cellSizeM) {
+    throw new RangeError(`降雨の半径がグリッドに対して大きすぎます: ${radiusM}`)
+  }
   const r2 = radiusM * radiusM
   // C（中心が円内にあるセル）は、グリッドの外のセルも含めて数える。外接矩形をグリッドで切らない（R04-8）。
   // S（雨を入れるセル）は、C のうちグリッドの中の有効セル
