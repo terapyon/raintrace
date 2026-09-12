@@ -1,3 +1,4 @@
+import { FILM_DEPTH_M } from './scenes'
 import type { CandidateId, SceneName, WaterMode, ZFix } from './types'
 
 export interface SpikeParams {
@@ -12,6 +13,7 @@ export interface SpikeParams {
   skirt: boolean // B・B-raw の縁（計画 D17）
   probe: 'fps' | null
   demFill: 'zero' | 'nearest' // 実データの A の地形の無効画素（M2 の切り分け用）
+  filmDepth: number // bowlFilm の膜の水深（m、既定 0.01）。Task 5b: 20cm の持ち上げた基準膜との比較に使う
 }
 
 function pick<T extends string>(value: string | null, options: readonly T[], fallback: T): T {
@@ -40,5 +42,7 @@ export function parseParams(search: string): SpikeParams {
     skirt: query.get('skirt') !== '0',
     probe: query.get('probe') === 'fps' ? 'fps' : null,
     demFill: query.get('demFill') === 'nearest' ? 'nearest' : 'zero',
+    // すり鉢の深さ(3m)より十分浅い範囲に限る（0 は膜が消えるので除く。計画 D8 の MIN_DEPTH_M 未満も除く）
+    filmDepth: numberIn(query.get('filmDepth'), 0.0099, 1, FILM_DEPTH_M),
   }
 }

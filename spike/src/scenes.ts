@@ -86,7 +86,10 @@ function minValid(elevation: Float32Array, validMask: Uint8Array): number {
   return Number.isFinite(min) ? min : 0
 }
 
-export function buildSyntheticScene(water: 'fixed' | 'film' | 'bowlFilm'): Scene {
+export function buildSyntheticScene(
+  water: 'fixed' | 'film' | 'bowlFilm',
+  bowlFilmDepthM: number = FILM_DEPTH_M,
+): Scene {
   const range = shibuyaRange()
   const sample = syntheticSampler(range)
   const n = range.size
@@ -100,8 +103,9 @@ export function buildSyntheticScene(water: 'fixed' | 'film' | 'bowlFilm'): Scene
       const i = row * n + col
       elevation[i] = sample(range.originX + col, range.originY + row) ?? 0
       if (water === 'bowlFilm') {
-        // 曲面（すり鉢の面）に一様な 1cm の膜。斜面の膜と池は置かない（M1）
-        if (isBowlCell(range, col, row)) depth[i] = FILM_DEPTH_M
+        // 曲面（すり鉢の面）に一様な膜。斜面の膜と池は置かない（M1）。
+        // 水深は引数（既定 1cm）。Task 5b: 20cm の持ち上げた基準膜との比較にも使う
+        if (isBowlCell(range, col, row)) depth[i] = bowlFilmDepthM
         continue
       }
       if (isFilmCell(range, col, row)) {

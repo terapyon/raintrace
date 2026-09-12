@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
+import { FILM_DEPTH_M } from '../src/scenes'
 import type { ApiProbeResult, View } from '../src/types'
 import {
   MAX_FLICKER,
@@ -13,6 +14,11 @@ import { openSpike, setView } from './support/views'
 
 const results = new URL('../results/', import.meta.url)
 const BOWL_CANDIDATES = ['a', 'a2'] as const
+// Task 5b（レビュー役の推奨）: 沈み込まない高さの基準膜。20cm はクリアランス
+// 0.2m × 倍率 ≥ Task 2 のすり鉢の d の最大 0.18m（倍率10）で、すり鉢の深さ 3m × 倍率
+// よりずっと低いので、縁による遮蔽の形は 1cm の膜とほぼ変わらない
+const REF_FILM_DEPTH_M = 0.2
+const RATIO_MIN = 0.98
 // pitch 0（真上）は MapLibre の既定の垂直画角（約 36.9°）では、すり鉢の縁の斜面（最大 45°、倍率10）
 // より視線が急なため、縁が手前の平地に隠れる自己遮蔽が構造上起きない（レビュー Important 1 (b)）。
 // ここでの可視率の低下は自己遮蔽ではなく、実際の沈み込みとして読める
@@ -165,5 +171,124 @@ test("曲面（すり鉢）の 1cm の膜: A と A'（zfix=offset、16 視点 + 
     `# 曲面（すり鉢）の 1cm の膜の見え方（M1）\n\n${body}`,
   )
   console.log(body)
+  expect(lists.flat()).toEqual([])
+})
+
+// レビュー役の推奨（2026-09-13、Task 5b）: pitch60・85 の可視率はすり鉢の縁による正当な遮蔽と沈み込みを
+// 区別できない（上のテストの「未確定」）。遮蔽は水深によらず同じだけ効くので、沈み込まない高さの
+// 基準膜（20cm）との比を取れば遮蔽が打ち消され、沈み込みだけが残る。A のみ（A' は速度で 05 の候補から
+// 事実上外れるため測らない）
+test('曲面（すり鉢）の斜め視点: 1cm の膜と 20cm の基準膜の可視率の比で沈み込みを確かめる（A、レビュー役の推奨、Task 5b）', async ({
+  page,
+  context,
+}) => {
+  const lists: string[][] = []
+  const filmRows = new Map<number, MeasureRow[]>()
+  for (const filmDepth of [FILM_DEPTH_M, REF_FILM_DEPTH_M]) {
+    lists.push(
+      await openSpike(page, context, {
+        candidate: 'a',
+        scene: 'synthetic',
+        water: 'bowlFilm',
+        zfix: 'offset',
+        capture: 1,
+        filmDepth,
+      }),
+    )
+    const rows: MeasureRow[] = []
+    for (const view of MEASURE_VIEWS) {
+      await setView(page, view)
+      rows.push({ scene: 'a', zfix: 'offset', view, measure: await measure(page) })
+    }
+    filmRows.set(filmDepth, rows)
+  }
+  const rows1 = filmRows.get(FILM_DEPTH_M) ?? []
+  const rows20 = filmRows.get(REF_FILM_DEPTH_M) ?? []
+
+  // 可視の画素数（深度テストありで実際に見えた画素数） = visibleRatio × footprintPx（capture.ts）
+  const visiblePx = (row: MeasureRow | undefined): number | null =>
+    row === undefined ? null : Math.round(row.measure.visibleRatio * row.measure.footprintPx)
+
+  interface RatioRow {
+    view: View
+    visible1: number | null
+    visible20: number | null
+    ratio: number | null
+    flicker1: number | null
+    judge: '○' | '×' | '測れず'
+  }
+  const findRow = (rows: MeasureRow[], view: View) =>
+    rows.find(
+      (r) =>
+        r.view.zoom === view.zoom &&
+        r.view.exaggeration === view.exaggeration &&
+        r.view.pitch === view.pitch,
+    )
+  const ratioRows: RatioRow[] = MEASURE_VIEWS.map((view) => {
+    const r1 = findRow(rows1, view)
+    const r20 = findRow(rows20, view)
+    const visible1 = visiblePx(r1)
+    const visible20 = visiblePx(r20)
+    const ratio =
+      visible1 !== null && visible20 !== null && visible20 > 0 ? visible1 / visible20 : null
+    const judge: RatioRow['judge'] = ratio === null ? '測れず' : ratio >= RATIO_MIN ? '○' : '×'
+    return { view, visible1, visible20, ratio, flicker1: r1?.measure.flickerRatio ?? null, judge }
+  })
+
+  mkdirSync(results, { recursive: true })
+  writeFileSync(
+    new URL('bowl-film-ratio.json', results),
+    `${JSON.stringify({ rows1, rows20, ratioRows }, null, 2)}\n`,
+  )
+
+  const fmt = (v: number | null, digits = 0) => (v === null ? '—' : v.toFixed(digits))
+  const lines = [
+    '# 曲面（すり鉢）の斜め視点: 1cm の膜と 20cm の基準膜の可視率の比（Task 5b、レビュー役の推奨）',
+    '',
+    '背景: pitch60・85 では、すり鉢の縁による正当な遮蔽が 1cm の膜にも 20cm の膜にも等しく効くため、',
+    '`ratio = visible(1cm) / visible(20cm)`（どちらも深度テストありで実際に見えた画素数）を取ると遮蔽が打ち消され、',
+    '沈み込みだけが残る。20cm はクリアランス 0.2m × 倍率 ≥ Task 2 のすり鉢の d の最大 0.18m（倍率10でも 2m ≫ 0.176m）で',
+    '沈まない高さ（すり鉢の深さ 3m × 倍率よりずっと低いので、縁による遮蔽の形は 1cm の膜とほぼ変わらない）。',
+    `判定: ratio ${RATIO_MIN} 以上を ○、未満を ×（沈み込み）。20cm 側の visible が 0 の視点は比を出さず「測れず」とする。`,
+    '',
+    '| ズーム | 倍率 | pitch | visible(1cm) | visible(20cm) | ratio | 判定 | 1cm のちらつき |',
+    '|---|---|---:|---:|---:|---:|:---:|---:|',
+    ...ratioRows.map(
+      (r) =>
+        `| ${r.view.zoom} | ${r.view.exaggeration} | ${r.view.pitch} | ${fmt(r.visible1)} | ${fmt(r.visible20)} | ${fmt(r.ratio, 4)} | ${r.judge} | ${r.flicker1 === null ? '—' : `${(r.flicker1 * 100).toFixed(2)}%`} |`,
+    ),
+    '',
+  ]
+  const failing = ratioRows.filter((r) => r.judge === '×')
+  const unmeasured = ratioRows.filter((r) => r.judge === '測れず')
+  if (failing.length === 0 && unmeasured.length === 0) {
+    lines.push(
+      '**判定: 曲面でも斜め視点を含めて基準1を満たす（p0 と、20cm の膜との比で確認）**（16 視点すべて ratio ≥ 0.98）。',
+    )
+  } else {
+    lines.push('**判定: 斜め視点の沈み込みが確認された行がある（05 で対策が要る）**')
+    lines.push('')
+    if (failing.length > 0) {
+      lines.push(
+        `× の視点: ${failing
+          .map(
+            (r) =>
+              `z${r.view.zoom}・×${r.view.exaggeration}・pitch${r.view.pitch}（ratio=${r.ratio?.toFixed(4) ?? '—'}）`,
+          )
+          .join('、')}`,
+      )
+    }
+    if (unmeasured.length > 0) {
+      lines.push(
+        `測れずの視点（20cm の visible が 0）: ${unmeasured
+          .map((r) => `z${r.view.zoom}・×${r.view.exaggeration}・pitch${r.view.pitch}`)
+          .join('、')}`,
+      )
+    }
+  }
+  lines.push('')
+  const mdBody = lines.join('\n')
+  writeFileSync(new URL('bowl-film-ratio.md', results), mdBody)
+  console.log(mdBody)
   expect(lists.flat()).toEqual([])
 })

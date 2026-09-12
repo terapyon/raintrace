@@ -36,7 +36,7 @@ async function buildScene(params: SpikeParams): Promise<Scene> {
     return buildRealScene(range, await loadDemTiles(range), params.demFill === 'nearest')
   }
   const water = params.water === 'film' || params.water === 'bowlFilm' ? params.water : 'fixed'
-  return buildSyntheticScene(water)
+  return buildSyntheticScene(water, params.filmDepth)
 }
 
 function rendererName(map: MapLibreMap): string {

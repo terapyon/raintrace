@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseParams } from './params'
+import { FILM_DEPTH_M } from './scenes'
 
 describe('parseParams', () => {
   it('引数が無ければ既定値になる', () => {
@@ -15,6 +16,7 @@ describe('parseParams', () => {
       skirt: true,
       probe: null,
       demFill: 'zero',
+      filmDepth: FILM_DEPTH_M,
     })
   })
 
@@ -34,6 +36,7 @@ describe('parseParams', () => {
       skirt: false,
       probe: 'fps',
       demFill: 'zero',
+      filmDepth: FILM_DEPTH_M,
     })
   })
 
@@ -53,5 +56,12 @@ describe('parseParams', () => {
   it('無効画素の扱い（demFill）を読む', () => {
     expect(parseParams('?demFill=nearest').demFill).toBe('nearest')
     expect(parseParams('?demFill=x').demFill).toBe('zero')
+  })
+
+  it('曲面の膜の水深（filmDepth）を読む。既定は 1cm、範囲の外は既定値（Task 5b）', () => {
+    expect(parseParams('?filmDepth=0.2').filmDepth).toBe(0.2)
+    expect(parseParams('').filmDepth).toBe(FILM_DEPTH_M)
+    expect(parseParams('?filmDepth=0').filmDepth).toBe(FILM_DEPTH_M)
+    expect(parseParams('?filmDepth=10').filmDepth).toBe(FILM_DEPTH_M)
   })
 })

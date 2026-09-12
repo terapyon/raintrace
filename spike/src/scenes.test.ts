@@ -115,6 +115,31 @@ describe('合成の場面（計画 D4）', () => {
     expect(wet).toBeGreaterThan(30_000)
     expect(bad).toBe(0)
   })
+
+  it('bowlFilm の膜の水深は引数で変えられる（Task 5b: 20cm の持ち上げた基準膜）', () => {
+    const raised = buildSyntheticScene('bowlFilm', 0.2)
+    let wet = 0
+    let bad = 0
+    for (let row = 0; row < n; row++) {
+      for (let col = 0; col < n; col++) {
+        const d = raised.depth[row * n + col] ?? 0
+        if (isBowlCell(range, col, row)) {
+          wet++
+          if (d !== Math.fround(0.2)) bad++
+        } else if (d !== 0) {
+          bad++
+        }
+      }
+    }
+    expect(wet).toBeGreaterThan(30_000)
+    expect(bad).toBe(0)
+    // 引数を省くと既定の 1cm のまま（後方互換）
+    const defaulted = buildSyntheticScene('bowlFilm')
+    const col = Math.floor(n * 0.5)
+    const row = Math.floor(n * 0.25)
+    expect(isBowlCell(range, col, row)).toBe(true)
+    expect(defaulted.depth[row * n + col]).toBe(Math.fround(FILM_DEPTH_M))
+  })
 })
 
 describe('実データの場面（計画 D4・D5）', () => {
