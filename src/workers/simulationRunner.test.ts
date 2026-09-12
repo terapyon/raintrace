@@ -3,7 +3,8 @@ import type { FrameMessage, WorkerToMainMessage } from '../shared/protocol'
 import { TsSimulationEngine } from '../simulation/TsSimulationEngine'
 import { gridFromRows, makeDepression } from '../simulation/terrain/testGrids'
 import type { TerrainGrid } from '../simulation/terrain/types'
-import { SimulationRunner } from './simulationRunner'
+import { TICK_INTERVAL_MS } from './playbackScheduler'
+import { ARROW_INTERVAL_MS, SimulationRunner } from './simulationRunner'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -229,6 +230,55 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     h.runner.handle({ type: 'start', rain: RAIN })
     h.run(2)
     expect(flow).not.toHaveBeenCalled()
+  })
+
+  it('再生中は矢印を ARROW_INTERVAL_MS ごとにしか計算しない。間の frame は arrows: null で、setArrows は間引きを上書きする', () => {
+    const h = setup()
+    h.runner.loadTerrain(1, basin(), [])
+    h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
+    // 止まっている間の setArrows は今の状態（雨の前）の frame をすぐに送る。そのバッファを返しておく
+    h.returnAll()
+    h.runner.handle({ type: 'start', rain: RAIN })
+    // tick は TICK_INTERVAL_MS（≈16.7ms）ごと。ARROW_INTERVAL_MS（100ms）を跨ぐまでの tick 数
+    const ticksToBoundary = Math.ceil(ARROW_INTERVAL_MS / TICK_INTERVAL_MS)
+    const arrowLengths: (number | null)[] = []
+    for (let n = 0; n <= ticksToBoundary; n++) {
+      h.run(1)
+      h.returnAll()
+      const arrows = h.frames().at(-1)?.arrows ?? null
+      arrowLengths.push(arrows === null ? null : arrows.length)
+    }
+    // start 直後の frame（tick 0）は必ず矢印を計算する（計画で決めたこと 3）
+    expect(arrowLengths[0]).not.toBeNull()
+    // 100ms に届くまでの間の frame は、前の矢印のまま（null）
+    expect(arrowLengths.slice(1, ticksToBoundary)).toEqual(
+      Array.from({ length: ticksToBoundary - 1 }, () => null),
+    )
+    // 100ms に届いた（またはまたいだ）frame は矢印を計算し直す
+    expect(arrowLengths[ticksToBoundary]).not.toBeNull()
+
+    // 再生中の setArrows は間引きを無視し、次の frame で必ず矢印を送る
+    h.runner.handle({ type: 'setArrows', visible: true, spacingM: 10 })
+    h.run(1)
+    h.returnAll()
+    expect(h.frames().at(-1)?.arrows).not.toBeNull()
+  })
+
+  it('平衡に達した frame も、間引きの間隔にかかわらず矢印を送る', () => {
+    const h = setup()
+    h.runner.loadTerrain(1, basin(), [])
+    h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
+    h.returnAll()
+    h.runner.handle({ type: 'setSpeed', speed: 4 })
+    h.runner.handle({ type: 'start', rain: RAIN })
+    for (let n = 0; n < 5000 && h.timers.size > 0; n++) {
+      h.run(1)
+      h.returnAll()
+    }
+    expect(h.timers.size).toBe(0)
+    const last = h.frames().at(-1)
+    expect(last?.stats.settled).toBe(true)
+    expect(last?.arrows).not.toBeNull()
   })
 })
 
