@@ -62,6 +62,20 @@ test('ビルドの情報（dist/.vite/）は配信しない', async ({ request }
   expect(await response.text()).not.toContain('"isEntry"')
 })
 
+test('/assets/* は長期キャッシュされ、index.html はキャッシュされない（裁定 RB-1）', async ({
+  page,
+}) => {
+  const assetResponsePromise = page.waitForResponse(
+    (r) => new URL(r.url()).pathname.startsWith('/assets/') && r.url().endsWith('.js'),
+  )
+  const documentResponse = await page.goto('/')
+  const assetResponse = await assetResponsePromise
+  const assetCacheControl = assetResponse.headers()['cache-control'] ?? ''
+  expect(assetCacheControl).toContain('max-age=31536000')
+  expect(assetCacheControl).toContain('immutable')
+  expect(documentResponse?.headers()['cache-control'] ?? '').not.toContain('immutable')
+})
+
 test('応答に CSP が付き、読み込み中に CSP 違反が起きない', async ({ page, gsiTiles }) => {
   await page.addInitScript(() => {
     const violations: string[] = []

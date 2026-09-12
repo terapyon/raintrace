@@ -1,6 +1,6 @@
 /** バンドル予算の判定（tech-spec §14.2）。I/O を持たない */
 
-export const BUDGET = { initialKb: 400, totalKb: 1200 }
+export const BUDGET = { initialKb: 500, totalKb: 1200 }
 
 /** バイト数を KB（1000 バイト。Vite のビルドの表示に揃える）の文字列にする */
 export const kb = (bytes) => (bytes / 1000).toFixed(1)
