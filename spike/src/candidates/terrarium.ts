@@ -2,7 +2,7 @@ import type { ElevationSampler } from '../types'
 
 const SIZE = 256
 const OFFSET_M = 32768
-const DEM_Z = 17
+export const DEM_Z = 17
 
 /** 高さ（m）を Terrarium（(R × 256 + G + B / 256) − 32768）の RGBA に書く。刻みは 1/256 m で切り捨て */
 export function encodeTerrarium(h: number, out: Uint8ClampedArray, offset: number): void {
@@ -23,7 +23,7 @@ export function decodeTerrarium(r: number, g: number, b: number): number {
  * （セル gx の中心、連続座標 gx + 0.5 の値を返す）から双線形で求める。角の座標を先にセルの中心の座標系へ
  * 直す（x − 0.5）。無効値は 0m として補間する（spec 05 §4。レビュー Important 2 の修正）
  */
-function sampleZ17Corner(sample: ElevationSampler, x: number, y: number): number {
+export function sampleZ17Corner(sample: ElevationSampler, x: number, y: number): number {
   const cx = Math.floor(x - 0.5)
   const cy = Math.floor(y - 0.5)
   const tx = x - 0.5 - cx

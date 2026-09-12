@@ -1,0 +1,276 @@
+{
+  "bowlCenter": {
+    "col": 258,
+    "row": 129,
+    "lngLat": {
+      "lon": 139.701606631279,
+      "lat": 35.65912251724537
+    }
+  },
+  "meshRows": [
+    {
+      "view": {
+        "zoom": 15,
+        "exaggeration": 1,
+        "pitch": 60
+      },
+      "drawnZoom": 15,
+      "coarsestZoom": 13,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
+    },
+    {
+      "view": {
+        "zoom": 15,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 10,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 15,
+        "exaggeration": 10,
+        "pitch": 60
+      },
+      "drawnZoom": 15,
+      "coarsestZoom": 13,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
+    },
+    {
+      "view": {
+        "zoom": 15,
+        "exaggeration": 10,
+        "pitch": 85
+      },
+      "drawnZoom": 15,
+      "coarsestZoom": 9,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 1,
+        "pitch": 60
+      },
+      "drawnZoom": 16,
+      "coarsestZoom": 15,
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 11,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 10,
+        "pitch": 60
+      },
+      "drawnZoom": 16,
+      "coarsestZoom": 15,
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 10,
+        "pitch": 85
+      },
+      "drawnZoom": 16,
+      "coarsestZoom": 10,
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 1,
+        "pitch": 60
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 16,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 11,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 10,
+        "pitch": 60
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 16,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 10,
+        "pitch": 85
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 10,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 1,
+        "pitch": 60
+      },
+      "drawnZoom": null,
+      "coarsestZoom": 17,
+      "maxS": null,
+      "exceedFraction": null
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "drawnZoom": null,
+      "coarsestZoom": 11,
+      "maxS": null,
+      "exceedFraction": null
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 10,
+        "pitch": 60
+      },
+      "drawnZoom": null,
+      "coarsestZoom": 16,
+      "maxS": null,
+      "exceedFraction": null
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 10,
+        "pitch": 85
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 10,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 15,
+        "exaggeration": 1,
+        "pitch": 0
+      },
+      "drawnZoom": 15,
+      "coarsestZoom": 15,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
+    },
+    {
+      "view": {
+        "zoom": 15,
+        "exaggeration": 10,
+        "pitch": 0
+      },
+      "drawnZoom": 15,
+      "coarsestZoom": 15,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 1,
+        "pitch": 0
+      },
+      "drawnZoom": 16,
+      "coarsestZoom": 16,
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 10,
+        "pitch": 0
+      },
+      "drawnZoom": 16,
+      "coarsestZoom": 16,
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 1,
+        "pitch": 0
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 17,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 10,
+        "pitch": 0
+      },
+      "drawnZoom": 17,
+      "coarsestZoom": 17,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 1,
+        "pitch": 0
+      },
+      "drawnZoom": null,
+      "coarsestZoom": 17,
+      "maxS": null,
+      "exceedFraction": null
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 10,
+        "pitch": 0
+      },
+      "drawnZoom": null,
+      "coarsestZoom": 17,
+      "maxS": null,
+      "exceedFraction": null
+    }
+  ]
+}

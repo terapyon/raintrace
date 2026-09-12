@@ -20,9 +20,9 @@ const LOW_M = 20
 const SLOPE_GRADE = 0.1
 const SLOPE_NORTH = 0.55
 const SLOPE_SOUTH = 0.95
-const BOWL_RADIUS_M = 60
+export const BOWL_RADIUS_M = 60
 const BOWL_DEPTH_M = 3
-const BOWL_CENTERS = [
+export const BOWL_CENTERS = [
   [0.2, 0.25],
   [0.5, 0.25],
   [0.8, 0.25],
