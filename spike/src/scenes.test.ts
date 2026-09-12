@@ -4,6 +4,7 @@ import { tileKey } from '../../src/dem/demSelection.ts'
 import { rangePixelRect } from '../../src/dem/gridRange.ts'
 import { tilesInPixelRect } from '../../src/dem/tileMath.ts'
 import {
+  boundaryStepM,
   buildRealScene,
   buildSyntheticScene,
   FILM_DEPTH_M,
@@ -174,6 +175,17 @@ describe('実データの場面（計画 D4・D5）', () => {
     expect(filledScene.sample(range.originX + col, range.originY + row)).not.toBeNull()
     expect(filledScene.validMask[i]).toBe(0)
     expect(filledScene.depth[i]).toBe(0)
+  })
+})
+
+describe('境界の段差（計画 D17）', () => {
+  it('合成の場面: 北の縁は台地（基準 20m から約 20m）、南の縁は 0、東西の縁は両方を含む', () => {
+    const scene = buildSyntheticScene('fixed')
+    const step = boundaryStepM(scene)
+    expect(scene.minElevation).toBeCloseTo(20, 3)
+    expect(step.max).toBeCloseTo(0.1 * 0.4 * scene.range.size * scene.range.cellSizeM, 2)
+    expect(step.mean).toBeGreaterThan(0)
+    expect(step.mean).toBeLessThan(step.max)
   })
 })
 

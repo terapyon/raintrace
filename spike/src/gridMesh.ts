@@ -18,18 +18,36 @@ export function gridVertices(n: number, ring: boolean): Float32Array {
 
 /** 一辺 verticesPerSide 個の頂点の配置のうち、行・列が start〜start + count − 1 の頂点で張る三角形 */
 export function gridIndices(verticesPerSide: number, start: number, count: number): Uint32Array {
-  const quads = (count - 1) * (count - 1)
-  const out = new Uint32Array(quads * 6)
-  let k = 0
+  return maskedGridIndices(verticesPerSide, start, count, () => true)
+}
+
+/**
+ * gridIndices と同じ配置だが、4 隅のいずれかが isValid(col, row) === false の四角形は三角形を作らない
+ * （B の無効セルの対策。地形・水面が無効セルにかかるスライバーを描かないようにする）
+ */
+export function maskedGridIndices(
+  verticesPerSide: number,
+  start: number,
+  count: number,
+  isValid: (col: number, row: number) => boolean,
+): Uint32Array {
+  const out: number[] = []
   for (let row = start; row < start + count - 1; row++) {
     for (let col = start; col < start + count - 1; col++) {
+      if (
+        !isValid(col, row) ||
+        !isValid(col + 1, row) ||
+        !isValid(col, row + 1) ||
+        !isValid(col + 1, row + 1)
+      ) {
+        continue
+      }
       const a = row * verticesPerSide + col
       const b = a + 1
       const d = a + verticesPerSide
       const e = d + 1
-      out.set([a, d, b, b, d, e], k)
-      k += 6
+      out.push(a, d, b, b, d, e)
     }
   }
-  return out
+  return Uint32Array.from(out)
 }

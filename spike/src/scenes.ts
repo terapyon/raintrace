@@ -230,3 +230,21 @@ export function buildRealScene(
     minElevation: minValid(grid.elevation, grid.validMask),
   }
 }
+
+/** 範囲の外周の有効セルの、基準（最低の標高）からの高さ（m、倍率 1）。B の縁と平面の地図の段差の目安 */
+export function boundaryStepM(scene: Scene): { max: number; mean: number } {
+  const n = scene.range.size
+  let max = 0
+  let sum = 0
+  let count = 0
+  for (let k = 0; k < n; k++) {
+    for (const i of [k, (n - 1) * n + k, k * n, k * n + n - 1]) {
+      if (scene.validMask[i] !== 1) continue
+      const h = (scene.elevation[i] ?? 0) - scene.minElevation
+      max = Math.max(max, h)
+      sum += h
+      count++
+    }
+  }
+  return { max, mean: count === 0 ? 0 : sum / count }
+}

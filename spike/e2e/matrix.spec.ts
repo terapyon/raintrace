@@ -6,8 +6,8 @@ import { type Shot, writeContactSheet } from './support/contactSheet'
 import { MEASURE_VIEWS, type MeasureRow, measure, summarize } from './support/measure'
 import { allViews, openSpike, setView } from './support/views'
 
-// Task 5〜7 で候補を足す
-const MATRIX_CANDIDATES = ['a', 'a2'] as const
+// Task 7 で候補を足す
+const MATRIX_CANDIDATES = ['a', 'a2', 'b'] as const
 
 const results = new URL('../results/', import.meta.url)
 const shotsDir = new URL('../out/shots/', import.meta.url)

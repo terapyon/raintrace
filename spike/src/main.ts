@@ -5,7 +5,7 @@ import { createGsiPaleStyle } from '../../src/map/gsiStyle'
 import { measureWater } from './capture'
 import { loadDemTiles } from './demTiles'
 import { parseParams, type SpikeParams } from './params'
-import { buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'
+import { boundaryStepM, buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'
 import type {
   CandidateHandle,
   CandidateId,
@@ -22,6 +22,7 @@ setWorkerUrl(workerUrl)
 const candidates: Partial<Record<CandidateId, () => Promise<{ mount: MountCandidate }>>> = {
   a: () => import('./candidates/a'),
   a2: () => import('./candidates/a'),
+  b: () => import('./candidates/b'),
 }
 
 const status = document.getElementById('status')
@@ -99,6 +100,7 @@ async function start(): Promise<void> {
       if (!params.capture) throw new Error('capture=1 で開いてください')
       return measureWater(map, candidate)
     },
+    boundaryStep: () => boundaryStepM(scene),
   }
   window.spike = spike
   await (candidate === null ? waitIdle(map) : candidate.whenIdle())

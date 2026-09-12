@@ -113,6 +113,8 @@ export interface SpikeGlobal {
   setView(view: View): Promise<void>
   /** 候補の水面の見え方を測る（capture=1 のときだけ使える） */
   measure(): Promise<WaterMeasure>
+  /** 範囲の外周の段差（m、倍率 1）。継ぎ目の記録に使う（Task 6） */
+  boundaryStep(): { max: number; mean: number }
 }
 
 declare global {
