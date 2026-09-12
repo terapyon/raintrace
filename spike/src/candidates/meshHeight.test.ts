@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ElevationSampler } from '../types'
 import { meshHeightAt, quantizeTerrarium } from './meshHeight'
+import { decodeTerrarium, terrariumTile } from './terrarium'
 
 /**
  * ElevationSampler の規約（scenes.ts の syntheticSampler と同じ）: 整数のセル index `gx` は、
@@ -21,6 +22,33 @@ describe('quantizeTerrarium（Terrarium の 1/256m 量子化の往復）', () =>
   it('encode→decode の往復は 1/256m 以内の誤差にとどまる', () => {
     expect(quantizeTerrarium(12.3456)).toBeCloseTo(12.3456, 2)
     expect(Math.abs(quantizeTerrarium(12.3456) - 12.3456)).toBeLessThan(1 / 256)
+  })
+})
+
+describe('meshHeightAt の zoom の意味の固定（タスクレビュー fix round 3、N1）', () => {
+  it('zoom は「描かれている地形タイル」のズームであり、その頂点は1つ下（zoom-1）のDEMの1画素にちょうど重なる', () => {
+    // fix round 2 は「zoom は DEM 自体のズーム」と誤解し、地形タイルのズームから deltaZoom(1) を
+    // もう一度引いて渡したため、格子間隔が2倍・弦の高さが4倍になった（re-review で発覚）。
+    // ここでは meshHeightAt(tileZoom) の頂点が、terrariumTile（実際に DEM の生成に使う関数）が
+    // zoom = tileZoom-1 で作るタイルの画素とちょうど一致することを、別経路（画像の RGBA を経由する
+    // terrariumTile）で確かめて、2つの実装のあいだで zoom の意味がずれていないことを固定する
+    const trueHeight = (x: number, y: number) => 10 + 0.2 * x - 0.1 * y // 平面: 量子化以外の誤差が出ない
+    const sample: ElevationSampler = (gx, gy) => trueHeight(gx + 0.5, gy + 0.5)
+    for (const tileZoom of [13, 14, 15, 16, 17, 18]) {
+      const demZoom = tileZoom - 1 // 地形タイルが読む DEM のズーム（deltaZoom = 1、固定）
+      const demTile = terrariumTile(sample, demZoom, 0, 0) // 実際の DEM 生成と同じ関数
+      const readDemPixel = (px: number, py: number): number => {
+        const o = (py * 256 + px) * 4
+        return decodeTerrarium(demTile[o] ?? 0, demTile[o + 1] ?? 0, demTile[o + 2] ?? 0)
+      }
+      // meshHeightAt(tileZoom) の頂点 (k, k) は z17 連続座標 k*step（内部の scale=2^(17-tileZoom)）に立つ。
+      // 「1頂点=1DEM画素」なら、DEM タイル（zoom=demZoom）の画素 (k, k) も同じ z17 座標のはず
+      for (const k of [0, 1, 5, 50, 120]) {
+        const onGrid = k * (2 * 2 ** (17 - tileZoom)) // 頂点そのものの位置（三角形分割に依らない）
+        const vertexHeight = meshHeightAt(sample, tileZoom, onGrid, onGrid)
+        expect(vertexHeight).toBeCloseTo(readDemPixel(k, k), 6)
+      }
+    }
   })
 })
 
@@ -79,7 +107,7 @@ describe('meshHeightAt（レンダリングを介さない地形メッシュの�
     // 右上(v10)→左下(v01) で分割した場合の解析値（三角形 v10, v11, v01。u+v=1.1>1 側）
     const trBl = (1 - v) * 0 + (u + v - 1) * 4 + (1 - u) * 0 // = 0.4
     expect(tlBr).not.toBeCloseTo(trBl, 1) // 2つの分割が実際に異なる値を与えることの確認
-    expect(mesh).toBeCloseTo(tlBr, 2) // 量子化（1/256m）以内
+    expect(Math.abs(mesh - tlBr)).toBeLessThan(1 / 256) // 量子化（1/256m）以内（タスクレビュー N5）
     expect(mesh).not.toBeCloseTo(trBl, 1)
   })
 

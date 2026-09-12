@@ -12,24 +12,39 @@ export function quantizeTerrarium(heightM: number): number {
 }
 
 /**
- * レンダリングを介さず、MapLibre の地形メッシュの高さを直接計算する（タスクレビュー fix round 1）。
+ * レンダリングを介さず、MapLibre の地形メッシュの高さを直接計算する
+ * （タスクレビュー fix round 1、ズームの意味の訂正は fix round 3）。
  *
- * MapLibre の getTerrainMesh は 256px の DEM タイルに 128×128 の格子（2px 間隔）で頂点を置き、
- * 各格子の対角（左上→右下）で2枚の三角形に分ける（maplibre-gl-dev.mjs getTerrainMesh、計画の確認）。
- * `terrariumTile`（`z, x, y` のタイル）の画素 (px, py) は z17 の連続座標 `(tileX*256+px)*scale` の
- * 角の高さなので、頂点の間隔はタイル・ズームによらず z17 座標で `2 * scale`
- * （`scale = 2 ** (17 - zoom)`）になる——タイル境界をまたいでも頂点格子は連続している。
+ * **頂点間隔の規則（再発防止のため1行にまとめる）**: 頂点間隔 ＝ 描かれている地形タイル（ズーム Z）の
+ * 2px ＝ ズーム Z−1 の DEM の1px（raster-dem の tileSize が 256 のとき）。`meshHeightAt` が受け取る
+ * `zoom` は Z（描かれている地形タイルのズーム）であって、DEM 自体のズーム（Z−1）ではない。
+ *
+ * MapLibre の getTerrainMesh は「描かれている地形タイル」自体に 129×129（128 分割、2px 間隔）の
+ * 格子で頂点を置き、各格子の対角（左上→右下）で2枚の三角形に分ける
+ * （maplibre-gl-dev.mjs getTerrainMesh L10493-10513）。この spike の DEM ソースは
+ * `tileSize: 256`（既定の 512 ではない）を明示しているため、地形タイルの実ズームは地図ズームと一致し、
+ * そのタイルが読む DEM のズームは `deltaZoom`（既定 1、固定）だけ粗い ⇒ **DEM ズーム = 地形タイルの
+ * ズーム − 1**（`getSourceTile` L10148）。地形タイルの頂点間隔（2px）＝ DEM（1段粗い）の1画素にちょうど
+ * 一致するため（`dz=1` で 1 地形タイル＝ DEM 128 画素）、`terrariumTile` の画素 (px, py)（z17 の連続座標
+ * `(tileX*256+px)*scale` の角の高さ）を直接、地形タイルのズームから求めた間隔でサンプリングすればよい
+ * （タイル境界をまたいでも z17 座標の頂点格子は連続している）。
+ *
+ * **前回の取り違え（fix round 2、re-review で発覚）**: 「渡す `zoom` は DEM 自体のズームで、
+ * 地形タイルのズームから deltaZoom を引いてから渡す」という記述は誤りだった。この関数はすでに
+ * 「描かれている地形タイル」のズームをそのまま受け取るモデルになっており、そこからさらに 1 引くと
+ * deltaZoom を二重に差し引くことになり、格子間隔が2倍・弦の高さが4倍（z18のみ2倍）になってしまう。
  *
  * @param sample z17 の連続座標（角）→ 標高のサンプラー（`sampleZ17Corner` に渡す元のセルサンプラー）
- * @param zoom 描かれている DEM 自体のズーム（0〜17 の整数。17 を超える表示は 17 のタイルを使う）。
- *   MapLibre の地形タイル（`getRenderableTiles` の `canonical.z`）は `deltaZoom`（既定 1）だけ DEM より
- *   細かいズームで管理される（`RasterDEMTileSource` は「実際のズーム − deltaZoom」の DEM タイルを読む）
- *   ので、地形タイルのズームを渡すときは `− deltaZoom`（既定 1）した DEM のズームに直してから渡す
+ * @param zoom 実際に描かれている地形タイルのズーム（`getRenderableTiles` の `tileID.canonical.z` を
+ *   そのまま渡す。0〜18 の整数。DEM ソースの maxzoom は 17 なので、地形タイル 18 は DEM 17 を
+ *   オーバーズームして読む——「17 を超えたら 17 のタイルを使う」のは DEM 側であって地形タイル側では
+ *   ない。地形タイル 18 の頂点間隔は DEM 17 の 1 画素の半分（0.97m 相当）で、これは `meshHeightAt(18)`
+ *   が正しく表す）
  * @param x z17 の連続座標（角基準。セルの中心なら `col + 0.5` 等）
  * @param y 同上
  */
 export function meshHeightAt(sample: ElevationSampler, zoom: number, x: number, y: number): number {
-  const z = Math.min(DEM_Z, Math.max(0, Math.round(zoom)))
+  const z = Math.min(DEM_Z + 1, Math.max(0, Math.round(zoom)))
   const scale = 2 ** (DEM_Z - z)
   const step = 2 * scale
   const kx = Math.floor(x / step)

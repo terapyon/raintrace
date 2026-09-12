@@ -18,8 +18,8 @@
       "demZoom": 13,
       "coarsestTileZoom": 13,
       "coarsestDemZoom": 12,
-      "maxS": 0.40054984626126355,
-      "exceedFraction": 0.7239396716940255
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -31,8 +31,8 @@
       "demZoom": 13,
       "coarsestTileZoom": 10,
       "coarsestDemZoom": 9,
-      "maxS": 0.40054984626126355,
-      "exceedFraction": 0.7239396716940255
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -44,8 +44,8 @@
       "demZoom": 13,
       "coarsestTileZoom": 13,
       "coarsestDemZoom": 12,
-      "maxS": 0.40054984626126355,
-      "exceedFraction": 0.7239396716940255
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -57,8 +57,8 @@
       "demZoom": 13,
       "coarsestTileZoom": 9,
       "coarsestDemZoom": 8,
-      "maxS": 0.40054984626126355,
-      "exceedFraction": 0.7239396716940255
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -70,8 +70,8 @@
       "demZoom": 14,
       "coarsestTileZoom": 15,
       "coarsestDemZoom": 14,
-      "maxS": 0.09975193911826352,
-      "exceedFraction": 0.7946837763519706
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -83,8 +83,8 @@
       "demZoom": 13,
       "coarsestTileZoom": 11,
       "coarsestDemZoom": 10,
-      "maxS": 0.40054984626126355,
-      "exceedFraction": 0.7239396716940255
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -96,8 +96,8 @@
       "demZoom": 14,
       "coarsestTileZoom": 15,
       "coarsestDemZoom": 14,
-      "maxS": 0.09975193911826352,
-      "exceedFraction": 0.7946837763519706
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -109,8 +109,8 @@
       "demZoom": 13,
       "coarsestTileZoom": 10,
       "coarsestDemZoom": 9,
-      "maxS": 0.40054984626126355,
-      "exceedFraction": 0.7239396716940255
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -122,8 +122,8 @@
       "demZoom": 15,
       "coarsestTileZoom": 16,
       "coarsestDemZoom": 15,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
     },
     {
       "view": {
@@ -135,8 +135,8 @@
       "demZoom": 14,
       "coarsestTileZoom": 11,
       "coarsestDemZoom": 10,
-      "maxS": 0.09975193911826352,
-      "exceedFraction": 0.7946837763519706
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -148,8 +148,8 @@
       "demZoom": 15,
       "coarsestTileZoom": 16,
       "coarsestDemZoom": 15,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
     },
     {
       "view": {
@@ -161,8 +161,8 @@
       "demZoom": 14,
       "coarsestTileZoom": 10,
       "coarsestDemZoom": 9,
-      "maxS": 0.09975193911826352,
-      "exceedFraction": 0.7946837763519706
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -174,7 +174,7 @@
       "demZoom": 17,
       "coarsestTileZoom": 17,
       "coarsestDemZoom": 16,
-      "maxS": 0.0014842610687608726,
+      "maxS": 0.0007177999267184987,
       "exceedFraction": 0
     },
     {
@@ -187,7 +187,7 @@
       "demZoom": 16,
       "coarsestTileZoom": 11,
       "coarsestDemZoom": 10,
-      "maxS": 0.005949265487195987,
+      "maxS": 0.0014842610687608726,
       "exceedFraction": 0
     },
     {
@@ -200,7 +200,7 @@
       "demZoom": 17,
       "coarsestTileZoom": 16,
       "coarsestDemZoom": 15,
-      "maxS": 0.0014842610687608726,
+      "maxS": 0.0007177999267184987,
       "exceedFraction": 0
     },
     {
@@ -213,7 +213,7 @@
       "demZoom": 16,
       "coarsestTileZoom": 10,
       "coarsestDemZoom": 9,
-      "maxS": 0.005949265487195987,
+      "maxS": 0.0014842610687608726,
       "exceedFraction": 0
     },
     {
@@ -226,8 +226,8 @@
       "demZoom": 14,
       "coarsestTileZoom": 15,
       "coarsestDemZoom": 14,
-      "maxS": 0.09975193911826352,
-      "exceedFraction": 0.7946837763519706
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -239,8 +239,8 @@
       "demZoom": 14,
       "coarsestTileZoom": 15,
       "coarsestDemZoom": 14,
-      "maxS": 0.09975193911826352,
-      "exceedFraction": 0.7946837763519706
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -252,8 +252,8 @@
       "demZoom": 15,
       "coarsestTileZoom": 16,
       "coarsestDemZoom": 15,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
     },
     {
       "view": {
@@ -265,8 +265,8 @@
       "demZoom": 15,
       "coarsestTileZoom": 16,
       "coarsestDemZoom": 15,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "maxS": 0.005949265487195987,
+      "exceedFraction": 0
     },
     {
       "view": {
@@ -278,7 +278,7 @@
       "demZoom": 16,
       "coarsestTileZoom": 17,
       "coarsestDemZoom": 16,
-      "maxS": 0.005949265487195987,
+      "maxS": 0.0014842610687608726,
       "exceedFraction": 0
     },
     {
@@ -291,7 +291,7 @@
       "demZoom": 16,
       "coarsestTileZoom": 17,
       "coarsestDemZoom": 16,
-      "maxS": 0.005949265487195987,
+      "maxS": 0.0014842610687608726,
       "exceedFraction": 0
     },
     {
@@ -304,7 +304,7 @@
       "demZoom": 17,
       "coarsestTileZoom": 17,
       "coarsestDemZoom": 16,
-      "maxS": 0.0014842610687608726,
+      "maxS": 0.0007177999267184987,
       "exceedFraction": 0
     },
     {
@@ -317,7 +317,7 @@
       "demZoom": 17,
       "coarsestTileZoom": 17,
       "coarsestDemZoom": 16,
-      "maxS": 0.0014842610687608726,
+      "maxS": 0.0007177999267184987,
       "exceedFraction": 0
     }
   ]
