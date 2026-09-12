@@ -1,5 +1,10 @@
 import type {
+  ArrowSpacingM,
+  FrameMessage,
   MainToWorkerMessage,
+  PlaybackSpeed,
+  SimFailureReason,
+  SimulationCommand,
   TerrainErrorReason,
   TerrainPayload,
   WorkerToMainMessage,
@@ -7,7 +12,7 @@ import type {
 
 /** SimulationClient が使う Worker の機能。テストでは偽物に差し替える */
 export interface WorkerPort {
-  postMessage(message: MainToWorkerMessage): void
+  postMessage(message: MainToWorkerMessage, transfer?: Transferable[]): void
   addEventListener(
     type: 'message',
     listener: (event: MessageEvent<WorkerToMainMessage>) => void,
@@ -30,6 +35,8 @@ export function createSimulationWorker(): WorkerPort {
 }
 
 export const PING_TIMEOUT_MS = 5000
+/** 読み込みの進捗がこの時間止まったら、Worker が止まったとみなす（02 の申し送り L14） */
+export const LOAD_STALL_TIMEOUT_MS = 30_000
 
 export class TerrainLoadError extends Error {
   readonly reason: TerrainErrorReason
@@ -38,6 +45,16 @@ export class TerrainLoadError extends Error {
     this.reason = reason
   }
 }
+
+/** メインが受け取った frame。water は次の frame が届くまで手元に置く */
+export interface FrameView {
+  water: Float32Array<ArrayBuffer>
+  arrows: Float32Array | null
+  stats: FrameMessage['stats']
+  stepsPerSecond: number
+}
+
+type RainfallInput = Extract<SimulationCommand, { type: 'start' }>['rain']
 
 interface PendingPing {
   resolve: () => void
@@ -54,14 +71,22 @@ interface PendingTerrain {
 
 /**
  * メインスレッドで Worker を所有する（tech-spec §5.1）。アプリで 1 つだけ作る（01 の申し送り H2）。
- * 読み込んだ地形の配列はここに持ち、React やストアには載せない
+ * 読み込んだ地形と最新の水深の配列はここに持ち、React やストアには載せない
  */
 export class SimulationClient {
   terrain: TerrainPayload | null = null
+  /** terrain を読み込んだ loadTerrain の requestId。frame・simFailed の terrainId と比べる */
+  terrainId: number | null = null
+  /** 最新の frame の水深。次の frame が届くまで、表示とセル情報に使う（tech-spec §5.2） */
+  water: Float32Array<ArrayBuffer> | null = null
   private worker: WorkerPort
   private readonly createWorker: () => WorkerPort
   private readonly pendingPings = new Map<number, PendingPing>()
   private pendingTerrain: PendingTerrain | null = null
+  private readonly frameListeners = new Set<(frame: FrameView) => void>()
+  private readonly simFailedListeners = new Set<(reason: SimFailureReason) => void>()
+  private readonly crashListeners = new Set<() => void>()
+  private watchdog: ReturnType<typeof setTimeout> | undefined
   private crashed = false
   private disposed = false
   private nextId = 1
@@ -80,14 +105,17 @@ export class SimulationClient {
       }
       case 'terrainProgress':
         if (this.pendingTerrain?.requestId === message.requestId) {
+          this.armWatchdog()
           this.pendingTerrain.onProgress?.(message.done, message.started)
         }
         break
       case 'terrainLoaded': {
-        // Worker は要求を順に処理するので terrainLoaded は単調に届き、this.terrain は Worker が保持する
-        // 地形（M1）と同じ「最後に成功した地形」になる。画面の読み込みの状態とは別
-        // （カーソル位置の標高は load が ready のときだけ読む）
+        // Worker は要求を順に処理するので terrainLoaded は単調に届き、this.terrain は Worker のエンジンが
+        // 持つ地形と同じ「最後に成功した地形」になる。画面の読み込みの状態とは別
         this.terrain = message.terrain
+        this.terrainId = message.requestId
+        // 前の地形の水深は捨てる（大きさが違いうる。Worker は新しい地形のバッファを 2 枚作る）
+        this.water = null
         this.takeTerrain(message.requestId)?.resolve(message.terrain)
         break
       }
@@ -96,6 +124,22 @@ export class SimulationClient {
           new TerrainLoadError(message.reason, message.message),
         )
         break
+      case 'frame':
+        this.receiveFrame(message)
+        break
+      case 'simFailed':
+        if (message.terrainId === this.terrainId) {
+          // 失敗した start はエンジンを reset 済みで、step 0 の frame を送ってこない。前の実行の水深を
+          // 出し続けないよう手元のバッファを消し、Worker にも返す（大きさは同じ地形なので合う）
+          // （タスク 4 のレビューの裁定 1）
+          if (this.water !== null) {
+            const buffer = this.water.buffer
+            this.water = null
+            this.command({ type: 'returnBuffer', buffer }, [buffer])
+          }
+          for (const listener of this.simFailedListeners) listener(message.reason)
+        }
+        break
     }
   }
 
@@ -103,13 +147,12 @@ export class SimulationClient {
     // 'error' は Worker の未捕捉の例外でも発火し、Worker が止まったとは限らない。
     // 'messageerror'（返ってきたメッセージを構造化複製できなかった場合）も同じ扱いにする。
     // どちらも作り直しの契機にして扱いを決定的にする
-    this.stop(new TerrainLoadError('worker', 'Worker が異常終了しました'))
-    this.crashed = true
+    this.crash(new TerrainLoadError('worker', 'Worker が異常終了しました'))
   }
 
   constructor(createWorker: () => WorkerPort = createSimulationWorker) {
     this.createWorker = createWorker
-    this.worker = this.start()
+    this.worker = this.spawnWorker()
   }
 
   /** ping を送り、pong が返れば解決する。timeoutMs 以内に返らなければ失敗する */
@@ -139,12 +182,58 @@ export class SimulationClient {
     )
     // port() が投げた場合に、reject 済みの古い entry を pendingTerrain に残さない
     this.pendingTerrain = null
+    this.clearWatchdog()
     const requestId = this.nextId++
     return new Promise((resolve, reject) => {
       const worker = this.port()
       this.pendingTerrain = { requestId, resolve, reject, onProgress }
       worker.postMessage({ type: 'loadTerrain', requestId, lon, lat, sizeM })
+      this.armWatchdog()
     })
+  }
+
+  start(rain: RainfallInput): void {
+    this.command({ type: 'start', rain })
+  }
+  pause(): void {
+    this.command({ type: 'pause' })
+  }
+  resume(): void {
+    this.command({ type: 'resume' })
+  }
+  step(): void {
+    this.command({ type: 'step' })
+  }
+  reset(): void {
+    this.command({ type: 'reset' })
+  }
+  setSpeed(speed: PlaybackSpeed): void {
+    this.command({ type: 'setSpeed', speed })
+  }
+  setArrows(visible: boolean, spacingM: ArrowSpacingM): void {
+    this.command({ type: 'setArrows', visible, spacingM })
+  }
+
+  onFrame(listener: (frame: FrameView) => void): () => void {
+    this.frameListeners.add(listener)
+    return () => {
+      this.frameListeners.delete(listener)
+    }
+  }
+
+  onSimFailed(listener: (reason: SimFailureReason) => void): () => void {
+    this.simFailedListeners.add(listener)
+    return () => {
+      this.simFailedListeners.delete(listener)
+    }
+  }
+
+  /** Worker の異常終了（読み込みの番犬を含む）を知らせる。再生中なら画面を「再読み込み」にする（spec 04 §10） */
+  onCrash(listener: () => void): () => void {
+    this.crashListeners.add(listener)
+    return () => {
+      this.crashListeners.delete(listener)
+    }
   }
 
   /** Worker を終了する。待っている要求は失敗させ、タイマーを残さない。破棄した後は Worker を作り直さない */
@@ -153,8 +242,39 @@ export class SimulationClient {
     this.stop(new TerrainLoadError('worker', 'SimulationClient は破棄されました'))
   }
 
+  private receiveFrame(message: FrameMessage): void {
+    if (message.terrainId !== this.terrainId) {
+      // 前の地形の frame（地点を変えた直後に届く）。表示せずにバッファだけ返す
+      this.command({ type: 'returnBuffer', buffer: message.water }, [message.water])
+      return
+    }
+    const previous = this.water
+    const water = new Float32Array(message.water)
+    this.water = water
+    const frame: FrameView = {
+      water,
+      arrows: message.arrows,
+      stats: message.stats,
+      stepsPerSecond: message.stepsPerSecond,
+    }
+    for (const listener of this.frameListeners) listener(frame)
+    // 表示とセル情報は新しい方を読むので、古い方を返す。返した後は previous に触れない（tech-spec §5.2）
+    if (previous !== null) {
+      this.command({ type: 'returnBuffer', buffer: previous.buffer }, [previous.buffer])
+    }
+  }
+
   /**
-   * 要求を送る Worker。異常終了の後は、次の要求のときに起動し直す（spec 02 §7）。
+   * 再生の命令を送る。異常終了・破棄の後は送らず、Worker も起動し直さない。
+   * 新しい Worker には地形が無いので、再読み込みは地点の選び直し（読み込み）で行う（spec 04 §10）
+   */
+  private command(message: SimulationCommand, transfer: Transferable[] = []): void {
+    if (this.crashed || this.disposed) return
+    this.worker.postMessage(message, transfer)
+  }
+
+  /**
+   * 要求を送る Worker。異常終了の後は、次の要求（ping・loadTerrain）のときに起動し直す（spec 02 §7）。
    * すぐに起動し直すと、スクリプトを読めない Worker（CSP で塞がれた場合など）で作り直しが止まらない。
    * 破棄した後は、異常終了の後の dispose でも Worker を作り直さない
    */
@@ -164,7 +284,7 @@ export class SimulationClient {
     }
     if (this.crashed) {
       try {
-        this.worker = this.start()
+        this.worker = this.spawnWorker()
         this.crashed = false
       } catch (error) {
         // 起動を同期的に投げる factory（CSP で塞がれた場合など）でも、crashed は true のままにし、
@@ -175,12 +295,21 @@ export class SimulationClient {
     return this.worker
   }
 
-  private start(): WorkerPort {
+  /** Worker を作って配線する（コンストラクタと、異常終了の後の作り直しで使う） */
+  private spawnWorker(): WorkerPort {
     const worker = this.createWorker()
     worker.addEventListener('message', this.onMessage)
     worker.addEventListener('error', this.onError)
     worker.addEventListener('messageerror', this.onError)
     return worker
+  }
+
+  /** 異常終了として扱う。Worker を終了し、待っている要求を失敗させ、次の要求で起動し直す */
+  private crash(error: TerrainLoadError): void {
+    this.stop(error)
+    this.crashed = true
+    this.water = null
+    for (const listener of this.crashListeners) listener()
   }
 
   private stop(error: TerrainLoadError): void {
@@ -191,10 +320,30 @@ export class SimulationClient {
     this.failAll(error)
   }
 
+  /** 読み込みの番犬を張り直す。進捗が止まった Worker は次のメッセージも処理できないので、異常終了と同じ扱い */
+  private armWatchdog(): void {
+    clearTimeout(this.watchdog)
+    this.watchdog = setTimeout(() => {
+      this.watchdog = undefined
+      this.crash(
+        new TerrainLoadError(
+          'worker',
+          `読み込みが ${LOAD_STALL_TIMEOUT_MS / 1000} 秒進みませんでした`,
+        ),
+      )
+    }, LOAD_STALL_TIMEOUT_MS)
+  }
+
+  private clearWatchdog(): void {
+    clearTimeout(this.watchdog)
+    this.watchdog = undefined
+  }
+
   private takeTerrain(requestId: number): PendingTerrain | null {
     const pending = this.pendingTerrain
     if (pending === null || pending.requestId !== requestId) return null
     this.pendingTerrain = null
+    this.clearWatchdog()
     return pending
   }
 
@@ -206,5 +355,6 @@ export class SimulationClient {
     this.pendingPings.clear()
     this.pendingTerrain?.reject(error)
     this.pendingTerrain = null
+    this.clearWatchdog()
   }
 }

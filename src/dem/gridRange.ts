@@ -79,7 +79,7 @@ export function cellAt(
 
 /** グリッドの北西端からの距離（m。東・南が正）。(pc − origin) × cellSizeM（spec 02 §3） */
 export function gridPositionM(
-  range: GridRange,
+  range: Pick<GridRange, 'z' | 'originX' | 'originY' | 'cellSizeM'>,
   lon: number,
   lat: number,
 ): { x: number; y: number } {

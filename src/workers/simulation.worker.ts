@@ -71,6 +71,8 @@ async function loadTerrain(
         started++
         report()
       },
+      // 再試行を含む各回の心拍。数は変えずに今の進捗を送り直し、メインの番犬を張り直させる
+      onAttempt: report,
       onDone: () => {
         done++
         report()

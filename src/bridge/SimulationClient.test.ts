@@ -1,49 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { MainToWorkerMessage, TerrainPayload, WorkerToMainMessage } from '../shared/protocol'
-import { SimulationClient, type WorkerPort } from './SimulationClient'
-
-type Listener = (event: MessageEvent<WorkerToMainMessage>) => void
-type ErrorListener = (event: Event) => void
-
-class FakeWorker implements WorkerPort {
-  readonly posted: MainToWorkerMessage[] = []
-  readonly listeners = new Set<Listener>()
-  readonly errorListeners = new Set<ErrorListener>()
-  terminated = false
-
-  postMessage(message: MainToWorkerMessage): void {
-    this.posted.push(message)
-  }
-  addEventListener(
-    type: 'message' | 'error' | 'messageerror',
-    listener: Listener | ErrorListener,
-  ): void {
-    if (type === 'message') this.listeners.add(listener as Listener)
-    else this.errorListeners.add(listener as ErrorListener)
-  }
-  removeEventListener(
-    type: 'message' | 'error' | 'messageerror',
-    listener: Listener | ErrorListener,
-  ): void {
-    if (type === 'message') this.listeners.delete(listener as Listener)
-    else this.errorListeners.delete(listener as ErrorListener)
-  }
-  terminate(): void {
-    this.terminated = true
-  }
-  reply(message: WorkerToMainMessage): void {
-    for (const listener of this.listeners) listener(new MessageEvent('message', { data: message }))
-  }
-  crash(): void {
-    for (const listener of this.errorListeners) listener(new Event('error'))
-  }
-  lastRequestId(): number {
-    const last = this.posted.at(-1)
-    if (last?.type !== 'loadTerrain')
-      throw new Error('最後のメッセージが loadTerrain ではありません')
-    return last.requestId
-  }
-}
+import type { TerrainPayload } from '../shared/protocol'
+import { FakeWorker, frameMessage } from './fakeWorker.test-support'
+import { LOAD_STALL_TIMEOUT_MS, SimulationClient } from './SimulationClient'
 
 function setup() {
   const worker = new FakeWorker()
@@ -279,5 +237,146 @@ describe('SimulationClient の Worker の異常終了', () => {
     const next = nth(workers, 1)
     next.reply({ type: 'terrainLoaded', requestId: next.lastRequestId(), terrain: fakeTerrain })
     await expect(done).resolves.toBe(fakeTerrain)
+  })
+})
+
+/** 地形を読み込み済みのクライアント。requestId が terrainId になる */
+function loadedSetup() {
+  const { worker, client } = setup()
+  void client.loadTerrain(0, 0, 500)
+  const terrainId = worker.loaded(fakeTerrain)
+  return { worker, client, terrainId }
+}
+
+describe('SimulationClient の再生（spec 04 §5）', () => {
+  it('再生の命令をそのまま送る', () => {
+    const { worker, client } = loadedSetup()
+    const rain = { x: 1, y: 2, radiusM: 10, amountMm: 100 }
+    client.start(rain)
+    client.pause()
+    client.resume()
+    client.step()
+    client.reset()
+    client.setSpeed('max')
+    client.setArrows(true, 20)
+    expect(worker.posted.slice(-7)).toEqual([
+      { type: 'start', rain },
+      { type: 'pause' },
+      { type: 'resume' },
+      { type: 'step' },
+      { type: 'reset' },
+      { type: 'setSpeed', speed: 'max' },
+      { type: 'setArrows', visible: true, spacingM: 20 },
+    ])
+  })
+
+  it('frame の水深を渡し、手元の古いバッファを transfer つきの returnBuffer で返す（tech-spec §5.2）', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const steps: number[] = []
+    client.onFrame((frame) => steps.push(frame.water[0] ?? -1))
+    const first = frameMessage(terrainId, 1)
+    worker.reply(first)
+    expect(client.water?.[0]).toBe(1)
+    expect(worker.posted.some((m) => m.type === 'returnBuffer')).toBe(false)
+    worker.reply(frameMessage(terrainId, 2))
+    expect(steps).toEqual([1, 2])
+    expect(client.water?.[0]).toBe(2)
+    expect(worker.posted.at(-1)).toEqual({ type: 'returnBuffer', buffer: first.water })
+    expect(worker.transferred).toContain(first.water)
+  })
+
+  it('前の地形の frame は渡さず、バッファだけを返す', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const listener = vi.fn()
+    client.onFrame(listener)
+    const stale = frameMessage(terrainId - 1, 5)
+    worker.reply(stale)
+    expect(listener).not.toHaveBeenCalled()
+    expect(client.water).toBeNull()
+    expect(worker.posted.at(-1)).toEqual({ type: 'returnBuffer', buffer: stale.water })
+  })
+
+  it('新しい地形を読み込むと terrainId が変わり、前の地形の水深を捨てる', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    worker.reply(frameMessage(terrainId, 1))
+    void client.loadTerrain(1, 1, 250)
+    const next = worker.loaded(fakeTerrain)
+    expect(client.terrainId).toBe(next)
+    expect(client.water).toBeNull()
+  })
+
+  it('simFailed は今の地形のものだけを知らせる', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const reasons: string[] = []
+    client.onSimFailed((reason) => reasons.push(reason))
+    worker.reply({ type: 'simFailed', terrainId: terrainId - 1, reason: 'internal', message: '' })
+    worker.reply({
+      type: 'simFailed',
+      terrainId,
+      reason: 'no-elevation-at-rain-center',
+      message: '',
+    })
+    expect(reasons).toEqual(['no-elevation-at-rain-center'])
+  })
+
+  it('今の地形の simFailed は手元の水深を返して消す（前の実行の水を出し続けない。タスク 4 レビューの裁定 1）', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const frame = frameMessage(terrainId, 3)
+    worker.reply(frame)
+    expect(client.water).not.toBeNull()
+    worker.reply({ type: 'simFailed', terrainId, reason: 'internal', message: '' })
+    expect(client.water).toBeNull()
+    expect(worker.posted.at(-1)).toEqual({ type: 'returnBuffer', buffer: frame.water })
+    expect(worker.transferred).toContain(frame.water)
+  })
+
+  it('前の地形の simFailed では手元の水深を返さない', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const frame = frameMessage(terrainId, 3)
+    worker.reply(frame)
+    worker.reply({ type: 'simFailed', terrainId: terrainId - 1, reason: 'internal', message: '' })
+    expect(client.water).not.toBeNull()
+    expect(worker.posted.some((m) => m.type === 'returnBuffer')).toBe(false)
+  })
+})
+
+describe('SimulationClient の異常終了の通知と番犬（02 の申し送り）', () => {
+  it('異常終了で crash を知らせる。その後の再生の命令は送らず、Worker も起動し直さない', () => {
+    const { workers, client } = setupMany()
+    const crashes = vi.fn()
+    client.onCrash(crashes)
+    nth(workers, 0).crash()
+    expect(crashes).toHaveBeenCalledTimes(1)
+    client.start({ x: 0, y: 0, radiusM: 1, amountMm: 1 })
+    client.reset()
+    expect(workers).toHaveLength(1)
+    expect(nth(workers, 0).posted.some((m) => m.type === 'start')).toBe(false)
+  })
+
+  it('読み込みの進捗が 30 秒止まると worker で失敗し、Worker を終了して crash を知らせる。進捗があれば延びる', async () => {
+    vi.useFakeTimers()
+    const { worker, client } = setup()
+    const crashes = vi.fn()
+    client.onCrash(crashes)
+    const load = client.loadTerrain(0, 0, 500)
+    const requestId = worker.lastRequestId()
+    vi.advanceTimersByTime(LOAD_STALL_TIMEOUT_MS - 1)
+    worker.reply({ type: 'terrainProgress', requestId, done: 1, started: 4 })
+    vi.advanceTimersByTime(LOAD_STALL_TIMEOUT_MS - 1)
+    expect(crashes).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    await expect(load).rejects.toMatchObject({ reason: 'worker' })
+    expect(worker.terminated).toBe(true)
+    expect(crashes).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('読み込みが済めば番犬を外す', async () => {
+    vi.useFakeTimers()
+    const { worker, client } = setup()
+    const load = client.loadTerrain(0, 0, 500)
+    worker.loaded(fakeTerrain)
+    await load
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

@@ -6,6 +6,7 @@ import type { MapController } from '../map/MapController'
 import { TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
+import type { SimulationSession } from './simulationSession'
 
 const RANGE_SIZE_M = 500 // R02-4
 
@@ -16,14 +17,16 @@ const RANGE_SIZE_M = 500 // R02-4
 export class TerrainSession {
   readonly store: AppStore
   private readonly client: SimulationClient
+  private readonly simulation: SimulationSession
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
 
   // Worker が異常終了してもストアは変えない。読み込み中なら、その要求の失敗（'worker'）が load() で
   // failed になる。表示中なら、メインは地形の複製を持つので、重ね描きもカーソル位置の標高もそのまま動く
-  constructor(client: SimulationClient, store: AppStore) {
+  constructor(client: SimulationClient, store: AppStore, simulation: SimulationSession) {
     this.client = client
     this.store = store
+    this.simulation = simulation
   }
 
   /** 地図のクリック・カーソル・移動を購読し、URL の地点を読む。戻り値で外す */
@@ -83,6 +86,7 @@ export class TerrainSession {
   select(lon: number, lat: number): void {
     const wrappedLon = wrapLongitude(lon)
     this.store.getState().selectPoint(wrappedLon, lat)
+    this.simulation.terrainCleared()
     this.overlay?.clearTerrain()
     this.overlay?.showSelection(wrappedLon, lat)
     this.writeUrl()
@@ -105,6 +109,7 @@ export class TerrainSession {
       actions.setTerrain(summarizeTerrain(terrain))
       // 表示の切り替えは読み込みの間にも変わりうるので、描く直前の値を取り直す
       this.overlay?.showTerrain(terrain, this.store.getState().display)
+      this.simulation.terrainReady(terrain, { lon, lat })
     } catch (error) {
       const reason = error instanceof TerrainLoadError ? error.reason : 'internal'
       // 新しい地点の読み込みに置き換わった。ストアはもう新しい地点の読み込み中なので、何もしない
