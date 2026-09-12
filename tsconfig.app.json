@@ -8,6 +8,13 @@
     "jsx": "react-jsx"
   },
   "include": ["src"],
-  "exclude": ["src/simulation", "src/dem", "src/shared", "src/workers", "src/**/*.test.ts"],
+  "exclude": [
+    "src/simulation",
+    "src/dem",
+    "src/shared",
+    "src/workers",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ],
   "references": [{ "path": "./tsconfig.sim.json" }, { "path": "./tsconfig.core.json" }]
 }

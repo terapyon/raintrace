@@ -836,8 +836,9 @@ TypeScript の project references で領域を分割し、`tsc -b` で一括し�
 | `tsconfig.core.json` | `src/dem/`, `src/shared/` | `ES2023` のみ | 有効 |
 | `tsconfig.worker.json` | `src/workers/` | `ES2023`, `WebWorker` | 有効 |
 | `tsconfig.app.json` | 上記以外の `src/` | `ES2023`, `DOM`, `DOM.Iterable` | 有効 |
-| `tsconfig.node.json` | `vite.config.ts` など | Node 用 | 有効 |
-| `tsconfig.test.json` | `*.test.ts`（全ディレクトリ） | `ES2023`, `DOM`（types に `node`・`vitest`） | 有効 |
+| `tsconfig.node.json` | `vite.config.ts`・`vitest.config.ts`・`playwright.config.ts`・`tests/e2e/` | `ES2023`, `DOM`（E2E の page.evaluate のため） | 有効 |
+| `tsconfig.scripts.json` | `scripts/**/*.ts`（Node で直接実行するスクリプト） | `ES2023` のみ（types に `node`） | 有効 |
+| `tsconfig.test.json` | `*.test.ts`・`*.test.tsx`（全ディレクトリ） | `ES2023`, `DOM`, `DOM.Iterable`（types に `node`・`vitest`） | 有効 |
 
 構成上の要点:
 
@@ -866,7 +867,7 @@ TypeScript は 6 系を使う（2026-09-10 時点で 6.0.3。実装 spec 01 で�
 | `src/dem/` | Vitest（ユニット） | デコード式、タイル座標変換、無効値処理 |
 | `src/state/` | Vitest | localStorage スキーマ検証、不正値の破棄 |
 | `src/renderer/`, `src/map/` | 自動テストの対象外 | WebGL の検証コストが見合わない |
-| `src/ui/` | Vitest + Testing Library（限定的） | 入力値のバリデーションと状態反映のみ |
+| `src/ui/` | Vitest + Testing Library（jsdom。ファイルの先頭の `// @vitest-environment jsdom` で選ぶ。限定的） | 入力値のバリデーションと状態反映のみ |
 | 全体 | Playwright（E2E） | スモークテスト（§11.4） |
 
 ## 11.2 シミュレーションの検証（最重要）

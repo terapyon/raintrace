@@ -3,9 +3,10 @@
   "compilerOptions": {
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsc/test.tsbuildinfo",
-    "lib": ["ES2023", "DOM"],
-    "types": ["node", "vitest"]
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest"],
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.test.ts"],
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [{ "path": "./tsconfig.sim.json" }, { "path": "./tsconfig.core.json" }]
 }
