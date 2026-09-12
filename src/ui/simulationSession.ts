@@ -107,7 +107,18 @@ export class SimulationSession {
     const { events, ...stats } = frame.stats
     if (this.awaitingResetFrame) {
       // バッファの返却は SimulationClient 側でこれまでどおり行われる（frame の受信そのものは止めない）。
-      // ここで無視するのはストアへの反映（統計・越流イベント）だけ
+      // ここで無視するのはストアへの反映（統計・越流イベント）だけ。
+      //
+      // なぜ step 0 で判定してよいか: Worker の SimulationRunner.reset() は必ず ZERO_STATS（step 0）を
+      // offer() する。suspend()（reset・start の両方が最初に呼ぶ）は保留中の offer を discardPending() で
+      // 捨てるので、この reset が offer した ZERO_STATS より後に古い frame が紛れ込むことはなく、
+      // step 0 の frame は「直前の reset」の後にしか作られない。つまり「新しい世代の始まり」の目印になる。
+      //
+      // 残る限界: メインスレッドが丸ごと 1 回の start → reset 分だけ処理を遅らせ、reset₁ の ZERO_STATS が
+      // 届く前に reset₂ まで進んでしまうと、reset₁ の ZERO_STATS を reset₂ の最初の frame と取り違え、
+      // reset₂ が本当に送った ZERO_STATS が届くまでの間、reset₁ 側の step ≥ 1 の古い frame が一瞬だけ
+      // 表示されうる。極端な遅延でしか起きず実害は小さいと見て、今回は対応しない。もし問題になれば、
+      // reset に通し番号を振り、terrainId と同様に frame へ載せて突き合わせる形にするとよい。
       if (stats.step !== 0) return
       this.awaitingResetFrame = false
     }
