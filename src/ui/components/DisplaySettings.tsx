@@ -5,7 +5,14 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { useStore } from 'zustand'
 import type { AppStore } from '../../state/appStore'
-import { ARROW_SPACINGS, type PersistedSettings } from '../../state/persistedSettings'
+import {
+  ARROW_SPACINGS,
+  BASEMAPS,
+  type Basemap,
+  type PersistedSettings,
+  THEME_MODES,
+  type ThemeMode,
+} from '../../state/persistedSettings'
 import type { SettingsStore } from '../../state/settingsStore'
 import { strings } from '../strings'
 import { DepressionLegend } from './DepressionLegend'
@@ -21,6 +28,7 @@ type Display = PersistedSettings['display']
 export function DisplaySettings({ app, settings }: { app: AppStore; settings: SettingsStore }) {
   const layers = useStore(app, (s) => s.display)
   const display = useStore(settings, (s) => s.display)
+  const mapSettings = useStore(settings, (s) => s.map)
   const setLayer = useStore(app, (s) => s.setDisplay)
   const setDisplay = (patch: Partial<Display>): void => settings.getState().setDisplay(patch)
   return (
@@ -92,6 +100,40 @@ export function DisplaySettings({ app, settings }: { app: AppStore; settings: Se
         label={strings.panel.showDepressions}
       />
       <DepressionLegend />
+      <Row label={strings.map.basemap}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          aria-label={strings.map.basemap}
+          value={mapSettings.basemap}
+          onChange={(_, value: Basemap | null) => {
+            if (value !== null) settings.getState().setMap({ basemap: value })
+          }}
+        >
+          {BASEMAPS.map((b) => (
+            <ToggleButton key={b} value={b}>
+              {strings.map.basemaps[b]}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Row>
+      <Row label={strings.map.theme}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          aria-label={strings.map.theme}
+          value={mapSettings.theme}
+          onChange={(_, value: ThemeMode | null) => {
+            if (value !== null) settings.getState().setMap({ theme: value })
+          }}
+        >
+          {THEME_MODES.map((m) => (
+            <ToggleButton key={m} value={m}>
+              {strings.map.themes[m]}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Row>
     </>
   )
 }

@@ -143,6 +143,11 @@ export class SimulationSession {
     this.overlay?.setPalette(palette)
   }
 
+  /** ベースマップの切り替えで消えた水深と矢印のレイヤーを足し直す */
+  restoreOverlay(): void {
+    this.overlay?.restore()
+  }
+
   start(amountMm: number, radiusM: number): void {
     if (this.terrain === null || this.center === null) return
     const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)

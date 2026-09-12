@@ -48,6 +48,8 @@ export interface GsiScenario {
 
 export interface GsiCounts {
   pale: number
+  std: number
+  photo: number
   dem: number
 }
 
@@ -64,14 +66,17 @@ export async function routeGsi(
   context: BrowserContext,
   scenario: GsiScenario = {},
 ): Promise<GsiCounts> {
-  const counts: GsiCounts = { pale: 0, dem: 0 }
+  const counts: GsiCounts = { pale: 0, std: 0, photo: 0, dem: 0 }
   await context.route('https://cyberjapandata.gsi.go.jp/**', async (route) => {
-    const match = /\/xyz\/([^/]+)\/\d+\/(\d+)\/(\d+)\.png$/.exec(
+    const match = /\/xyz\/([^/]+)\/\d+\/(\d+)\/(\d+)\.(?:png|jpg)$/.exec(
       new URL(route.request().url()).pathname,
     )
     const path = match?.[1]
-    if (path === 'pale') {
-      counts.pale++
+    // 背景地図は 3 つとも同じ画像で応える。ブラウザは中身で画像の形式を判定する
+    if (path === 'pale' || path === 'std' || path === 'seamlessphoto') {
+      if (path === 'pale') counts.pale++
+      else if (path === 'std') counts.std++
+      else counts.photo++
       return fulfillPng(route, paleTile)
     }
     counts.dem++

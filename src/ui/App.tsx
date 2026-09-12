@@ -5,6 +5,7 @@ import { CellInfoHost } from './components/CellInfoHost'
 import { MapView } from './components/MapView'
 import { Panel } from './components/Panel'
 import { TerrainSessionBinder } from './components/TerrainSessionBinder'
+import { ThemeModeBinder } from './components/ThemeModeBinder'
 import { type MissingFeature, WebGLUnsupported } from './components/WebGLUnsupported'
 import type { TerrainSession } from './terrainSession'
 import { theme } from './theme'
@@ -17,14 +18,17 @@ interface Props {
 
 export function App({ missingFeatures, session, settings }: Props) {
   return (
-    <ThemeProvider theme={theme} defaultMode="system">
+    <ThemeProvider theme={theme} defaultMode={settings.getState().map.theme} storageManager={null}>
       <CssBaseline />
+      <ThemeModeBinder settings={settings} />
       {missingFeatures.length > 0 ? (
         <WebGLUnsupported missing={missingFeatures} />
       ) : (
         <>
           {/* Worker を起動できなかった場合（session が null）は、地図だけを出す */}
-          <MapView>{session !== null && <TerrainSessionBinder session={session} />}</MapView>
+          <MapView settings={settings}>
+            {session !== null && <TerrainSessionBinder session={session} />}
+          </MapView>
           {session !== null && <Panel session={session} settings={settings} />}
           {session !== null && <CellInfoHost session={session} />}
         </>

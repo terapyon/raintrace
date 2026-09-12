@@ -58,6 +58,11 @@ export class TerrainSession {
     )
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
+    // ベースマップの切り替えの後に、地形 → 水の順に足し直す（水は地形のレイヤーの間に入れる）
+    const offRestyle = controller.onRestyle(() => {
+      this.overlay?.restore()
+      this.simulation.restoreOverlay()
+    })
 
     const onClick = (event: MapMouseEvent): void => {
       const { lng, lat } = event.lngLat
@@ -118,6 +123,7 @@ export class TerrainSession {
       this.urlDebounce.cancel()
       unsubscribe()
       unsubscribeSettings()
+      offRestyle()
       detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()

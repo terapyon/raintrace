@@ -6,6 +6,10 @@ export const strings = {
   },
   map: {
     ariaLabel: '地図',
+    basemap: '背景地図',
+    basemaps: { std: '標準', pale: '淡色', photo: '写真' },
+    theme: '画面の配色',
+    themes: { light: 'ライト', dark: 'ダーク', system: '端末に合わせる' },
   },
   unsupported: {
     title: 'このブラウザには対応していません',
