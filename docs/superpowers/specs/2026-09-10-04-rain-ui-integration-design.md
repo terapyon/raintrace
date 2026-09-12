@@ -68,19 +68,25 @@ base-spec §58 の「3 操作以内」は、初回の免責の了解を除いて
 
 ### 5.1 メッセージ（`shared/protocol.ts`）
 
+> 2026-09-12 に実装計画で改訂: メッセージの名前を 02 の実装（`loadTerrain` など）に合わせ、`setArrowSpacing` を `setArrows` に、`error` を `simFailed` にした。
+
 | 方向 | メッセージ | 内容 |
 |---|---|---|
-| メイン → Worker | `loadArea` | 02 で定義済み |
+| メイン → Worker | `loadTerrain` | 02 で定義済み（`{ requestId, lon, lat, sizeM }`） |
 | | `start` | `{ rain: RainfallInput }`。雨を置いて再生 |
 | | `pause`・`resume`・`step`・`reset` | |
 | | `setSpeed` | `{ speed: 0.25 \| 0.5 \| 1 \| 2 \| 4 \| 'max' }`（`'max'` は「最速」） |
-| | `setArrowSpacing` | `{ spacingM: 5 \| 10 \| 20 }` |
+| | `setArrows` | `{ visible: boolean, spacingM: 5 \| 10 \| 20 }`。非表示なら Worker は `flowVectors()` を呼ばない |
 | | `returnBuffer` | `{ buffer: ArrayBuffer }`（Transferable） |
-| Worker → メイン | `areaLoaded`・`loadProgress`・`loadError` | 02 で定義済み |
-| | `frame` | `{ step, water: ArrayBuffer（Transferable、Float32 × N²）, arrows: Float32Array, stats: StepStats }` |
-| | `error` | `{ message }` |
+| Worker → メイン | `terrainLoaded`・`terrainProgress`・`terrainFailed` | 02 で定義済み |
+| | `frame` | `{ terrainId, step, water: ArrayBuffer（Transferable、Float32 × N²）, arrows: Float32Array \| null, stats: StepStats, stepsPerSecond }` |
+| | `simFailed` | `{ terrainId, reason: 'no-elevation-at-rain-center' \| 'internal', message }` |
 
-`arrows` は、`flowVectors()` を Worker 内で `spacingM` ごとに間引き、流れのある地点だけを `[x, y, 角度, 大きさ]` の並びにしたもの。水深全体ではなく間引いた結果だけを送るので、転送量は小さい。矢印が表示されていて、かつ frame を送る tick でだけ計算する（03 §3.9）。矢印が非表示なら空の配列を送る。
+`terrainId` は、その地形を読み込んだ `loadTerrain` の `requestId`。地点を変えた直後に届く前の地形の frame を、メインは表示せずにバッファだけ返す。
+
+`arrows` は、`flowVectors()` を Worker 内で `spacingM` ごとに間引き、流れのある地点だけを `[列, 行, 方位（度）, 大きさ]` の並びにしたもの。水深全体ではなく間引いた結果だけを送るので、転送量は小さい。矢印が表示されていて、かつ frame を送るときだけ計算する（03 §3.9）。再生中は最短 100ms ごと（表示は 10Hz）とし、その間の frame は `null`（前のまま）。一時停止・Step・Reset・平衡の frame では必ず計算する。非表示に切り替えたら長さ 0 の配列を 1 回送る。
+
+`stats.events` は、前に送った frame からの越流イベントの累計とする。1 tick に複数の step を回し、バッファが無ければ frame を見送るので、最後の step の分だけでは取りこぼす。
 
 ### 5.2 再生ループ（R04-5）
 
