@@ -28,7 +28,7 @@ test("A': 高さの取り直しの時間と、シミュレーションの標高�
     const group = rows.filter((r) => r.view.zoom === zoom)
     const ms = group.map((r) => r.info.ms)
     lines.push(
-      `| ${zoom} | ${(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(1)} | ${Math.max(...ms).toFixed(1)} | ${Math.max(...group.map((r) => r.info.maxDiffM)).toFixed(3)} | ${group.filter((r) => r.info.fallback).length} | ${[...new Set(group.map((r) => r.info.zoom))].join('・')} |`,
+      `| ${zoom} | ${(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(1)} | ${Math.max(...ms).toFixed(1)} | ${Math.max(...group.map((r) => r.info.maxDiffM)).toFixed(3)} | ${group.filter((r) => r.info.fallback).length} | ${[...new Set(group.map((r) => r.info.zoom))].map((z) => (z === null ? '—' : String(z))).join('・')} |`,
     )
   }
   const table = `${lines.join('\n')}\n`
