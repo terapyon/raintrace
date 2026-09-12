@@ -35,8 +35,9 @@ describe('meshHeightAt（レンダリングを介さない地形メッシュの�
     expect(Math.abs(mesh - trueHeight(x, y))).toBeLessThan(0.01)
   })
 
-  it('放物面（すり鉢型）では対角の中点でメッシュが真の面より高くなり、量は弦の高さ s²/(8ρ) と符合する', () => {
-    // ρ = 600m（レビューの見積もりと同じ）、ズーム15（格子間隔 = 2 × 2^(17-15) = 8）
+  it('放物面（すり鉢型）では対角の中点でメッシュが真の面より高くなり、量は弦の高さ (L√2)²/(8ρ) と符合する', () => {
+    // ρ = 600m（すり鉢の設計値どおり。半径60m・深さ3mの放物面 z = 3(r/60)² の頂点の曲率半径 = 60²/(2×3) = 600）
+    // ズーム15（格子間隔 = 2 × 2^(17-15) = 8）
     const rho = 600
     const a = 1 / (2 * rho)
     const trueHeight = paraboloid(a)
@@ -50,12 +51,36 @@ describe('meshHeightAt（レンダリングを介さない地形メッシュの�
     const midY = (ky + 0.5) * step
     const mesh = meshHeightAt(sample, zoom, midX, midY)
     const truth = trueHeight(midX, midY)
-    // 対角の弦の長さは step×√2 なので、弦の高さ（対角の2頂点の平均 − 真の中点）は a×step² / 2
-    // （対角に沿った1次元の弦の高さの公式 L²/(8ρ) と、L = step√2・ρ = 1/(2a) から導ける一致を確認）
+    // 対角の弦の長さ L = step×√2 なので、弦の高さ（対角の2頂点の平均 − 真の中点）は L²/(8ρ) = a×step² / 2
+    // （対角の1次元の弦の高さの公式そのもの。曲率半径の違いではなく、対角に沿った長さで説明できることを
+    // タスクレビュー fix round 2 で確認した）
     const expectedSagitta = (a * step ** 2) / 2
     const actualSagitta = mesh - truth
     expect(actualSagitta).toBeGreaterThan(0) // メッシュは常に真の凸面より高い（沈み込みと逆向き）
-    expect(actualSagitta).toBeCloseTo(expectedSagitta, 1)
+    // Terrarium の量子化（1/256m）以内の誤差で解析値と一致する（fix round 2: ±0.05m → 量子化限界まで厳密化）
+    expect(Math.abs(actualSagitta - expectedSagitta)).toBeLessThan(1 / 256)
+  })
+
+  it('鞍点（z = xy）では対角の向き（左上→右下）で三角形分割が決まり、逆向き（右上→左下）の分割とは異なる値になる', () => {
+    // 鞍点は双線形（xy の項を持つ）なので、格子の4隅の値は sampleZ17Corner の双線形補間で厳密に再現できる
+    // （量子化を除く）一方、三角形分割（区分線形）は対角の向きに依存する——TL-BR と TR-BL で別の値になる
+    const trueHeight = (x: number, y: number) => x * y
+    const sample = samplerFromContinuous(trueHeight)
+    const zoom = 17
+    const step = 2 // zoom17 の格子間隔
+    // 隅の値（量子化前）: v00=f(0,0)=0, v10=f(2,0)=0, v01=f(0,2)=0, v11=f(2,2)=4
+    const u = 0.3
+    const v = 0.8 // v > u なので meshHeightAt は左下の三角形 (v00, v11, v01) を使う
+    const x = u * step
+    const y = v * step
+    const mesh = meshHeightAt(sample, zoom, x, y)
+    // 左上(v00)→右下(v11) の対角で分割した場合の解析値（三角形 v00, v11, v01。meshHeightAt の v>u の式と同じ）
+    const tlBr = 0 * (1 - v) + 4 * u + 0 * (v - u) // = 1.2
+    // 右上(v10)→左下(v01) で分割した場合の解析値（三角形 v10, v11, v01。u+v=1.1>1 側）
+    const trBl = (1 - v) * 0 + (u + v - 1) * 4 + (1 - u) * 0 // = 0.4
+    expect(tlBr).not.toBeCloseTo(trBl, 1) // 2つの分割が実際に異なる値を与えることの確認
+    expect(mesh).toBeCloseTo(tlBr, 2) // 量子化（1/256m）以内
+    expect(mesh).not.toBeCloseTo(trBl, 1)
   })
 
   it('ズームが低いほど格子間隔が広がり、弦の高さ（誤差）が大きくなる', () => {

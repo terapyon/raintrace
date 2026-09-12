@@ -14,10 +14,12 @@
         "exaggeration": 1,
         "pitch": 60
       },
-      "drawnZoom": 15,
-      "coarsestZoom": 13,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "tileZoom": 14,
+      "demZoom": 13,
+      "coarsestTileZoom": 13,
+      "coarsestDemZoom": 12,
+      "maxS": 0.40054984626126355,
+      "exceedFraction": 0.7239396716940255
     },
     {
       "view": {
@@ -25,10 +27,12 @@
         "exaggeration": 1,
         "pitch": 85
       },
-      "drawnZoom": 17,
-      "coarsestZoom": 10,
-      "maxS": 0.0014842610687608726,
-      "exceedFraction": 0
+      "tileZoom": 14,
+      "demZoom": 13,
+      "coarsestTileZoom": 10,
+      "coarsestDemZoom": 9,
+      "maxS": 0.40054984626126355,
+      "exceedFraction": 0.7239396716940255
     },
     {
       "view": {
@@ -36,10 +40,12 @@
         "exaggeration": 10,
         "pitch": 60
       },
-      "drawnZoom": 15,
-      "coarsestZoom": 13,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "tileZoom": 14,
+      "demZoom": 13,
+      "coarsestTileZoom": 13,
+      "coarsestDemZoom": 12,
+      "maxS": 0.40054984626126355,
+      "exceedFraction": 0.7239396716940255
     },
     {
       "view": {
@@ -47,141 +53,167 @@
         "exaggeration": 10,
         "pitch": 85
       },
-      "drawnZoom": 15,
-      "coarsestZoom": 9,
+      "tileZoom": 14,
+      "demZoom": 13,
+      "coarsestTileZoom": 9,
+      "coarsestDemZoom": 8,
+      "maxS": 0.40054984626126355,
+      "exceedFraction": 0.7239396716940255
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 1,
+        "pitch": 60
+      },
+      "tileZoom": 15,
+      "demZoom": 14,
+      "coarsestTileZoom": 15,
+      "coarsestDemZoom": 14,
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "tileZoom": 14,
+      "demZoom": 13,
+      "coarsestTileZoom": 11,
+      "coarsestDemZoom": 10,
+      "maxS": 0.40054984626126355,
+      "exceedFraction": 0.7239396716940255
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 10,
+        "pitch": 60
+      },
+      "tileZoom": 15,
+      "demZoom": 14,
+      "coarsestTileZoom": 15,
+      "coarsestDemZoom": 14,
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 10,
+        "pitch": 85
+      },
+      "tileZoom": 14,
+      "demZoom": 13,
+      "coarsestTileZoom": 10,
+      "coarsestDemZoom": 9,
+      "maxS": 0.40054984626126355,
+      "exceedFraction": 0.7239396716940255
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 1,
+        "pitch": 60
+      },
+      "tileZoom": 16,
+      "demZoom": 15,
+      "coarsestTileZoom": 16,
+      "coarsestDemZoom": 15,
       "maxS": 0.02460808096303424,
       "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
-        "zoom": 16,
+        "zoom": 17,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "tileZoom": 15,
+      "demZoom": 14,
+      "coarsestTileZoom": 11,
+      "coarsestDemZoom": 10,
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 10,
+        "pitch": 60
+      },
+      "tileZoom": 16,
+      "demZoom": 15,
+      "coarsestTileZoom": 16,
+      "coarsestDemZoom": 15,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
+    },
+    {
+      "view": {
+        "zoom": 17,
+        "exaggeration": 10,
+        "pitch": 85
+      },
+      "tileZoom": 15,
+      "demZoom": 14,
+      "coarsestTileZoom": 10,
+      "coarsestDemZoom": 9,
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
+    },
+    {
+      "view": {
+        "zoom": 18,
         "exaggeration": 1,
         "pitch": 60
       },
-      "drawnZoom": 16,
-      "coarsestZoom": 15,
+      "tileZoom": 18,
+      "demZoom": 17,
+      "coarsestTileZoom": 17,
+      "coarsestDemZoom": 16,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
+    },
+    {
+      "view": {
+        "zoom": 18,
+        "exaggeration": 1,
+        "pitch": 85
+      },
+      "tileZoom": 17,
+      "demZoom": 16,
+      "coarsestTileZoom": 11,
+      "coarsestDemZoom": 10,
       "maxS": 0.005949265487195987,
       "exceedFraction": 0
     },
     {
       "view": {
-        "zoom": 16,
-        "exaggeration": 1,
-        "pitch": 85
+        "zoom": 18,
+        "exaggeration": 10,
+        "pitch": 60
       },
-      "drawnZoom": 17,
-      "coarsestZoom": 11,
+      "tileZoom": 18,
+      "demZoom": 17,
+      "coarsestTileZoom": 16,
+      "coarsestDemZoom": 15,
       "maxS": 0.0014842610687608726,
       "exceedFraction": 0
     },
     {
       "view": {
-        "zoom": 16,
+        "zoom": 18,
         "exaggeration": 10,
-        "pitch": 60
+        "pitch": 85
       },
-      "drawnZoom": 16,
-      "coarsestZoom": 15,
+      "tileZoom": 17,
+      "demZoom": 16,
+      "coarsestTileZoom": 10,
+      "coarsestDemZoom": 9,
       "maxS": 0.005949265487195987,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 16,
-        "exaggeration": 10,
-        "pitch": 85
-      },
-      "drawnZoom": 16,
-      "coarsestZoom": 10,
-      "maxS": 0.005949265487195987,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 17,
-        "exaggeration": 1,
-        "pitch": 60
-      },
-      "drawnZoom": 17,
-      "coarsestZoom": 16,
-      "maxS": 0.0014842610687608726,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 17,
-        "exaggeration": 1,
-        "pitch": 85
-      },
-      "drawnZoom": 17,
-      "coarsestZoom": 11,
-      "maxS": 0.0014842610687608726,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 17,
-        "exaggeration": 10,
-        "pitch": 60
-      },
-      "drawnZoom": 17,
-      "coarsestZoom": 16,
-      "maxS": 0.0014842610687608726,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 17,
-        "exaggeration": 10,
-        "pitch": 85
-      },
-      "drawnZoom": 17,
-      "coarsestZoom": 10,
-      "maxS": 0.0014842610687608726,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 18,
-        "exaggeration": 1,
-        "pitch": 60
-      },
-      "drawnZoom": null,
-      "coarsestZoom": 17,
-      "maxS": null,
-      "exceedFraction": null
-    },
-    {
-      "view": {
-        "zoom": 18,
-        "exaggeration": 1,
-        "pitch": 85
-      },
-      "drawnZoom": null,
-      "coarsestZoom": 11,
-      "maxS": null,
-      "exceedFraction": null
-    },
-    {
-      "view": {
-        "zoom": 18,
-        "exaggeration": 10,
-        "pitch": 60
-      },
-      "drawnZoom": null,
-      "coarsestZoom": 16,
-      "maxS": null,
-      "exceedFraction": null
-    },
-    {
-      "view": {
-        "zoom": 18,
-        "exaggeration": 10,
-        "pitch": 85
-      },
-      "drawnZoom": 17,
-      "coarsestZoom": 10,
-      "maxS": 0.0014842610687608726,
       "exceedFraction": 0
     },
     {
@@ -190,10 +222,12 @@
         "exaggeration": 1,
         "pitch": 0
       },
-      "drawnZoom": 15,
-      "coarsestZoom": 15,
-      "maxS": 0.02460808096303424,
-      "exceedFraction": 0.7213565536205316
+      "tileZoom": 15,
+      "demZoom": 14,
+      "coarsestTileZoom": 15,
+      "coarsestDemZoom": 14,
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
     },
     {
       "view": {
@@ -201,32 +235,38 @@
         "exaggeration": 10,
         "pitch": 0
       },
-      "drawnZoom": 15,
-      "coarsestZoom": 15,
+      "tileZoom": 15,
+      "demZoom": 14,
+      "coarsestTileZoom": 15,
+      "coarsestDemZoom": 14,
+      "maxS": 0.09975193911826352,
+      "exceedFraction": 0.7946837763519706
+    },
+    {
+      "view": {
+        "zoom": 16,
+        "exaggeration": 1,
+        "pitch": 0
+      },
+      "tileZoom": 16,
+      "demZoom": 15,
+      "coarsestTileZoom": 16,
+      "coarsestDemZoom": 15,
       "maxS": 0.02460808096303424,
       "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
         "zoom": 16,
-        "exaggeration": 1,
-        "pitch": 0
-      },
-      "drawnZoom": 16,
-      "coarsestZoom": 16,
-      "maxS": 0.005949265487195987,
-      "exceedFraction": 0
-    },
-    {
-      "view": {
-        "zoom": 16,
         "exaggeration": 10,
         "pitch": 0
       },
-      "drawnZoom": 16,
-      "coarsestZoom": 16,
-      "maxS": 0.005949265487195987,
-      "exceedFraction": 0
+      "tileZoom": 16,
+      "demZoom": 15,
+      "coarsestTileZoom": 16,
+      "coarsestDemZoom": 15,
+      "maxS": 0.02460808096303424,
+      "exceedFraction": 0.7213565536205316
     },
     {
       "view": {
@@ -234,9 +274,11 @@
         "exaggeration": 1,
         "pitch": 0
       },
-      "drawnZoom": 17,
-      "coarsestZoom": 17,
-      "maxS": 0.0014842610687608726,
+      "tileZoom": 17,
+      "demZoom": 16,
+      "coarsestTileZoom": 17,
+      "coarsestDemZoom": 16,
+      "maxS": 0.005949265487195987,
       "exceedFraction": 0
     },
     {
@@ -245,9 +287,11 @@
         "exaggeration": 10,
         "pitch": 0
       },
-      "drawnZoom": 17,
-      "coarsestZoom": 17,
-      "maxS": 0.0014842610687608726,
+      "tileZoom": 17,
+      "demZoom": 16,
+      "coarsestTileZoom": 17,
+      "coarsestDemZoom": 16,
+      "maxS": 0.005949265487195987,
       "exceedFraction": 0
     },
     {
@@ -256,10 +300,12 @@
         "exaggeration": 1,
         "pitch": 0
       },
-      "drawnZoom": null,
-      "coarsestZoom": 17,
-      "maxS": null,
-      "exceedFraction": null
+      "tileZoom": 18,
+      "demZoom": 17,
+      "coarsestTileZoom": 17,
+      "coarsestDemZoom": 16,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
     },
     {
       "view": {
@@ -267,10 +313,12 @@
         "exaggeration": 10,
         "pitch": 0
       },
-      "drawnZoom": null,
-      "coarsestZoom": 17,
-      "maxS": null,
-      "exceedFraction": null
+      "tileZoom": 18,
+      "demZoom": 17,
+      "coarsestTileZoom": 17,
+      "coarsestDemZoom": 16,
+      "maxS": 0.0014842610687608726,
+      "exceedFraction": 0
     }
   ]
 }

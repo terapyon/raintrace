@@ -21,7 +21,10 @@ export function quantizeTerrarium(heightM: number): number {
  * （`scale = 2 ** (17 - zoom)`）になる——タイル境界をまたいでも頂点格子は連続している。
  *
  * @param sample z17 の連続座標（角）→ 標高のサンプラー（`sampleZ17Corner` に渡す元のセルサンプラー）
- * @param zoom MapLibre が実際に描いているズーム（0〜17 の整数。17 を超える表示は 17 のタイルを使う）
+ * @param zoom 描かれている DEM 自体のズーム（0〜17 の整数。17 を超える表示は 17 のタイルを使う）。
+ *   MapLibre の地形タイル（`getRenderableTiles` の `canonical.z`）は `deltaZoom`（既定 1）だけ DEM より
+ *   細かいズームで管理される（`RasterDEMTileSource` は「実際のズーム − deltaZoom」の DEM タイルを読む）
+ *   ので、地形タイルのズームを渡すときは `− deltaZoom`（既定 1）した DEM のズームに直してから渡す
  * @param x z17 の連続座標（角基準。セルの中心なら `col + 0.5` 等）
  * @param y 同上
  */

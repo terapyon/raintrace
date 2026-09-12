@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
-import type { LngLat } from 'maplibre-gl'
-import { pixelToLonLat } from '../../src/dem/tileMath.ts'
+import { lonLatToPixel, pixelToLonLat, TILE_SIZE } from '../../src/dem/tileMath.ts'
 import { meshHeightAt } from '../src/candidates/meshHeight'
 import {
   BOWL_CENTERS,
@@ -189,7 +188,8 @@ test("曲面（すり鉢）の 1cm の膜: A と A'（zfix=offset、16 視点 + 
 // 集合）そのものが水深で異なる。(I-2) 20cm への持ち上げは縁の影の幾何そのものを変える（倍率10では水面が
 // 2m 浮き、遠い壁への影の位置が動く）。沈み込みが一切無いラスタライザのモデル（レビュー検証用）でも、
 // ここで記録する 16 行の ratio を全て再現できるため、この比だけでは沈み込みの有無を決められない。
-// 結果は「記録に残す失敗した実験」として書き、判定には使わない（直接の判定は bowl-film-mesh.spec.ts）
+// 結果は「記録に残す失敗した実験」として書き、判定には使わない（直接の判定は下の別のテスト。
+// bowl.spec.ts 内の「レンダリングを介さず直接計算する」テストが bowl-film-mesh.md を作る）
 test('曲面（すり鉢）の斜め視点: 1cm の膜と 20cm の基準膜の可視率の比で沈み込みを確かめる（A、レビュー役の推奨、Task 5b）', async ({
   page,
   context,
@@ -286,38 +286,48 @@ test('曲面（すり鉢）の斜め視点: 1cm の膜と 20cm の基準膜の�
 })
 
 /**
- * MapLibre が実際に描いている DEM のズームを、その地点で調べる（a.ts の resampleHeights と同じ手法:
- * queryTerrainElevation と getElevationForLngLatZoom が一致するズームを 17 から探す）。あわせて、
- * 視野に入っている（render-to-texture の）タイルのうち最も粗いズームも返す（レビュー追加分。本番の
- * 粗い DEM の目安）
+ * いま render-to-texture の描画に使われている地形タイル（canonical z・x・y）の一覧を返す
+ * （`getRenderableTiles`。タスクレビュー fix round 2）。
+ *
+ * fix round 1 の `terrainZooms`（`queryTerrainElevation` と `getElevationForLngLatZoom` が一致する
+ * ズームを探す手法）は、`queryTerrainElevation` が地点によらず視野全体の最大タイルズームと比較して
+ * しまうため、斜め視点ではすり鉢の場所より細かいズームを誤って返すことがあると判明した（例:
+ * z15・z16・倍率1・pitch85 が drawnZoom=17 を記録——すり鉢は中心から125m離れており、そのズーム・pitch
+ * では構造上あり得ない）。ここでは代わりに、タイルの矩形を tileMath.ts の xyz 計算で求め、地点を実際に
+ * 含むタイルを探す
  */
-async function terrainZooms(
-  page: Page,
-  lngLat: { lng: number; lat: number },
-): Promise<{ drawnZoom: number | null; coarsestZoom: number | null }> {
-  return page.evaluate((ll) => {
+async function renderableTiles(page: Page): Promise<{ z: number; x: number; y: number }[]> {
+  return page.evaluate(() => {
     const map = window.spike?.map
     if (map === undefined) throw new Error('window.spike がありません')
     const terrain = map.getTerrain() === null ? null : map.terrain
-    let drawnZoom: number | null = null
-    if (terrain !== null) {
-      // getElevationForLngLatZoom は LngLat の実インスタンス（.wrap を呼ぶ）を要求し、プレーンな
-      // {lng,lat} では落ちる（queryTerrainElevation は寛容だが、こちらはそうではない）。
-      // map.getCenter() は必ず LngLat の実インスタンスを返す公開 API なので、そのコンストラクタを借りる
-      const LngLatCtor = map.getCenter().constructor as new (lng: number, lat: number) => LngLat
-      const target = new LngLatCtor(ll.lng, ll.lat)
-      const q = map.queryTerrainElevation(target)
-      for (let z = 17; z >= 0 && drawnZoom === null; z--) {
-        if (q !== null && Math.abs(terrain.getElevationForLngLatZoom(target, z) - q) < 1e-6) {
-          drawnZoom = z
-        }
-      }
-    }
-    const tiles = terrain === null ? [] : terrain.tileManager.getRenderableTiles()
-    const coarsestZoom =
-      tiles.length === 0 ? null : Math.min(...tiles.map((t) => t.tileID.canonical.z))
-    return { drawnZoom, coarsestZoom }
-  }, lngLat)
+    if (terrain === null) return []
+    return terrain.tileManager
+      .getRenderableTiles()
+      .map((t) => ({ z: t.tileID.canonical.z, x: t.tileID.canonical.x, y: t.tileID.canonical.y }))
+  })
+}
+
+/**
+ * 地形タイルの一覧から、指定の経緯度を実際に含むタイルを探す（そのタイルのズームでのグローバル
+ * ピクセルに変換し、タイルの矩形に入るかを見る）。複数見つかった場合は最も細かい（z が大きい）ものを
+ * 採る。地形タイルのズームは DEM 自体のズームより deltaZoom（既定 1、固定。
+ * maplibre-gl-dev.mjs L9954 `this.deltaZoom = 1`）だけ細かいので、DEM のズームは
+ * `tileZoom − deltaZoom`（同 L10148 `z = tileID.overscaledZ - this.deltaZoom`）
+ */
+function tileUnderPoint(
+  tiles: { z: number; x: number; y: number }[],
+  lon: number,
+  lat: number,
+): { tileZoom: number; demZoom: number } | null {
+  const DELTA_ZOOM = 1
+  const matches = tiles.filter(({ z, x, y }) => {
+    const p = lonLatToPixel(lon, lat, z)
+    return Math.floor(p.x / TILE_SIZE) === x && Math.floor(p.y / TILE_SIZE) === y
+  })
+  if (matches.length === 0) return null
+  const finest = matches.reduce((a, b) => (a.z >= b.z ? a : b))
+  return { tileZoom: finest.z, demZoom: finest.z - DELTA_ZOOM }
 }
 
 // タスクレビュー fix round 1: bowl-film-ratio（可視率の比）は判定に使えないと判明したため、
@@ -350,15 +360,30 @@ test('曲面（すり鉢）の沈み込みをレンダリングを介さず直�
   )
 
   const ALL_VIEWS: View[] = [...MEASURE_VIEWS, ...P0_VIEWS]
-  const viewZooms: { view: View; drawnZoom: number | null; coarsestZoom: number | null }[] = []
+  interface ViewZoom {
+    view: View
+    tileZoom: number | null // すり鉢の代表点を実際に含む地形タイルのズーム
+    demZoom: number | null // = tileZoom − 1（deltaZoom）。meshHeightAt に渡す値
+    coarsestTileZoom: number | null // 視野内の地形タイルのうち最も粗いズーム
+    coarsestDemZoom: number | null // = coarsestTileZoom − 1
+  }
+  const viewZooms: ViewZoom[] = []
   for (const view of ALL_VIEWS) {
     await setView(page, view)
-    const z = await terrainZooms(page, { lng: ll.lon, lat: ll.lat })
-    viewZooms.push({ view, ...z })
+    const tiles = await renderableTiles(page)
+    const under = tileUnderPoint(tiles, ll.lon, ll.lat)
+    const coarsestTileZoom = tiles.length === 0 ? null : Math.min(...tiles.map((t) => t.z))
+    viewZooms.push({
+      view,
+      tileZoom: under?.tileZoom ?? null,
+      demZoom: under?.demZoom ?? null,
+      coarsestTileZoom,
+      coarsestDemZoom: coarsestTileZoom === null ? null : coarsestTileZoom - 1,
+    })
   }
 
   // s = メッシュの高さ − シミュレーションの標高（倍率なし。倍率は地形・水面の両方に同じだけ掛かるので
-  // 沈み込みの有無の判定には影響しない）。drawnZoom だけで決まるので、ズームごとに1回だけ計算する
+  // 沈み込みの有無の判定には影響しない）。demZoom だけで決まるので、ズームごとに1回だけ計算する
   const radiusPx = BOWL_RADIUS_M / range.cellSizeM
   const cellsCache = new Map<number, { maxS: number; exceedFraction: number; cellCount: number }>()
   const computeForZoom = (zoom: number): { maxS: number; exceedFraction: number } => {
@@ -389,19 +414,14 @@ test('曲面（すり鉢）の沈み込みをレンダリングを介さず直�
     return result
   }
 
-  interface MeshRow {
-    view: View
-    drawnZoom: number | null
-    coarsestZoom: number | null
+  interface MeshRow extends ViewZoom {
     maxS: number | null
     exceedFraction: number | null
   }
-  const meshRows: MeshRow[] = viewZooms.map(({ view, drawnZoom, coarsestZoom }) => {
-    if (drawnZoom === null) {
-      return { view, drawnZoom, coarsestZoom, maxS: null, exceedFraction: null }
-    }
-    const { maxS, exceedFraction } = computeForZoom(drawnZoom)
-    return { view, drawnZoom, coarsestZoom, maxS, exceedFraction }
+  const meshRows: MeshRow[] = viewZooms.map((vz) => {
+    if (vz.demZoom === null) return { ...vz, maxS: null, exceedFraction: null }
+    const { maxS, exceedFraction } = computeForZoom(vz.demZoom)
+    return { ...vz, maxS, exceedFraction }
   })
 
   mkdirSync(results, { recursive: true })
@@ -416,46 +436,92 @@ test('曲面（すり鉢）の沈み込みをレンダリングを介さず直�
 
   const fmt = (v: number | null, digits = 4) => (v === null ? '—' : v.toFixed(digits))
   const zoomsSorted = [...cellsCache.keys()].sort((a, b) => a - b)
-  const exceedingZooms = zoomsSorted.filter((z) => (cellsCache.get(z)?.maxS ?? 0) > 0.01)
-  const okZooms = zoomsSorted.filter((z) => !exceedingZooms.includes(z))
-  const verdict =
-    exceedingZooms.length === 0
-      ? '**判定: 描画で使われた全ズームで max s ≤ 0.01m（合格基準1の曲面版を満たす）**'
-      : `**判定: ズーム ${exceedingZooms.join('・')} で max s が 0.01m を超え、実際の沈み込みが起きる（05 で対策が要る）。ズーム ${okZooms.length === 0 ? 'なし' : okZooms.join('・')} は満たす**`
+
+  // pitch0（自己遮蔽が無く、視野内が単一ズームで曖昧さが無い）の行から、地図ズームごとの判定を
+  // その場で計算する（数値を文章に手で書き写すと、fix round 1→2 のように前提が変わったときに
+  // 古い値のまま残る事故が起きるため、fix round 2 では埋め込み文字列をやめて表から動的に作る）
+  const p0Summary = [15, 16, 17, 18]
+    .map((mapZoom) => meshRows.find((r) => r.view.zoom === mapZoom && r.view.pitch === 0))
+    .filter((r): r is MeshRow => r !== undefined)
+    .map((r) => ({
+      mapZoom: r.view.zoom,
+      demZoom: r.demZoom,
+      maxS: r.maxS,
+      exceedFraction: r.exceedFraction,
+      pass: r.maxS !== null && r.maxS <= 0.01,
+    }))
+  const p0Lines = p0Summary.map(
+    (r) =>
+      `- 地図ズーム ${r.mapZoom}（pitch0）: 実際に描かれる DEM のズーム ${r.demZoom ?? '—'}（地形タイルのズーム − deltaZoom 1）、max s = ${fmt(r.maxS)}m（${r.exceedFraction === null ? '—' : `${(r.exceedFraction * 100).toFixed(1)}%`} が1cm超）→ **${r.pass ? '合格（1cm未満）' : '不合格（1cm超の沈み込み）'}**`,
+  )
+  const failingMapZooms = p0Summary.filter((r) => !r.pass).map((r) => r.mapZoom)
+  const okMapZooms = p0Summary.filter((r) => r.pass).map((r) => r.mapZoom)
+
   const lines = [
-    '# 曲面（すり鉢）の沈み込みの直接計算（レンダリングを介さない。Task 5b fix round 1）',
+    '# 曲面（すり鉢）の沈み込みの直接計算（レンダリングを介さない。Task 5b fix round 2）',
     '',
     '`bowl-film-ratio.md` の可視率の比は判定に使えないと分かったため、MapLibre の地形メッシュの高さを',
     'レンダリングを介さず直接計算する。すり鉢の代表点（`BOWL_CENTERS[1]`、`a.ts` の `probeCells` の',
-    "'bowl' と同じ (0.5, 0.25)）の周り半径 60m のすり鉢の膜セルについて、各視点で MapLibre が実際に",
-    '描く DEM のズーム（`drawnZoom`。`queryTerrainElevation` と `getElevationForLngLatZoom` が一致する',
-    'ズームを探す、`a2` の `resampleHeights` と同じ手法）と、視野内のタイルのうち最も粗いズーム',
-    '（`coarsestZoom`。本番の粗い DEM の目安）を求め、`drawnZoom` のメッシュ（2px 間隔の三角形分割、',
+    "'bowl' と同じ (0.5, 0.25)。3つのすり鉢は同一の放物面で、z15 で 0.0248/0.0246/0.0249m と",
+    'ほぼ一致するので代表点で十分）の周り半径 60m のすり鉢の膜セルについて、すり鉢の代表点を実際に含む',
+    '地形タイルのズーム（`tileZoom`。`getRenderableTiles` が返すタイルの矩形を xyz 計算で求め、地点を',
+    '含むタイルを探す）と、そこから求めた DEM のズーム（`demZoom = tileZoom − 1`。deltaZoom は既定 1、',
+    '固定）、視野内の地形タイルのうち最も粗いズーム（`coarsestTileZoom`。本番の粗い DEM の目安）と',
+    'その DEM ズーム（`coarsestDemZoom`）を求めた。`demZoom` のメッシュ（2px 間隔の三角形分割、',
     '対角は左上→右下）の高さとシミュレーションの標高の差 `s = meshHeight − simElevation`',
     '（倍率なし。倍率は地形・水面の両方に同じだけ掛かるので判定には影響しない）を計算した。',
-    's は drawnZoom だけで決まるので、ズームごとに1回だけ計算している（下の「ズームごとの s」）。',
+    's は demZoom だけで決まるので、ズームごとに1回だけ計算している（下の「ズームごとの s」）。',
     '',
-    '**注意（保守的な見積もり）**: この直接計算は zfix の polygonOffset(−1, −4) が描画時に与える',
-    '数mmの余裕を無視しており、そのぶん厳しめ（沈み込みを実際より大きく見積もりうる）。',
-    's が数mm程度の超過にとどまる場合、描画では隠れている可能性がある。',
+    '**fix round 2 での訂正**: fix round 1 では `queryTerrainElevation` と `getElevationForLngLatZoom`',
+    'が一致するズームを探す手法（`a2` の `resampleHeights` と同じ）で drawnZoom を求めていたが、',
+    '`queryTerrainElevation` は地点によらず視野全体の最大タイルズームと比較してしまうため、斜め視点で',
+    '誤った（すり鉢の場所より細かい）ズームを返すことがあると判明した（例: z15・z16・倍率1・pitch85 が',
+    'drawnZoom=17——すり鉢は中心から125m離れており、そのズーム・pitch では構造上あり得ない）。',
+    'この版では地点を実際に含むタイルを探す方法に直した。',
     '',
-    '| ズーム | 倍率 | pitch | drawnZoom | coarsestZoom | max s (m) | s>0.01m の割合 |',
-    '|---|---|---:|---:|---:|---:|---:|',
+    '**注意（polygonOffset の余裕は「数mm」ではない。タスクレビュー再訂正）**: この直接計算は zfix の',
+    'polygonOffset(−1, −4) が描画時に与える深度の余裕を無視している。この余裕はカメラ距離 d の2乗に',
+    '比例して増える項を含み、z15・pitch0 では概算で数cm程度（レビューの見積もり）になりうる——',
+    '「数mm」ではない。したがって p0 で膜が 8/8 ○（可視）に見えても、それは沈み込み（縁の一部）を',
+    'polygonOffset の余裕が覆い隠している可能性があり、逆に本来隠れるべき遠くの水面が薄い地形を透けて',
+    '見える（bleed-through）可能性もある——可視率の指標ではこの透けを検出できない。05 でこの対策の',
+    '係数を選ぶときは、近傍の弦の沈み込みと遠方の透けの両方を天秤にかける必要がある。',
+    '',
+    '| ズーム | 倍率 | pitch | tileZoom | demZoom | coarsestTileZoom | coarsestDemZoom | max s (m) | s>0.01m の割合 |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|',
     ...meshRows.map(
       (r) =>
-        `| ${r.view.zoom} | ${r.view.exaggeration} | ${r.view.pitch} | ${r.drawnZoom ?? '—'} | ${r.coarsestZoom ?? '—'} | ${fmt(r.maxS)} | ${r.exceedFraction === null ? '—' : `${(r.exceedFraction * 100).toFixed(1)}%`} |`,
+        `| ${r.view.zoom} | ${r.view.exaggeration} | ${r.view.pitch} | ${r.tileZoom ?? '—'} | ${r.demZoom ?? '—'} | ${r.coarsestTileZoom ?? '—'} | ${r.coarsestDemZoom ?? '—'} | ${fmt(r.maxS)} | ${r.exceedFraction === null ? '—' : `${(r.exceedFraction * 100).toFixed(1)}%`} |`,
     ),
     '',
-    '### ズームごとの s（drawnZoom が同じ視点をまとめた代表値。上の表と同じ値）',
+    '### ズームごとの s（demZoom が同じ視点をまとめた代表値。上の表と同じ値）',
     '',
-    '| drawnZoom | max s (m) | s>0.01m の割合 | セル数 |',
+    '| demZoom | max s (m) | s>0.01m の割合 | セル数 |',
     '|---:|---:|---:|---:|',
     ...zoomsSorted.map((z) => {
       const v = cellsCache.get(z)
       return `| ${z} | ${v?.maxS.toFixed(4)} | ${((v?.exceedFraction ?? 0) * 100).toFixed(1)}% | ${v?.cellCount} |`
     }),
     '',
-    verdict,
+    '### 判定（確立している事実と、していない事実を分ける。タスクレビュー fix round 2）',
+    '',
+    '**確立している事実**: MapLibre の地形メッシュは、この凹んだ地形（すり鉢）ではシミュレーションの',
+    '水面より弦の高さぶん高く浮く。pitch0（自己遮蔽が無く、視野が単一ズームで曖昧さが無い）で実測した',
+    '地図ズームごとの判定は次のとおり（地形タイルのズームは地図ズームと一致するが、実際に描かれる',
+    'DEM はそこから deltaZoom=1 だけ粗い。fix round 1 ではこの1段のずれを見落としていた）:',
+    '',
+    ...p0Lines,
+    '',
+    `**地図ズーム ${failingMapZooms.length === 0 ? 'なし' : failingMapZooms.join('・')} は不合格（実際の沈み込みが1cmを超える）、地図ズーム ${okMapZooms.length === 0 ? 'なし' : okMapZooms.join('・')} は合格**。弦の高さはズームが1段粗くなるごとに約4倍になる（格子間隔が2倍→弦の高さは格子間隔の2乗に比例）。より粗いタイル（demZoom=13相当。斜め視点で実際に使われる、下表参照）では約 0.40m まで拡大する。`,
+    'pitch0・zfix=offset の描画では膜は8/8○（可視率最小0.9953、bowl-film.md）だが、上記のとおり',
+    'polygonOffset の余裕は「数mm」ではなくcm程度と見積もられるため、この○が沈み込みを覆い隠して',
+    'いるのか、覆い隠せていないのかはこの可視率の指標だけでは判定できない。',
+    '',
+    '**確立していない事実**: 斜め視点（pitch60・85）では、すり鉢の付近は上の表の tileZoom・coarsestTileZoom',
+    'のとおり、はるかに粗いタイル（詳細な数値は表を参照。おおむね pitch60で demZoom 12〜16、pitch85で',
+    'demZoom 8〜10 程度まで下がる）で描かれており、その粗さでの弦の高さは「ズームごとの s」の表のとおり',
+    '数十cmに達しうる。この視点でレンダリングが実際にそれを隠すか（自己遮蔽や polygonOffset の余裕で）は、',
+    '可視率の指標が正当な遮蔽と沈み込みを区別できないため未確定のまま（bowl-film.md・bowl-film-ratio.md 参照）。',
     '',
   ]
   const mdBody2 = lines.join('\n')
