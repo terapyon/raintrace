@@ -15,6 +15,7 @@ import { formatCoordinate } from '../format'
 import { strings } from '../strings'
 import type { TerrainSession } from '../terrainSession'
 import { ControlsSection } from './ControlsSection'
+import { DisclaimerNotice } from './DisclaimerDialog'
 import { DisplaySettings } from './DisplaySettings'
 import { SpillNotices } from './SpillNotices'
 import { StatisticsPanel } from './StatisticsPanel'
@@ -37,7 +38,15 @@ const FAILURE_DISPLAY: Record<
   worker: { severity: 'error', retryable: true },
 }
 
-export function Panel({ session, settings }: { session: TerrainSession; settings: SettingsStore }) {
+export function Panel({
+  session,
+  settings,
+  onShowDisclaimer,
+}: {
+  session: TerrainSession
+  settings: SettingsStore
+  onShowDisclaimer: () => void
+}) {
   const theme = useTheme()
   const wide = useMediaQuery(theme.breakpoints.up('md'))
   const [collapsed, setCollapsed] = useState(false)
@@ -132,6 +141,7 @@ export function Panel({ session, settings }: { session: TerrainSession; settings
             <DisplaySettings app={store} settings={settings} />
           </Box>
         )}
+        <DisclaimerNotice onShowFull={onShowDisclaimer} />
       </Box>
     </Drawer>
   )

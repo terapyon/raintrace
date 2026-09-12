@@ -1,23 +1,13 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { strings } from '../../src/ui/strings'
+import { acknowledgeDisclaimer, clickMap, waitTerrain } from './support/app'
 import { routeGsi } from './support/gsi'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 
-async function waitTerrain(page: Page): Promise<void> {
-  await expect(page.locator('[data-range-shown="true"]')).toBeAttached({ timeout: 20_000 })
-}
-
-/** 地図の左 3 分の 1 の中ほど（右のパネルに隠れない位置）をクリックする */
-async function clickMap(page: Page): Promise<void> {
-  await expect(page.locator('[data-map-loaded="true"]')).toBeAttached()
-  const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
-  if (box === null) throw new Error('地図の canvas がありません')
-  await page.mouse.click(box.x + box.width / 3, box.y + box.height / 2)
-}
-
 test('クリックすると、中心のマーカーと範囲の枠が出る', async ({ page, context }) => {
   await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto('/')
   await clickMap(page)
   await expect(page.locator('.maplibregl-marker')).toBeVisible()
@@ -26,6 +16,7 @@ test('クリックすると、中心のマーカーと範囲の枠が出る', as
 
 test('DEM 情報バッジに「DEM1A」と出る', async ({ page, context }) => {
   await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   await expect(page.getByTestId('dem-badge')).toHaveText(strings.dem.dem1a)
@@ -34,6 +25,7 @@ test('DEM 情報バッジに「DEM1A」と出る', async ({ page, context }) => 
 test('最低・最高の標高が実タイルの期待値と一致する @webkit', async ({ page, context }) => {
   // すべての DEM の要求に実タイルを返す。範囲は 2 タイル幅以上なので、タイルのすべての画素が範囲に入る（spec 02 §8.2）
   await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   await expect(page.getByTestId('elevation-min')).toHaveText('11.08 m')
@@ -42,6 +34,7 @@ test('最低・最高の標高が実タイルの期待値と一致する @webkit
 
 test('DEM1A が 404 で dem_png が陸域なら、バッジが「DEM5A」になる', async ({ page, context }) => {
   await routeGsi(context, { dem1a: 'missing', demPng: 'fixture', dem5: 'fixture' })
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   await expect(page.getByTestId('dem-badge')).toHaveText(strings.dem.dem5a)
@@ -52,6 +45,7 @@ test('一部の DEM1A が 404 で dem_png が無効値なら、DEM1A のまま�
   context,
 }) => {
   await routeGsi(context, { dem1a: (x) => (x % 2 === 0 ? 'fixture' : 'missing'), demPng: 'na' })
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   await expect(page.getByTestId('dem-badge')).toHaveText(strings.dem.dem1a)
@@ -65,6 +59,7 @@ test('すべて 404 なら「この地域には標高データがありません
   // 経路: 段 1 の 404 は、dem_png も 404 なので海域とみなし、タイルの無い段 1 を採用する
   // → 範囲の無効セルが 100% → no-data（段 3 まで落ちる経路ではない）
   await routeGsi(context, { dem1a: 'missing', dem5: 'missing', demPng: 'missing' })
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await expect(page.getByTestId('load-error')).toHaveText(strings.errors['no-data'], {
     timeout: 20_000,
@@ -74,6 +69,7 @@ test('すべて 404 なら「この地域には標高データがありません
 
 test('対応範囲（日本）の外の地点は、取得せずに知らせる', async ({ page, context }) => {
   const counts = await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto('/?lat=60.000000&lon=139.000000')
   await expect(page.getByTestId('load-error')).toHaveText(strings.errors['out-of-range'], {
     timeout: 20_000,
@@ -89,6 +85,7 @@ test('表示のスイッチと矢印の間隔を切り替えてもエラーが�
     if (message.type() === 'error') errors.push(message.text())
   })
   await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   for (const label of [
@@ -110,6 +107,7 @@ test('クリックすると URL に lat・lon が入り、再読み込みする�
   context,
 }) => {
   await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto('/')
   await clickMap(page)
   await waitTerrain(page)
@@ -122,6 +120,7 @@ test('クリックすると URL に lat・lon が入り、再読み込みする�
 
 test('Worker の中の DEM の取得も差し替えられている', async ({ page, context }) => {
   const counts = await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   expect(counts.dem).toBeGreaterThan(0)
@@ -134,6 +133,7 @@ test('Worker のスクリプトを読めなくても、クリックのたびに�
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await routeGsi(context)
+  await acknowledgeDisclaimer(context)
   // Worker のスクリプト（dist/assets/simulation.worker-<hash>.js）の取得を失敗させる。
   // Chromium では Worker に 'error' が発火し、SimulationClient は次の要求で作り直す
   let workerRequests = 0

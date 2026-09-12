@@ -21,7 +21,7 @@ describe('Panel', () => {
     const settings = createSettingsStore(memoryStorage())
     const simulation = new SimulationSession(client, createSimulationStore(), settings)
     const session = new TerrainSession(client, createAppStore(), simulation, settings)
-    render(<Panel session={session} settings={settings} />)
+    render(<Panel session={session} settings={settings} onShowDisclaimer={() => {}} />)
     const user = userEvent.setup()
     const toggle = screen.getByRole('button', { name: strings.panel.collapse })
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
@@ -30,6 +30,8 @@ describe('Panel', () => {
       screen.getByRole('button', { name: strings.panel.expand }).getAttribute('aria-expanded'),
     ).toBe('false')
     expect(screen.queryByTestId('stat-step')).toBeNull()
+    // 下部パネルをたたんでも、免責の注意文は出したまま（計画で決めたこと 21）
+    expect(screen.getByTestId('disclaimer-notice')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: strings.panel.expand }))
     expect(screen.getByTestId('stat-step')).toBeTruthy()
   })

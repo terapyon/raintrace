@@ -1,13 +1,22 @@
 import { test as base, expect } from '@playwright/test'
 import { strings } from '../../src/ui/strings'
+import { acknowledgeDisclaimer } from './support/app'
 import { type GsiCounts, routeGsi } from './support/gsi'
 
 // 地理院への通信を差し替える。Worker から出るリクエストも捕まえるため、
 // page ではなく browserContext で差し替える（tech-spec §11.4）
-const test = base.extend<{ gsiTiles: GsiCounts }>({
+const test = base.extend<{ gsiTiles: GsiCounts; disclaimer: void }>({
   gsiTiles: [
     async ({ context }, use) => {
       await use(await routeGsi(context))
+    },
+    { auto: true },
+  ],
+  // 免責のダイアログ（モーダル）が出ると、ほかの要素が読み上げの対象から外れる（getByRole で見つからない）
+  disclaimer: [
+    async ({ context }, use) => {
+      await acknowledgeDisclaimer(context)
+      await use()
     },
     { auto: true },
   ],
