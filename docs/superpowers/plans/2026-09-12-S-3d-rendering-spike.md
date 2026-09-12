@@ -79,6 +79,16 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | P20 | `openSpike` の返す配列は後のエラーも受け取り続けるので、呼び出し側は参照を持ち（`lists.push(await openSpike(…))`）、最後に `expect(lists.flat()).toEqual([])` で確かめる（1 回だけ展開して写さない） | `views.ts` の説明、Task 3（`matrix.spec.ts`）、Task 6（`seam.spec.ts`）、Task 8（`fps.spec.ts`） |
 | P22・S2・S5・G1 | 書式だけ・import の並びだけの差分は `pnpm format` で直してよい（`spike/results/*.json` を含む）。E2E の後は `pnpm exec biome format --write spike/results` を実行してから `pnpm lint` | Global Constraints |
 
+## 中間の判定の反映（2026-09-12）
+
+1 日目の中間の判定（報告の §6、コミット 88ba736）を受けた、コントローラーの裁定（レビュー役も合意）を次のとおり取り込んだ。
+
+| ID | 内容 | 反映先 |
+|---|---|---|
+| M1 | 判定 (2) の合格は平面（斜面）の膜に限られ、曲面では Task 2 のすり鉢の d が z15 で `0.01 × 倍率` を超える（+0.018m・+0.176m）。合成の場面に曲面の膜の水（`water=bowlFilm`: すり鉢の中のセルだけに 1cm）を足し、A と A'（zfix=offset(−1, −4)。A' は計測の間 `freezeElevation`）を同じ可視率・ちらつきの方法で 16 視点測る。表（ズーム × 倍率、○/×）と Task 2 の d を並べ、「A は曲面で合格基準 1 を満たすか、A' で直るか」を書く | Task 5 Step 10、「日程」、報告の §4（A・A' の合格基準 1）・§10 |
+| M2 | 実データの針状ノイズ（報告の §7）の切り分けを 30 分の時間箱で試す。A の地形だけ無効画素を最も近い有効画素の標高で埋めた場面（`demFill=nearest`）を描き、`a-real.jpg` で針が目立ったコマと並べる。消えれば地形の穴、消えなければ水面のスライバーが原因。時間箱を超えたらコードを戻し、§11 に決まった文面で記録する（R4 の項目と統合） | Task 5 Step 11、報告の §7・§11 |
+| M3 | Task 6 Step 9（B の 1cm の膜の対策の比較: none・offset・offset2）を任意から必須にする（matrix は 3 通りを回しているので、表を読んで書くだけ） | Task 6 Step 9 |
+
 ## 事前に確かめた事実（2026-09-12、main のチェックアウトの `node_modules` と `pnpm view` で確認）
 
 | 事実 | 計画への影響 |
@@ -149,7 +159,7 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | 日 | 午前 | 午後 | 終わりに |
 |---|---|---|---|
 | 1 日目 | Task 1（土台と場面）、Task 2（A の地形と判定 (1)） | Task 3（A の水面と判定 (2)） | Task 4（中間の判定と配分の決定） |
-| 2 日目 | Task 5（A'、A の流れの矢印。Task 4 の裁定により「最小」〔Step 1〜7〕＋曲面（bowl）の 1cm 膜の A/A' 追加測定＋実データの針状ノイズの切り分けを 30 分の時間箱で試す） | Task 6（B。Task 4 の裁定により Step 9〔1cm の膜の対策の比較〕は必須） | Task 6 の matrix の実行 |
+| 2 日目 | Task 5（A'、A の流れの矢印。Task 4 の裁定により「最小」〔Step 1〜7〕＋曲面（bowl）の 1cm 膜の A/A' 追加測定〔Step 10、約 1 時間〕＋実データの針状ノイズの切り分けを 30 分の時間箱で試す〔Step 11〕） | Task 6（B。Task 4 の裁定により Step 9〔1cm の膜の対策の比較〕は必須） | Task 6 の matrix の実行 |
 | 3 日目 | Task 7（B-raw） | Task 8（fps）、Task 9（バンドル・複雑さ） | Task 10（報告・PR の準備・引き継ぎ） |
 
 打ち切りの規則（spec S §5 の終了条件）: 各 Task の見積もりを半日以上超えたら、その候補はその時点までの結果で評価し、残りを「未評価（理由）」として報告に書いて次へ進む。3 日目の 15 時に Task 9 を始めていなければ、Task 8 の自動の fps と Task 9 は動いている候補だけで行う。Task 10 は削らない。
@@ -2663,12 +2673,13 @@ git commit -m "スパイク S: 1 日目の中間の判定（行列と地形の�
 ---
 ### Task 5: 候補 A'（水面の高さを MapLibre の地形に合わせる）
 
-**2 日目の午前。Task 4 の配分で「最小」なら Step 1〜7（約 2 時間 45 分）、「全部」なら Step 1〜9（約半日）。Step 7 の流れの矢印（D20）はどちらでも行う。**
+**2 日目の午前。Task 4 の配分で「最小」なら Step 1〜7 と Step 10・11（約 4 時間 15 分）、「全部」なら Step 1〜11（約半日強）。Step 7 の流れの矢印（D20）、Step 10 の曲面の膜（M1）、Step 11 の針状ノイズの切り分け（M2、30 分の時間箱）はどちらでも行う。Task 4 の裁定は「最小」。**
 
 **Files:**
 - Modify: `spike/src/types.ts`（`ResampleInfo`・`ArrowPlacement`・`CandidateHandle.lastResample?`・`freezeElevation?`・`showArrows?`）、`spike/src/candidates/a.ts`（A' の分岐、矢印）、`spike/src/capture.ts`（計測の間は高さを固定。R2）、`spike/src/main.ts`（候補 `a2`）、`spike/e2e/matrix.spec.ts`（`MATRIX_CANDIDATES`）
-- Create: `spike/e2e/resample.spec.ts`、`spike/src/candidates/arrows.ts`、`spike/e2e/arrows.spec.ts`、（全部のとき）`spike/e2e/stale.spec.ts`
-- Create（実行の結果）: `spike/results/water-a2.{json,md}`、`spike/results/sheets/a2-{synthetic,real}.jpg`、`spike/results/a2-resample.{json,md}`、`spike/results/a-arrows.md`、`spike/results/sheets/a-arrows.jpg`、（全部のとき）`spike/results/a2-stale.md`
+- Modify（Step 10・11）: `spike/src/types.ts`（`WaterMode` に `bowlFilm`）、`spike/src/params.ts`・`spike/src/params.test.ts`（`water=bowlFilm`、`demFill`）、`spike/src/scenes.ts`・`spike/src/scenes.test.ts`（`isBowlCell`・`bowlFilm`・`fillInvalidNearest`・`buildRealScene` の 3 つ目の引数）、`spike/src/main.ts`（`buildScene`）、`spike/e2e/matrix.spec.ts`（計測の補助を `support/measure.ts` へ移す）
+- Create: `spike/e2e/resample.spec.ts`、`spike/src/candidates/arrows.ts`、`spike/e2e/arrows.spec.ts`、`spike/e2e/support/measure.ts`・`spike/e2e/bowl.spec.ts`（Step 10）、`spike/e2e/needles.spec.ts`（Step 11）、（全部のとき）`spike/e2e/stale.spec.ts`
+- Create（実行の結果）: `spike/results/water-a2.{json,md}`、`spike/results/sheets/a2-{synthetic,real}.jpg`、`spike/results/a2-resample.{json,md}`、`spike/results/a-arrows.md`、`spike/results/sheets/a-arrows.jpg`、`spike/results/bowl-film.{json,md}`（Step 10）、`spike/results/sheets/a-real-needles.jpg`・`spike/results/a-real-needles.md`（Step 11）、（全部のとき）`spike/results/a2-stale.md`
 - Modify: `docs/superpowers/spikes/2026-09-12-3d-rendering.md`
 
 **Interfaces:**
@@ -2676,6 +2687,8 @@ git commit -m "スパイク S: 1 日目の中間の判定（行列と地形の�
 - Produces（`types.ts`）: `interface ResampleInfo { ms: number; zoom: number | null; fallback: boolean; wetCells: number; maxDiffM: number }`、`CandidateHandle.lastResample?(): ResampleInfo | null`、`CandidateHandle.freezeElevation?(frozen: boolean): void`
 - Produces（`a.ts`）: 候補 `a2` のとき、`whenIdle()` が地図の idle の後に全セルの高さを取り直す。`showArrows(placement, pitchAlignment)`（A・A'）
 - Produces（`arrows.ts`・`types.ts`）: `type ArrowPlacement = 'none' | 'above' | 'below'`、`CandidateHandle.showArrows?(placement: ArrowPlacement, pitchAlignment: 'map' | 'viewport'): Promise<void>`、`arrowFeatures(scene: Scene): ArrowCollection`、`setArrowLayer(map: MapLibreMap, scene: Scene, placement: ArrowPlacement, pitchAlignment: 'map' | 'viewport'): void`（レイヤーの id `spike-arrows`。below は `spike-water` の前に入れる）
+- Produces（Step 10）: `WaterMode = 'fixed' | 'film' | 'bowlFilm' | 'dynamic'`、`isBowlCell(range: GridRange, col: number, row: number): boolean`、`buildSyntheticScene(water: 'fixed' | 'film' | 'bowlFilm'): Scene`。`spike/e2e/support/measure.ts`: `MIN_VISIBLE = 0.98`、`MAX_FLICKER = 0.01`、`MEASURE_VIEWS: View[]`（16 通り）、`interface MeasureRow { scene: string; zfix: ZFix; view: View; measure: WaterMeasure }`、`measure(page: Page): Promise<WaterMeasure>`、`summarize(rows: MeasureRow[], scene: string, zfix: ZFix): string`（`matrix.spec.ts` から移す。中身は変えない）
+- Produces（Step 11）: `SpikeParams.demFill: 'zero' | 'nearest'`（URL の `demFill`）、`fillInvalidNearest(tile: DemTileData): DemTileData`、`buildRealScene(range: GridRange, tiles: ReadonlyMap<string, DemTileData>, fillInvalid = false): Scene`（`fillInvalid` は A の地形のサンプラーだけに効き、グリッドは変えない）
 
 - [ ] **Step 1: 型に取り直しの記録を足す**
 
@@ -3192,6 +3205,504 @@ git add spike docs/superpowers/spikes
 git commit -m "スパイク S: 候補 A' の、視点を動かしている間の水面の見え方"
 ```
 
+- [ ] **Step 10: 曲面（すり鉢）の 1cm の膜で A と A' を比べる（中間の判定の反映 M1。「最小」「全部」とも、約 1 時間）**
+
+判定 (2) の合格は平面（斜面）の膜に限られる（報告の §6 の射程の注意）。すり鉢の面（曲面）だけに 1cm の膜を置き、A と A' を同じ方法（`measureWater`、16 視点、zfix=offset(−1, −4)）で測る。A' は Step 2 のとおり、計測の間は高さを取り直さない（`freezeElevation`）。
+
+`spike/src/scenes.test.ts` の import に `isBowlCell` を足し、`describe('合成の場面（計画 D4）'` の中の最後（`film の水は膜だけで、池が無い` の it の後）に足す:
+
+```ts
+  it('bowlFilm の水はすり鉢の中の 1cm の膜だけで、斜面の膜と池が無い', () => {
+    const bowl = buildSyntheticScene('bowlFilm')
+    let wet = 0
+    let bad = 0
+    for (let row = 0; row < n; row++) {
+      for (let col = 0; col < n; col++) {
+        const d = bowl.depth[row * n + col] ?? 0
+        if (isBowlCell(range, col, row)) {
+          wet++
+          if (d !== Math.fround(FILM_DEPTH_M)) bad++
+        } else if (d !== 0) {
+          bad++
+        }
+      }
+    }
+    // 3 つのすり鉢（半径 60m）の面積は 約 3 × π × 60² ≈ 33,900 m²（約 36,000 セル）
+    expect(wet).toBeGreaterThan(30_000)
+    expect(bad).toBe(0)
+  })
+```
+
+`spike/src/params.test.ts` の `describe` の最後に足す:
+
+```ts
+  it('曲面の膜の水（bowlFilm）を読む', () => {
+    expect(parseParams('?water=bowlFilm').water).toBe('bowlFilm')
+  })
+```
+
+Run: `pnpm vitest run spike/src/scenes.test.ts spike/src/params.test.ts`
+Expected: FAIL（`isBowlCell` が export されていない、`bowlFilm` が `'fixed'` になる）
+
+`spike/src/types.ts` の `WaterMode` を次にする:
+
+```ts
+/** bowlFilm: すり鉢の面（曲面）だけに 1cm の膜（中間の判定の反映 M1） */
+export type WaterMode = 'fixed' | 'film' | 'bowlFilm' | 'dynamic'
+```
+
+`spike/src/params.ts` の `water` の行を次にする:
+
+```ts
+    water: pick(query.get('water'), ['fixed', 'film', 'bowlFilm', 'dynamic'], 'fixed'),
+```
+
+`spike/src/scenes.ts` の `isFilmCell` の関数の次に足す:
+
+```ts
+/** すり鉢（半径 60m）の中のセルか（セルの中心で判定。M1 の曲面の膜） */
+export function isBowlCell(range: GridRange, col: number, row: number): boolean {
+  const side = sideM(range)
+  const x = (col + 0.5) * range.cellSizeM
+  const y = (row + 0.5) * range.cellSizeM
+  return BOWL_CENTERS.some(
+    ([cx, cy]) => (x - cx * side) ** 2 + (y - cy * side) ** 2 < BOWL_RADIUS_M ** 2,
+  )
+}
+```
+
+`spike/src/scenes.ts` の `export function buildSyntheticScene(water: 'fixed' | 'film'): Scene {` を `export function buildSyntheticScene(water: 'fixed' | 'film' | 'bowlFilm'): Scene {` にし、ループの中の `elevation[i] = sample(range.originX + col, range.originY + row) ?? 0` の直後（`if (isFilmCell(range, col, row)) {` の前）に足す:
+
+```ts
+      if (water === 'bowlFilm') {
+        // 曲面（すり鉢の面）に一様な 1cm の膜。斜面の膜と池は置かない（M1）
+        if (isBowlCell(range, col, row)) depth[i] = FILM_DEPTH_M
+        continue
+      }
+```
+
+`spike/src/main.ts` の `buildScene` の最後の行 `return buildSyntheticScene(params.water === 'film' ? 'film' : 'fixed')` を次にする:
+
+```ts
+  const water = params.water === 'film' || params.water === 'bowlFilm' ? params.water : 'fixed'
+  return buildSyntheticScene(water)
+```
+
+Run: `pnpm vitest run spike/src/scenes.test.ts spike/src/params.test.ts`
+Expected: PASS
+
+計測の補助を、`matrix.spec.ts` と共有できるように `spike/e2e/support/measure.ts` へ移す（中身は変えない）:
+
+```ts
+import type { Page } from '@playwright/test'
+import type { View, WaterMeasure, ZFix } from '../../src/types'
+import { allViews } from './views'
+
+// 判定の閾値（計画 D9）
+export const MIN_VISIBLE = 0.98
+export const MAX_FLICKER = 0.01
+// 数値の計測の視点（16 通り）: ズーム 15〜18 × 倍率 1・10 × pitch 60・85。スクリーンショットは 64 通りのまま（R1）
+export const MEASURE_VIEWS: View[] = allViews().filter(
+  (v) => (v.exaggeration === 1 || v.exaggeration === 10) && (v.pitch === 60 || v.pitch === 85),
+)
+
+export interface MeasureRow {
+  scene: string
+  zfix: ZFix
+  view: View
+  measure: WaterMeasure
+}
+
+export async function measure(page: Page): Promise<WaterMeasure> {
+  return page.evaluate(async () => {
+    if (window.spike === undefined) throw new Error('window.spike がありません')
+    return window.spike.measure()
+  })
+}
+
+/** 視点ごとの最小の可視率と最大のちらつきの表(ズーム × 垂直強調、pitch の 4 通りをまとめる) */
+export function summarize(rows: MeasureRow[], scene: string, zfix: ZFix): string {
+  const lines = [
+    `### ${scene} / zfix=${zfix}`,
+    '',
+    '| ズーム | 強調 | 可視率の最小 | ちらつきの最大 | 判定 |',
+    '|---|---|---:|---:|:---:|',
+  ]
+  for (const zoom of [15, 16, 17, 18]) {
+    for (const exaggeration of [1, 2, 5, 10]) {
+      const group = rows.filter(
+        (r) =>
+          r.scene === scene &&
+          r.zfix === zfix &&
+          r.view.zoom === zoom &&
+          r.view.exaggeration === exaggeration,
+      )
+      if (group.length === 0) continue
+      const visible = Math.min(...group.map((r) => r.measure.visibleRatio))
+      const flicker = Math.max(...group.map((r) => r.measure.flickerRatio))
+      const ok = visible >= MIN_VISIBLE && flicker <= MAX_FLICKER
+      lines.push(
+        `| ${zoom} | ${exaggeration} | ${visible.toFixed(4)} | ${(flicker * 100).toFixed(2)}% | ${ok ? '○' : '×'} |`,
+      )
+    }
+  }
+  return `${lines.join('\n')}\n`
+}
+```
+
+`spike/e2e/matrix.spec.ts` の `for (const candidate of MATRIX_CANDIDATES) {` より前を、次に置き換える（テストの本体は変えない。`MATRIX_CANDIDATES` はこの時点の値のまま）:
+
+```ts
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { expect, test } from '@playwright/test'
+import type { View } from '../src/types'
+import { type Shot, writeContactSheet } from './support/contactSheet'
+import { MEASURE_VIEWS, type MeasureRow, measure, summarize } from './support/measure'
+import { allViews, openSpike, setView } from './support/views'
+
+// Task 5〜7 で候補を足す
+const MATRIX_CANDIDATES = ['a', 'a2'] as const
+
+const results = new URL('../results/', import.meta.url)
+const shotsDir = new URL('../out/shots/', import.meta.url)
+
+const label = (v: View): string => `z${v.zoom} ×${v.exaggeration} p${v.pitch}`
+```
+
+`spike/e2e/bowl.spec.ts`:
+
+```ts
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { expect, test } from '@playwright/test'
+import type { ApiProbeResult, View } from '../src/types'
+import {
+  MAX_FLICKER,
+  MEASURE_VIEWS,
+  MIN_VISIBLE,
+  type MeasureRow,
+  measure,
+  summarize,
+} from './support/measure'
+import { openSpike, setView } from './support/views'
+
+const results = new URL('../results/', import.meta.url)
+const BOWL_CANDIDATES = ['a', 'a2'] as const
+
+/** Task 2 の api-probe.json から、すり鉢の中心の d（地形 − シミュレーションの標高 × 倍率、倍率込みの m。pitch 60） */
+function bowlD(zoom: number, exaggeration: number): number | null {
+  const rows = JSON.parse(readFileSync(new URL('api-probe.json', results), 'utf8')) as {
+    view: View
+    probe: ApiProbeResult
+  }[]
+  const row = rows.find(
+    (r) => r.view.zoom === zoom && r.view.exaggeration === exaggeration && r.view.pitch === 60,
+  )
+  const bowl = row?.probe.points.find((point) => point.label === 'bowl')
+  if (bowl === undefined || bowl.terrainElevation === null) return null
+  return bowl.terrainElevation - bowl.simElevation * exaggeration
+}
+
+test("曲面（すり鉢）の 1cm の膜: A と A'（zfix=offset、16 視点。M1）", async ({ page, context }) => {
+  const lists: string[][] = [] // P20
+  const rows: MeasureRow[] = []
+  for (const candidate of BOWL_CANDIDATES) {
+    lists.push(
+      await openSpike(page, context, {
+        candidate,
+        scene: 'synthetic',
+        water: 'bowlFilm',
+        zfix: 'offset',
+        capture: 1,
+      }),
+    )
+    for (const view of MEASURE_VIEWS) {
+      await setView(page, view)
+      rows.push({ scene: candidate, zfix: 'offset', view, measure: await measure(page) })
+    }
+  }
+  mkdirSync(results, { recursive: true })
+  writeFileSync(new URL('bowl-film.json', results), `${JSON.stringify(rows, null, 2)}\n`)
+  const judge = (candidate: string, zoom: number, exaggeration: number): string => {
+    const group = rows.filter(
+      (r) => r.scene === candidate && r.view.zoom === zoom && r.view.exaggeration === exaggeration,
+    )
+    const visible = Math.min(...group.map((r) => r.measure.visibleRatio))
+    const flicker = Math.max(...group.map((r) => r.measure.flickerRatio))
+    return visible >= MIN_VISIBLE && flicker <= MAX_FLICKER ? '○' : '×'
+  }
+  const lines = [
+    "| ズーム | 強調 | A | A' | すり鉢の d (m) | 0.01 × 倍率 (m) | d が膜を超える |",
+    '|---|---|:---:|:---:|---:|---:|:---:|',
+  ]
+  for (const zoom of [15, 16, 17, 18]) {
+    for (const exaggeration of [1, 10]) {
+      const d = bowlD(zoom, exaggeration)
+      const over = d !== null && d > 0.01 * exaggeration
+      lines.push(
+        `| ${zoom} | ${exaggeration} | ${judge('a', zoom, exaggeration)} | ${judge('a2', zoom, exaggeration)} | ${d === null ? '—' : d.toFixed(4)} | ${(0.01 * exaggeration).toFixed(2)} | ${over ? '○' : ''} |`,
+      )
+    }
+  }
+  const body = [
+    summarize(rows, 'a', 'offset'),
+    summarize(rows, 'a2', 'offset'),
+    '### 比較（Task 2 のすり鉢の d と）',
+    '',
+    ...lines,
+    '',
+  ].join('\n')
+  writeFileSync(new URL('bowl-film.md', results), `# 曲面（すり鉢）の 1cm の膜の見え方（M1）\n\n${body}`)
+  console.log(body)
+  expect(lists.flat()).toEqual([])
+})
+```
+
+Run: `pnpm lint && pnpm typecheck && pnpm test && pnpm exec playwright test --config spike/playwright.config.ts --list && pnpm spike:e2e spike/e2e/bowl.spec.ts && pnpm exec biome format --write spike/results`
+Expected: すべて成功。`--list` に `matrix: a`・`matrix: a2` が出る（`matrix.spec.ts` の移し替えで壊れていない）。`spike/results/bowl-film.{json,md}` ができる。所要の見積もり: 2 候補 × 16 視点 × idle 約 6 回 ≈ 190 回（SwiftShader で 2〜6 分）
+
+判定（`bowl-film.md` の「比較」の表で）:
+
+| 観測 | 結論（`bowl-film.md` の最後と報告に書く文） |
+|---|---|
+| A の列が 8 行すべて ○ | 「A は曲面でも合格基準 1 を満たす（すり鉢の d が膜を超えるズームでも沈まない）」 |
+| A に × があり、A' の列はその行がすべて ○ | 「A は曲面の（× の出た）ズームで沈む（LOD）。A' で直る」 |
+| A と A' の両方に × がある | 「A 系は曲面で合格基準 1 を満たさない（A' でも直らない）」 |
+
+あわせて、A の × の行が「d が膜を超える」の ○ の行と一致するかを書く（一致すれば LOD による沈み込み。一致しなければ、その行の数値を並べて原因は未確定と書く）。すり鉢の d は中心の 1 点の値で、膜はすり鉢の面全体に乗っていることも書く。
+
+報告（`docs/superpowers/spikes/2026-09-12-3d-rendering.md`）に書く:
+- §4 の「合格基準 1」の行の A の欄の最後に「**曲面（M1、`bowl-film.md`）**: 」に続けて上の結論の文と A の × の行の数、A' の欄の最後に同じく A' の結論と × の行の数
+- §10 の申し送りに、結論に応じて次の 1 つ: 「A は曲面でも沈まないので、A 系の水面はシミュレーションの標高のままでよい」／「A 系を採るなら、水面の高さは A'（MapLibre の地形）に合わせる。その代わり表示の高さはシミュレーションと食い違う（`a2-resample.md` の差）」／「A 系は曲面で合格基準 1 を満たさないので、B 系を優先する根拠になる」
+
+```bash
+git add spike docs/superpowers/spikes
+git commit -m "スパイク S: 曲面（すり鉢）の 1cm の膜で A と A' を比べる（中間の判定の反映 M1）"
+```
+
+- [ ] **Step 11: 実データの針状ノイズの切り分け（中間の判定の反映 M2。30 分の時間箱。「最小」「全部」とも）**
+
+**時間箱: 30 分。** 始めた時刻を控える。30 分を超えたら、その時点で下の「打ち切り」へ進む（途中の結果は使わない）。
+
+A の地形（`scene.sample` → `terrariumTile`）だけ、無効画素を最も近い有効画素の標高で埋めた実データの場面を描く。グリッド（`elevation`・`validMask`・`depth`）と水面は変えない。針が消えれば地形の穴（報告の §7 の候補 (1) `terrarium.ts` の `?? 0` と (2) `tileBlockSampler` の端の clamp）が原因、消えなければ水面のスライバー（候補 (3)）が原因。
+
+`spike/src/scenes.test.ts` の import に `fillInvalidNearest` を足し、末尾に足す:
+
+```ts
+describe('無効画素の穴埋め（M2 の切り分け用）', () => {
+  it('無効画素は最も近い有効画素の標高になり、元の配列は変えない', () => {
+    const elevation = new Float32Array(256 * 256).fill(20)
+    const validMask = new Uint8Array(256 * 256).fill(1)
+    elevation[1000] = 0 // (232, 3) の 1 画素の穴
+    validMask[1000] = 0
+    elevation[1001] = 25
+    const filled = fillInvalidNearest({ elevation, validMask })
+    expect(filled.validMask.every((v) => v === 1)).toBe(true)
+    expect([20, 25]).toContain(filled.elevation[1000])
+    expect(validMask[1000]).toBe(0)
+  })
+
+  it('全画素が無効のタイルは、そのまま無効', () => {
+    const filled = fillInvalidNearest({
+      elevation: new Float32Array(256 * 256),
+      validMask: new Uint8Array(256 * 256),
+    })
+    expect(filled.validMask.every((v) => v === 0)).toBe(true)
+  })
+})
+```
+
+同じファイルの `describe('実データの場面（計画 D4・D5）'` の中の最後に足す:
+
+```ts
+  it('fillInvalid のときは A の地形のサンプラーだけが無効画素を埋め、グリッドは変えない', () => {
+    const filledScene = buildRealScene(shibuyaRange(), tiles, true)
+    const i = scene.validMask.findIndex((v) => v === 0)
+    const col = i % n
+    const row = Math.floor(i / n)
+    expect(scene.sample(range.originX + col, range.originY + row)).toBeNull()
+    expect(filledScene.sample(range.originX + col, range.originY + row)).not.toBeNull()
+    expect(filledScene.validMask[i]).toBe(0)
+    expect(filledScene.depth[i]).toBe(0)
+  })
+```
+
+`spike/src/params.test.ts` の最初の 2 つの `toEqual` の期待値の `probe` の行の次に、それぞれ `demFill: 'zero',` を足し、`describe` の最後に足す:
+
+```ts
+  it('無効画素の扱い（demFill）を読む', () => {
+    expect(parseParams('?demFill=nearest').demFill).toBe('nearest')
+    expect(parseParams('?demFill=x').demFill).toBe('zero')
+  })
+```
+
+Run: `pnpm vitest run spike/src/scenes.test.ts spike/src/params.test.ts`
+Expected: FAIL（`fillInvalidNearest` が無い、`demFill` が無い）
+
+`spike/src/params.ts` の `SpikeParams` の `probe` の次に `demFill: 'zero' | 'nearest' // 実データの A の地形の無効画素（M2 の切り分け用）` を、`parseParams` の戻り値の `probe` の次に `demFill: query.get('demFill') === 'nearest' ? 'nearest' : 'zero',` を足す。
+
+`spike/src/scenes.ts` の `tileBlockSampler` の関数の前に足す:
+
+```ts
+/**
+ * 無効画素を、4 近傍で段数が最も少ない有効画素の標高で埋めた写し（M2 の切り分け用）。
+ * 有効画素から幅優先で広げる。全画素が無効のタイルはそのまま
+ */
+export function fillInvalidNearest(tile: DemTileData): DemTileData {
+  const elevation = tile.elevation.slice()
+  const validMask = tile.validMask.slice()
+  const queue = new Int32Array(elevation.length)
+  let head = 0
+  let tail = 0
+  for (let p = 0; p < elevation.length; p++) {
+    if (validMask[p] === 1) queue[tail++] = p
+  }
+  while (head < tail) {
+    const p = queue[head++] ?? 0
+    const x = p % TILE_SIZE
+    const y = (p - x) / TILE_SIZE
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= TILE_SIZE || ny >= TILE_SIZE) continue
+      const q = ny * TILE_SIZE + nx
+      if (validMask[q] === 1) continue
+      validMask[q] = 1
+      elevation[q] = elevation[p] ?? 0
+      queue[tail++] = q
+    }
+  }
+  return { elevation, validMask }
+}
+```
+
+`spike/src/scenes.ts` の `buildRealScene` を次にする（3 つ目の引数を足し、サンプラーにだけ効かせる）:
+
+```ts
+/**
+ * 02 の部品で実タイルからグリッドを組み、水深は満水（fill − 標高）と 1cm の大きい方にする（計画 D4）。
+ * fillInvalid は A の地形のサンプラーだけに効く（M2 の切り分け用。グリッドと水面は変えない）
+ */
+export function buildRealScene(
+  range: GridRange,
+  tiles: ReadonlyMap<string, DemTileData>,
+  fillInvalid = false,
+): Scene {
+  const grid = assembleGrid(range, (tx, ty) => tiles.get(tileKey(tx, ty)))
+  const { fill } = analyzeTerrain(grid)
+  const depth = new Float32Array(grid.elevation.length)
+  for (let i = 0; i < depth.length; i++) {
+    if (grid.validMask[i] !== 1) continue
+    depth[i] = Math.max(FILM_DEPTH_M, (fill[i] ?? 0) - (grid.elevation[i] ?? 0))
+  }
+  const sampled = fillInvalid
+    ? new Map([...tiles].map(([key, tile]) => [key, fillInvalidNearest(tile)]))
+    : tiles
+  return {
+    name: 'real',
+    center: SHIBUYA,
+    range,
+    elevation: grid.elevation,
+    validMask: grid.validMask,
+    depth,
+    sample: tileBlockSampler(range, sampled),
+    minElevation: minValid(grid.elevation, grid.validMask),
+  }
+}
+```
+
+`spike/src/main.ts` の `buildScene` の `return buildRealScene(range, await loadDemTiles(range))` を `return buildRealScene(range, await loadDemTiles(range), params.demFill === 'nearest')` にする。
+
+Run: `pnpm vitest run spike/src/scenes.test.ts spike/src/params.test.ts`
+Expected: PASS
+
+`spike/e2e/needles.spec.ts`:
+
+```ts
+import { fileURLToPath } from 'node:url'
+import { expect, test } from '@playwright/test'
+import type { View } from '../src/types'
+import { type Shot, writeContactSheet } from './support/contactSheet'
+import { openSpike, setView } from './support/views'
+
+const results = new URL('../results/', import.meta.url)
+// a-real.jpg で針状のノイズが目立ったコマ（M2）
+const VIEWS: View[] = [
+  { zoom: 15, exaggeration: 1, pitch: 0 },
+  { zoom: 16, exaggeration: 1, pitch: 45 },
+  { zoom: 16, exaggeration: 10, pitch: 45 },
+]
+
+test('A の実データ: 無効画素を 0m にした地形と、最も近い有効画素で埋めた地形（M2）', async ({
+  page,
+  context,
+}) => {
+  const lists: string[][] = [] // P20
+  const shots: Shot[] = []
+  for (const demFill of ['zero', 'nearest'] as const) {
+    lists.push(
+      await openSpike(page, context, { candidate: 'a', scene: 'real', water: 'fixed', demFill }),
+    )
+    for (const view of VIEWS) {
+      await setView(page, view)
+      shots.push({
+        label: `${demFill} z${view.zoom} ×${view.exaggeration} p${view.pitch}`,
+        png: await page.screenshot(),
+      })
+    }
+  }
+  await writeContactSheet(
+    context,
+    shots,
+    3,
+    'A の実データの針状ノイズ（上: 無効画素 0m、下: 最も近い有効画素で埋める。水面は同じ）',
+    fileURLToPath(new URL('sheets/a-real-needles.jpg', results)),
+  )
+  expect(lists.flat()).toEqual([])
+})
+```
+
+Run: `pnpm lint && pnpm typecheck && pnpm test && pnpm spike:e2e spike/e2e/needles.spec.ts`
+Expected: PASS。`spike/results/sheets/a-real-needles.jpg`（2 段 × 3 コマ）ができる
+
+シートを見て `spike/results/a-real-needles.md` を書く（「結果」の欄はこの Step でシートから書く。空欄のままコミットしない）:
+
+```markdown
+# A の実データの針状ノイズの切り分け（M2、30 分の時間箱）
+
+シート: `sheets/a-real-needles.jpg`（上: 無効画素 0m、下: 最も近い有効画素で埋めた地形。水面とグリッドは同じ）
+
+| 問い | 結果 |
+|---|---|
+| 下の段（埋めた地形）で針が消えたか（コマごと） | |
+| 原因 | 消えた → 地形の穴（候補 (1) `?? 0`・(2) 端の clamp）。残った → 水面のスライバー（候補 (3)）。一部残った → 両方（残ったコマを書く） |
+```
+
+報告に書く: §7 に `sheets/a-real-needles.jpg` への参照と結論の 1 行。§11 の「無効セルを含む DEM」の項目を、結論に合わせて「原因は（地形の穴／水面のスライバー／両方）と確かめた（M2）。05 では（地形: 無効セルを隣の有効セルの値で埋める／水面: 無効セルに触れる三角形を捨てるか、無効の頂点を隣の有効セルに寄せる）」に書き直す（R4 の項目と統合する）。
+
+```bash
+git add spike docs/superpowers/spikes
+git commit -m "スパイク S: 実データの針状ノイズの切り分け（無効画素の穴埋めで比べる。中間の判定の反映 M2）"
+```
+
+**打ち切り（30 分を超えたとき）:** この Step のコードの変更を捨て（`git restore spike/src spike/e2e` と、作った `spike/e2e/needles.spec.ts` の削除。Step 10 はコミット済みなので影響しない）、報告の §11 の「無効セルを含む DEM」の項目を次の文に置き換える（R4 の項目と統合）:
+
+```markdown
+- 無効セルを含む DEM（R4・M2。30 分の時間箱の中で切り分けられなかった）: 無効セルを 0 m にすると A の地形に穴が開く。05 では隣の有効セルの値で埋めるか、無効セルの周りの三角形を捨てる。`a-real.jpg`（§7）の針状のノイズの原因の候補は (1) `terrarium.ts` の `sampleZ17Corner` の `?? 0`（地形の穴）、(2) `scenes.ts` の `tileBlockSampler` の端の clamp（穴が範囲の外まで溝状に延びる）、(3) 水面の `v_depth` の補間のスライバー（無効の頂点が標高 0・水深 0）で、どれが原因かは確かめていない
+```
+
+```bash
+git add docs/superpowers/spikes
+git commit -m "スパイク S: 実データの針状ノイズの切り分けは時間箱の中で終わらず、§11 に記録する（M2）"
+```
+
+打ち切った場合は、Task 8 Step 3 の `main.ts` の最終形から `, params.demFill === 'nearest'` を消す（`demFill` が無いため）。
+
 ---
 ### Task 6: 候補 B（範囲の中は three で地形と水面を描く）
 
@@ -3585,9 +4096,16 @@ git add spike docs/superpowers/spikes
 git commit -m "スパイク S: 候補 B（範囲の中は three で地形と水面、ベースマップのテクスチャ、縁）と継ぎ目の記録"
 ```
 
-- [ ] **Step 9:（Task 4 で「深度の精度」の行のときは必須、ほかは任意）B の 1cm の膜の対策を比べる**
+- [ ] **Step 9: B の 1cm の膜の対策を比べる（必須。中間の判定の反映 M3）**
+
+matrix は zfix の 3 通り（none・offset・offset2）をすでに回しているので、この Step は表を読んで書くだけ。A の zfix=none が深度の精度で不合格だったので、B の「頂点の共有と描画順だけ」で足りるかが 05 の対策を直接決める。
 
 `water-b.md` の synthetic の 3 つの表（zfix=none・offset・offset2）を、× の行の数とズームで比べ、pitch 85° のコマをコンタクトシート（`spike/out/shots/b-synthetic-*_p85.png`）で目で確かめる。「頂点の共有と描画順だけで足りる／polygonOffset が要る／どれでも足りない」のどれかを、根拠の数値つきで報告の §4 の「z-fighting の対策の効果」の B の欄に書く。コードは変えない。
+
+```bash
+git add docs/superpowers/spikes
+git commit -m "スパイク S: B の 1cm の膜の対策の比較（none・offset・offset2。中間の判定の反映 M3）"
+```
 
 ---
 ### Task 7: 候補 B-raw（B を three なしの生の WebGL2 で書く、RS-2）
@@ -4161,7 +4679,7 @@ export async function runFpsProbe(
 
 - [ ] **Step 3: ページに水深の更新と fps の計測をつなぐ（main.ts の最終形）**
 
-`spike/src/main.ts` を次の内容に置き換える（Task 1〜7 で足した候補の読み込み・`measure`・`boundaryStep` を含む最終形。`rendererName` は `fps.ts` へ移した）:
+`spike/src/main.ts` を次の内容に置き換える（Task 1〜7 で足した候補の読み込み・`measure`・`boundaryStep`、Task 5 Step 10・11 の `bowlFilm`・`demFill` を含む最終形。`rendererName` は `fps.ts` へ移した。Task 5 Step 11 を打ち切った場合は `, params.demFill === 'nearest'` を消す）:
 
 ```ts
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -4196,9 +4714,10 @@ const show = (text: string): void => {
 async function buildScene(params: SpikeParams): Promise<Scene> {
   if (params.scene === 'real') {
     const range = shibuyaRange()
-    return buildRealScene(range, await loadDemTiles(range))
+    return buildRealScene(range, await loadDemTiles(range), params.demFill === 'nearest')
   }
-  return buildSyntheticScene(params.water === 'film' ? 'film' : 'fixed')
+  const water = params.water === 'film' || params.water === 'bowlFilm' ? params.water : 'fixed'
+  return buildSyntheticScene(water)
 }
 
 async function start(): Promise<void> {
@@ -4675,7 +5194,7 @@ gh pr create --base main --head docs/S-3d-rendering-report \
 
 | spec S | 内容 | 満たす Task |
 |---|---|---|
-| §1 合格基準 1 | 1x〜10x で 1cm 以上の水面が沈まず、ちらつかない | 3（A）・5（A'）・6（B）・7（B-raw）の可視率・ちらつきとコンタクトシート |
+| §1 合格基準 1 | 1x〜10x で 1cm 以上の水面が沈まず、ちらつかない | 3（A）・5（A'）・6（B）・7（B-raw）の可視率・ちらつきとコンタクトシート、5 Step 10（曲面の 1cm の膜、A と A'。M1） |
 | §1 合格基準 2 | 地形と水面に同じ倍率 | 2（台地での一致）、3・5・6・7（目視と、同じ値・同じ uniform を渡す構造） |
 | §1 合格基準 3 | 水深を毎フレーム更新しながら 60fps | 8（自動の参考値と、【手動・ユーザー】の実 GPU） |
 | §2 候補 | A・A'・B・B-raw | 2・3（A）、5（A'）、6（B）、7（B-raw） |
@@ -4702,3 +5221,4 @@ gh pr create --base main --head docs/S-3d-rendering-report \
 - **型と名前の一致:** `Scene`・`ElevationSampler`・`CandidateHandle`（`setExaggeration`・`setDepth`・`setDebug`・`whenIdle`・`renderTimes`・`apiProbe?`・`lastResample?`・`freezeElevation?`）・`SpikeGlobal`（`setView`・`measure`・`boundaryStep`・`runFps`）・`WaterMeasure`・`FpsResult`・`ZFix`（`none`・`offset`・`offset2`）を、定義した Task と使う Task で照合した。`MATRIX_CANDIDATES` と `SEAM_CANDIDATES` は Task 5〜7 で候補を足す。`main.ts` の最終形は Task 8 Step 3 にまとめてある
 - **未検証の前提（実行の最初に確かめる）:** three 0.185.1 の `WebGLRenderer({ canvas, context })` と `RawShaderMaterial({ glslVersion: GLSL3 })` が MapLibre 6.6.0 の WebGL2 のコンテキストを共有できること（Task 3 Step 8 で分かる。だめなら、three の水面の代わりに B-raw の水面の描画を A に使い、そのことを A の回避策として報告に書く）。`map.painter.context.gl` の型（Task 1 Step 11 に代わりの書き方）。`addProtocol` の関数が `ImageBitmap` を返せること（D6。dist のコードで確認済み）
 - **時間（R1 の後）:** 数値の計測を 16 視点に絞ったので、1 候補の `matrix.spec.ts` は 約 510 回の idle（SwiftShader で 5〜17 分）。4 候補で 20〜70 分を、次の Task の作業と並行して回す。A' は計測の中で高さを取り直さない（R2）ので、A と同程度
+- **中間の判定の反映（M1〜M3）の後:** Task 5 は「最小」でも Step 10（曲面の膜。2 候補 × 16 視点で idle 約 190 回、2〜6 分）と Step 11（30 分の時間箱）を足して約 4 時間 15 分。2 日目の午前に収まらなければ午後の Task 6 の matrix の実行と並行させる。名前（`bowlFilm`・`isBowlCell`・`fillInvalidNearest`・`demFill`・`support/measure.ts` の `MEASURE_VIEWS`・`MeasureRow`・`measure`・`summarize`）を、定義した Step と使う Step（`bowl.spec.ts`・`needles.spec.ts`・`matrix.spec.ts`・Task 8 の `main.ts`）で照合した
