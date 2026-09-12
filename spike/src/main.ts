@@ -2,6 +2,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createGsiPaleStyle } from '../../src/map/gsiStyle'
+import { measureWater } from './capture'
 import { loadDemTiles } from './demTiles'
 import { parseParams, type SpikeParams } from './params'
 import { buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'
@@ -90,6 +91,11 @@ async function start(): Promise<void> {
       })
       candidate?.setExaggeration(view.exaggeration)
       await (candidate === null ? waitIdle(map) : candidate.whenIdle())
+    },
+    async measure() {
+      if (candidate === null) throw new Error('候補がありません')
+      if (!params.capture) throw new Error('capture=1 で開いてください')
+      return measureWater(map, candidate)
     },
   }
   window.spike = spike

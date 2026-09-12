@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import { waitIdle } from '../waitIdle'
 import { terrariumTile } from './terrarium'
+import { createThreeWater } from './threeWater'
 
 const PROTOCOL = 'spikedem'
 const DEM_SOURCE = 'spike-dem'
@@ -53,7 +54,7 @@ function probeCells(scene: Scene): { label: string; col: number; row: number }[]
       ]
 }
 
-export const mount: MountCandidate = async (map, scene) => {
+export const mount: MountCandidate = async (map, scene, params) => {
   registerProtocol(scene.sample)
   const dem = {
     type: 'raster-dem' as const,
@@ -84,6 +85,18 @@ export const mount: MountCandidate = async (map, scene) => {
       last = options
     },
   })
+
+  const renderTimes: number[] = []
+  // A: 水面の高さはシミュレーションの標高から（spec S §2）。地形（MapLibre の 3D terrain）の後に描く
+  const water = createThreeWater(map, {
+    id: 'spike-water',
+    scene,
+    elevation: scene.elevation,
+    elevScale: 'exaggeration',
+    zfix: params.zfix,
+    renderTimes,
+  })
+  map.addLayer(water.layer)
 
   const cells = probeCells(scene)
   const metersToMercator = MercatorCoordinate.fromLngLat([
@@ -133,14 +146,15 @@ export const mount: MountCandidate = async (map, scene) => {
   }
 
   return {
-    renderTimes: [],
+    renderTimes,
     setExaggeration(value) {
       exaggeration = value
+      // 合格基準 2: 地形と水面に同じ倍率を掛ける
       map.setTerrain({ source: DEM_SOURCE, exaggeration: value })
+      water.setExaggeration(value)
     },
-    // 水面は Task 3 で足す（この Task では地形と行列だけを見る）
-    setDepth() {},
-    setDebug() {},
+    setDepth: (depth) => water.setDepth(depth),
+    setDebug: (mode) => water.setDebug(mode),
     whenIdle: () => waitIdle(map),
     apiProbe,
   } satisfies CandidateHandle

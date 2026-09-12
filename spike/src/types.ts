@@ -73,6 +73,14 @@ export type MountCandidate = (
   params: SpikeParams,
 ) => Promise<CandidateHandle>
 
+/** 水面の見え方の数値（計画 D9）。画素は drawingBuffer の画素 */
+export interface WaterMeasure {
+  footprintPx: number // 深度テストなしで描いた水面の画素数
+  visibleRatio: number // 深度テストありで見えた画素数 ÷ footprintPx
+  interiorPx: number // footprint を 2 画素削った内側の画素数
+  flickerRatio: number // 内側のうち、視点をわずかに動かした 3 枚で見え方が変わった画素の割合
+}
+
 /** ページが Playwright と手動の計測に見せる窓口（window.spike） */
 export interface SpikeGlobal {
   map: MapLibreMap
@@ -81,6 +89,8 @@ export interface SpikeGlobal {
   candidate: CandidateHandle | null
   cspViolations: string[]
   setView(view: View): Promise<void>
+  /** 候補の水面の見え方を測る（capture=1 のときだけ使える） */
+  measure(): Promise<WaterMeasure>
 }
 
 declare global {
