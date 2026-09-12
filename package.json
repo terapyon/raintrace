@@ -23,7 +23,10 @@
     "size": "node scripts/check-bundle-size.mjs",
     "licenses": "node scripts/check-licenses.mjs",
     "bench:engine": "node scripts/bench-engine.ts",
-    "deploy:production": "pnpm build && wrangler deploy"
+    "deploy:production": "pnpm build && wrangler deploy",
+    "spike:build": "vite build --config spike/vite.config.ts",
+    "spike:preview": "vite preview --config spike/vite.config.ts --port 4174 --strictPort",
+    "spike:e2e": "playwright test --config spike/playwright.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
@@ -32,6 +35,7 @@
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
+    "@types/three": "0.185.4",
     "@vitejs/plugin-react": "6.1.1",
     "@vitest/coverage-v8": "4.1.11",
     "dependency-cruiser": "18.2.0",
@@ -49,6 +53,7 @@
     "maplibre-gl": "6.6.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "three": "0.185.1",
     "zustand": "5.0.15"
   }
 }

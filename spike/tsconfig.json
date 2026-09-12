@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "../node_modules/.tmp/tsc/spike.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "node"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["out", "results"],
+  "references": [{ "path": "../tsconfig.sim.json" }, { "path": "../tsconfig.core.json" }]
+}
