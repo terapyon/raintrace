@@ -4,7 +4,7 @@
 
 **Goal:** 地形と水面の 3D の描き方を 4 つの候補（A・A'・B・B-raw）の最小の試作で比べ、tech-spec §5.5 の合格基準に対する根拠つきの結論と §5.5 の改訂案（T9）を、`docs/superpowers/spikes/2026-09-12-3d-rendering.md` にまとめる。成果物はコードではなく結論である。
 
-**Architecture:** 本番のコード（`src/`）には触れず、`spike/` の下に別の Vite のエントリ（`spike/index.html`、設定は `spike/vite.config.ts`）を作る。1 つのページが URL の引数で候補・場面・視点を切り替え、候補は動的 import で別チャンクにする（バンドルの差を測るため）。入力のグリッドは 02 の部品（`src/dem/gridRange.ts`・`DemGrid.ts`・`GsiDemDecoder.ts`、`src/simulation/terrain/analyzeTerrain.ts`）で DEM1A のフィクスチャから組み立て、合成の場面は同じ形の関数で作る。Playwright（ポート 4174）で、視点の組み合わせのスクリーンショットと、水面の「見えている割合」「ちらつき」の数値、fps を自動で取り、実 GPU での fps はユーザーの手動の計測で補う。
+**Architecture:** 本番のコード（`src/`）には触れず、`spike/` の下に別の Vite のエントリ（`spike/index.html`、設定は `spike/vite.config.ts`）を作る。1 つのページが URL の引数で候補・場面・視点を切り替え、候補は動的 import で別チャンクにする（バンドルの差を測るため）。入力のグリッドは 02 の部品（`src/dem/gridRange.ts`・`DemGrid.ts`・`GsiDemDecoder.ts`、`src/simulation/terrain/analyzeTerrain.ts`）で渋谷駅付近の DEM1A の実タイル（一度だけ取得してブランチに置く）から組み立て、合成の場面は同じ形の関数で作る。Playwright（ポート 4174）で、視点の組み合わせのスクリーンショットと、水面の「見えている割合」「ちらつき」の数値、fps を自動で取り、実 GPU での fps はユーザーの手動の計測で補う。
 
 **Tech Stack:** TypeScript 6.0、Vite 8.2、MapLibre GL JS 6.6.0（Custom Layer・`setTerrain`・`addProtocol`・`queryTerrainElevation`）、three 0.185.1（A・A'・B のみ）、生の WebGL2（B-raw）、Vitest 4、Playwright 1.62（Chromium、SwiftShader）、Biome 2
 
@@ -20,9 +20,9 @@
 - 新しい依存はスパイクのためだけに `three@0.185.1`（dependencies）と `@types/three@0.185.4`（devDependencies）。`pnpm add -E` で正確な版を固定する。このマシンには公開から 10 日のクールダウン（`minimumReleaseAge: 14400`、strict）が強制されていて、three 0.186.0（2026-09-08 公開）と @types/three 0.186.0（2026-09-11 公開）は使えない。pnpm が新しすぎる版の承認を求めても承認しない。ビルドスクリプトの許可を求められたら `pnpm-workspace.yaml` の `allowBuilds` に `false` で足す
 - B-raw は three を import しない。B と B-raw は同じ GLSL（`spike/src/shaders.ts`）を使い、違いを「three の有無」だけにする
 - CSP（`public/_headers`、tech-spec §7.7）を、スパイクの dev と preview の応答にも同じ文字列で付ける。CSP を緩めない。違反が出たらそれ自体を結果として記録する
-- 品質の関門（このブランチの中）: 各 Task の終わりに `pnpm lint && pnpm typecheck && pnpm test` が通ること。カバレッジは見ない。`pnpm build`（本番のビルド）が変わらないことを Task 1 と Task 9 で確かめる
+- 品質の関門（このブランチの中）: 各 Task の終わりに `pnpm lint && pnpm typecheck && pnpm test` が通ること。カバレッジは見ない。`pnpm build`（本番のビルド）が変わらないことを Task 1 と Task 9 で確かめる。E2E を回した後は、`pnpm lint` の前に `pnpm exec biome format --write spike/results` を実行する（`spike/results/*.json` は `JSON.stringify` の出力で、Biome の書式と違う。P22）
 - 書式は Biome（2 スペース、シングルクォート、セミコロンなし、行幅 100）。`spike/` は `useImportExtensions` の対象外（`biome.json` の overrides のとおり）だが、`src/dem`・`src/simulation` のファイルを import するときはそれらと同じく `.ts` を付ける
-- 計画のコードの import の並び（モジュールの順と、名前付き import の中の順）は Biome が決める。`pnpm lint` が並びだけで落ちたら `pnpm format` で直してよい（計画 03 と同じ扱い）
+- 計画のコードの書式（行幅 100 での折り返しなど）と import の並び（モジュールの順と、名前付き import の中の順）は Biome が決める。`pnpm lint` が書式だけ・並びだけの差分で落ちたら、`pnpm format` で直してよい（`spike/results/*.json` を含む。計画 03 と同じ扱い。P22・S2・S5・G1）。lint の規則の違反（診断）は、書式の直しとは別に原因を直してから進む
 - コメント・テスト名・コミットメッセージは日本語。1 Task につき 1 コミット（Task の途中の結果の記録を除く）。コミットの末尾に、実行するモデルの名前の `Co-Authored-By:` を付ける（例: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`。下の各 Task のコミット例では省略しているが、必ず付ける）
 - 手動の手順は **【手動・ユーザー】** と明記し、実行役は代わりに行わない。結果が届くまで報告の該当欄は「ユーザーの計測待ち」と書く
 
@@ -35,8 +35,8 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | D1 | **1 日目は候補 A から始め、2 つの分かれ目を先に確かめる**（レビュー役の提案）。(1) MapLibre 6.6.0 の Custom Layer が受け取る行列と引数が、`setTerrain` を有効にしたときに地形の高さを反映するか（Task 2）。(2) 地形の上 1cm の水面の z-fighting（深度バッファの精度）と、spec S §3 の対策（水面を後に描き polygonOffset を付ける）（Task 3）。1 日目の終わりの Task 4 で、結果に応じて 2 日目以降の配分を決める（(1) が不合格なら A' を A 系の本線にする。(2) が A 系で見込みなしなら、頂点を共有する B・B-raw に時間を回す） | 候補を分けるのはこの 2 点で、どちらも A で最も早く確かめられる。結果で残りを絞れる |
 | D2 | スパイクのコードは `spike/` にまとめ、独自の Vite の設定（`root: spike`、出力 `dist-spike/`）と tsconfig（`spike/tsconfig.json`、ルートの `tsconfig.json` から参照）を持つ。本番の `vite.config.ts` と `index.html` は使わない | 本番のコードとビルドを変えない。`pnpm typecheck`・`pnpm lint` がそのままスパイクも検査する |
 | D3 | 1 つのページ（`spike/index.html`）を URL の引数で切り替える: `candidate=a|a2|b|braw`、`scene=synthetic|real`、`water=fixed|film|dynamic`、`exaggeration`、`pitch`、`zoom`、`zfix=none|offset|offset2`、`capture=1`、`skirt=0|1`、`probe=fps`。候補は `import()` で読み、候補ごとのチャンクにする | スクリーンショットの自動化と手動の計測が同じ URL で済む。バンドルの差を候補のチャンクで測れる |
-| D4 | 場面は 2 つ。**合成**（`synthetic`）: 渋谷の地点に置いた 500m の範囲に、北側の標高 40m の台地に 3 つのすり鉢（半径 60m・深さ 3m、水深 5cm・50cm・2m の池）、南側に北へ 10% で上る斜面（1cm の膜）。**実データ**（`real`）: DEM1A のフィクスチャ（`tests/fixtures/gsi/dem1a-17-116399-51623.png`）を全タイルに使い、02 の `computeGridRange`・`assembleGrid` で組み立てたグリッド。水深は 02 の `analyzeTerrain` の満水（fill − 標高）と 1cm の大きい方（すべての有効セルに 1cm 以上の水） | spec S §3 の入力のとおり。実データはネットワークに頼らずに自動で回せる。E2E の `routeGsi` と同じく、全タイルに同じ実タイルを使う |
-| D5 | 地形の標高は「z17 のグローバルピクセル → 標高」の関数（`ElevationSampler`）で表し、シミュレーションのグリッドも、A の地形タイル（`addProtocol`）も、この 1 つの関数から作る。A のタイルは、ズーム z のピクセルの中心に当たる z17 のピクセルを 1 点で取る | グリッドと A の z17 のタイルが画素単位で一致するので、A で残るずれは MapLibre の LOD とメッシュによるものだけになる。本番の A は z15 以下で粗い DEM（DEM5・DEM10B）を使うので、このスパイクの A は**最良の場合**である。報告にそう書く |
+| D4 | 場面は 2 つ。**合成**（`synthetic`）: 渋谷の地点に置いた 500m の範囲に、北側の標高 40m の台地に 3 つのすり鉢（半径 60m・深さ 3m、水深 5cm・50cm・2m の池）、南側に北へ 10% で上る斜面（1cm の膜）。**実データ**（`real`）: 渋谷駅付近（R02-7 の地点。E2E と同じ北緯 35.658°・東経 139.7016°）の 500m の範囲にかかる DEM1A の実タイル 9 枚（z17、x 116398〜116400・y 51622〜51624。中央の 116399・51623 が `tests/fixtures/gsi/` のフィクスチャ）を、Task 1 で地理院から一度だけ取得して `spike/fixtures/gsi/` に置く。ページは本番と同じ URL で取得し、自動の実行では Playwright がこのファイルで応答する。02 の `computeGridRange`・`assembleGrid` で組み立て、水深は 02 の `analyzeTerrain` の満水（fill − 標高）と 1cm の大きい方（すべての有効セルに 1cm 以上の水）。範囲の標高・無効セル・満水の最大の水深は実行時に求めて `spike/results/real-scene.md` に記録し、決め打ちしない | spec S §3（02 が済んでいれば実データ）のとおり（着手前の検査 G2）。1 枚のフィクスチャを繰り返すと、256 セルごとに最大約 12m の人工の段差ができる。タイルをブランチに置けば、自動の実行はネットワークに頼らず決定的になる |
+| D5 | 地形の標高は「z17 のグローバルピクセル → 標高」の関数（`ElevationSampler`）で表し、シミュレーションのグリッドも、A の地形タイル（`addProtocol`）も、この 1 つの関数から作る。実データの関数は範囲にかかる 9 枚のタイルから読み、その外はタイルの端の値を延ばす（A の地形が範囲の外で 0m に落ちて段差を作らないように）。A のタイルは、ズーム z のピクセルの中心に当たる z17 のピクセルを 1 点で取る | グリッドと A の z17 のタイルが画素単位で一致するので、A で残るずれは MapLibre の LOD とメッシュによるものだけになる。本番の A は z15 以下で粗い DEM（DEM5・DEM10B）を使うので、このスパイクの A は**最良の場合**である。報告にそう書く |
 | D6 | A の `addProtocol` の関数は、Terrarium 形式の RGBA から作った `ImageBitmap` をそのまま返す（PNG に符号化しない）。raster-dem の `tileSize: 256`、`maxzoom: 17`、`encoding: 'terrarium'`。無効値は 0m（spec 05 §4） | MapLibre 6.6.0 の画像の要求（`maplibre-gl-dev.mjs` の `doImageRequest`）は、応答の `data` が `ImageBitmap` ならそのまま使い、raster-dem の `loadTile` も `ImageBitmap` を受ける。符号化の往復を省ける |
 | D7 | 描画の行列は `options.defaultProjectionData.mainMatrix`（Float64Array）を使い、グリッドの局所座標（列 + 0.5、行 + 0.5、m）からメルカトルへのモデル行列を JS の倍精度で掛けてから Float32 にして渡す。三つの候補とも同じ `u_matrix` の uniform を使い、three でも `RawShaderMaterial` にこの行列を渡す（three のカメラの行列は使わない） | メルカトル座標（約 0.9）を float32 の頂点に入れると、1 セル（約 3e-8）が精度の限界に近く、頂点が揺れる。行列を 1 つにそろえると、候補の差が「three の有無」と「地形の描き方」だけになる |
 | D8 | 水面の頂点シェーダは `高さ = 水深 ≥ 1cm ? 標高 + 水深 : 標高`、フラグメントシェーダは水深 < 1cm を捨てる。1cm の比較には 0.0099 を使う（Float32 の 0.01 の丸めで膜が消えないように）。水面の色は 1 色（青、不透明度 0.7）。5cm 刻みの色分けは作らない | 色分けは 05 の仕事。沈み込みとちらつきの判定には 1 色で足りる |
@@ -62,9 +62,22 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | R1 | 判定 (2) の数値の計測を 16 視点（ズーム 15〜18 × 倍率 1・10 × pitch 60・85）に絞る。64 視点では 1 候補 約 1,500 回の idle（SwiftShader で 13〜50 分）になり、30 分の制限と 3 日に収まらない。スクリーンショットは 64 視点のまま。表の行はズーム × 倍率、閾値は変えない | D9、Task 3 Step 7・8・9、自己レビュー |
 | R2 | A' は、`measureWater` の最初の idle の後から終わりまで高さを取り直さない（`freezeElevation`）。ちらつきの 3 枚を同じ高さで比べる。取り直しは視点が変わったときだけ行い、`ResampleInfo` は setView の時の値だけを記録する | Task 5 Step 2（`a.ts`・`capture.ts`・`types.ts`） |
 | R3 | 判定 (2) の × の原因を分ける 2 つ目の規則: LOD の食い違いは「高さの差 × 倍率」で増えるので、× が倍率 1 → 10 で増えれば LOD、倍率によらず同じなら深度の精度。Task 2 のすり鉢の差と「1cm × 倍率」の比較で照らし合わせる | Task 3 Step 9 |
-| R4 | 報告の §11 に、無効セルの頂点が z = 0 へ落ちる細い三角形（05 で頂点を寄せるか三角形を捨てる。フィクスチャに無効画素が無いので、このスパイクでは現れない）を足す | 報告の骨組みの §11、Task 10 Step 4 |
+| R4 | 報告の §11 に、無効セルの頂点が z = 0 へ落ちる細い三角形（05 で頂点を寄せるか三角形を捨てる。G2 で実データを実タイルに替えたので、無効セル（02 の手動確認で 0.2%）の周りで現れるかを `real` のコンタクトシートで確かめる）を足す | 報告の骨組みの §11、Task 10 Step 4 |
 | R5 | コンタクトシートの HTML が重い場合（data URI で 20〜30 MB）の代わりの経路 | D10、Task 3 Step 7 |
 | R6 | 報告の §2 に「three はスパイクのブランチだけの依存で、main には入っていない」 | 報告の骨組みの §2 |
+
+## 着手前の検査の反映（2026-09-12）
+
+コントローラーの着手前の検査（`.superpowers/sdd/2026-09-12-S-3d-rendering-spike/preflight-scan.md`）の裁定を、次のとおり取り込んだ。
+
+| ID | 内容 | 反映先 |
+|---|---|---|
+| P3 | Task 2 の `a.ts` の import から `type Map as MapLibreMap` を外す（Task 5 まで使わず、`noUnusedLocals` で TS6133）。Task 5 Step 2 の import の一覧で足し直す | Task 2 Step 8、Task 5 Step 2 |
+| P17 | `dynamicWater.worker.ts` の `let base: Float32Array = new Float32Array(0)`（TS 6.0.3 の既定の型引数で TS2322 になるため） | Task 8 Step 1 |
+| G2 | spec S §3（02 が済んでいれば実データ）に合わせ、実データの場面を 1 枚のフィクスチャの繰り返しから、渋谷駅付近の DEM1A の実タイル 9 枚に替える。タイルは 02 の範囲の計算で求めて一度だけ地理院から取得し、`spike/fixtures/gsi/` に README（URL・取得日・出典）と一緒にコミットする。ページは本番と同じ URL で取得し、自動の実行では Playwright がこのファイルで応答する（ネットワークに頼らず決定的）。範囲の標高・無効セル・満水の最大の水深は決め打ちせず、実行時に求めて `spike/results/real-scene.md` に記録する | D4・D5、「事前に確かめた事実」、Task 1（Files・Interfaces・Step 8・10・10b・11・12・14）、報告の骨組みの §3・§11、Task 6 Step 2、Task 8 Step 3、R4 |
+| P15 | Task 8 の `main.ts` の最終形も `Partial<Record<CandidateId, …>>` と `load === undefined` の確かめを残す（打ち切りで候補を外しても build と typecheck が通る） | Task 8 Step 3 |
+| P20 | `openSpike` の返す配列は後のエラーも受け取り続けるので、呼び出し側は参照を持ち（`lists.push(await openSpike(…))`）、最後に `expect(lists.flat()).toEqual([])` で確かめる（1 回だけ展開して写さない） | `views.ts` の説明、Task 3（`matrix.spec.ts`）、Task 6（`seam.spec.ts`）、Task 8（`fps.spec.ts`） |
+| P22・S2・S5・G1 | 書式だけ・import の並びだけの差分は `pnpm format` で直してよい（`spike/results/*.json` を含む）。E2E の後は `pnpm exec biome format --write spike/results` を実行してから `pnpm lint` | Global Constraints |
 
 ## 事前に確かめた事実（2026-09-12、main のチェックアウトの `node_modules` と `pnpm view` で確認）
 
@@ -81,7 +94,7 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | `MapOptions.maxPitch` の既定は 60（`defaultMaxPitch`）。`canvasContextAttributes?: WebGLContextAttributesWithType` がある | pitch 85° のため `maxPitch: 85` を渡す。D9 の `preserveDrawingBuffer` はここで渡す |
 | @maplibre/maplibre-gl-style-spec 26.4.1（MapLibre 6.6.0 が使う版）の `latest.json` の symbol のレイアウトに `symbol-z-elevate` は無い。高さに関わりそうなのは `icon-pitch-alignment`（`map`・`viewport`・`auto`、向きだけ）と paint の `icon-translate`（2 次元のずれ）だけ。`Map.addImage(id, image: StyleImageSource, options?)` の `StyleImageSource` は `ImageData` を受ける | D20 の (c) は「6.6.0 には無い」を前提に、viewport 揃えのコマで確かめるだけにする |
 | `Map.project(lnglat)` は、地形が有効なら `terrain.getElevationForLngLat` の高さで画面の位置を求める（dev.mjs 10984 行の `locationToScreenPoint`） | Task 2 の判定 (1) で、`mainMatrix` で投影した点と `map.project` を比べる |
-| E2E の `tests/e2e/support/gsi.ts` の `routeGsi(context)` は、淡色地図を `tests/e2e/fixtures/tile.png`、DEM をすべてフィクスチャで返す。フィクスチャは渋谷（z17、116399・51623）の 256 × 256、最低 11.08m・最高 23.08m、無効画素なし | 自動の実行は `routeGsi` を再利用する。渋谷（北緯 35.658°・東経 139.7016°）では z17 のセルは約 0.970m で、N = ceil(500 / 0.970) = 516 |
+| E2E の `tests/e2e/support/gsi.ts` の `routeGsi(context)` は、淡色地図を `tests/e2e/fixtures/tile.png`、DEM をすべて 1 枚のフィクスチャ（渋谷、z17、116399・51623）で返す。02 の式で求めると、渋谷（北緯 35.658°・東経 139.7016°）の 500m の範囲（z17 のセル 約 0.9704m、N = ceil(500 / 0.9704) = 516、北西端のグローバルピクセル (29798091, 13215405)）は x 116398〜116400・y 51622〜51624 の 9 枚にかかる。02 の手動確認（渋谷駅付近の 500m、`.handoff/02-dem-grid-2d.md`）は標高 8.78〜33.06 m、無効セル 0.2%（線路に沿った線）、最大の窪地の深さ 2.80 m | 淡色地図は `routeGsi` を再利用し、DEM1A はその後に登録する `routeSpikeDem` で `spike/fixtures/gsi/` の実タイルを返す（後に登録した route が先に効く）。02 の手動確認の値は参考にとどめ、実行時の値を記録する（地点の中心が同じとは限らない） |
 | `playwright.config.ts` は 4173 で `pnpm preview`（workerd）を立て、Chromium に `--enable-unsafe-swiftshader` を渡す | スパイクは別の設定（4174、同じ起動の引数） |
 | `tsconfig.app.json` は `tsconfig.sim.json`・`tsconfig.core.json` を参照して `src/simulation` を import する（参照が無いと `noUncheckedIndexedAccess` で `src/simulation` が落ちる。計画 03 の事実） | `spike/tsconfig.json` も同じ 2 つを参照する |
 | CI は `pull_request` と `main` への push で動く | スパイクのブランチの push では CI は動かない（PR を作らない）。報告の PR では動く（ドキュメントだけなので影響なし） |
@@ -101,7 +114,8 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | `spike/src/params.ts`（+ test） | URL の引数 → `SpikeParams` | 1 |
 | `spike/src/types.ts` | `Scene`・`ElevationSampler`・`CandidateHandle` などの共通の型 | 1 |
 | `spike/src/scenes.ts`（+ test） | 合成の場面と、実データの場面の組み立て（純粋な関数） | 1 |
-| `spike/src/fixtureTile.ts` | フィクスチャの PNG をブラウザで復号する | 1 |
+| `spike/src/demTiles.ts` | 範囲にかかる DEM1A のタイルを本番と同じ URL で取得して復号する | 1 |
+| `spike/scripts/dem-tiles.ts`、`spike/fixtures/gsi/`（9 枚と README） | 実タイルの一覧と取得のコマンド（一度だけ）、取得した実タイル | 1 |
 | `spike/src/waitIdle.ts` | 1 枚描かせて地図の idle を待つ | 1 |
 | `spike/src/mat4.ts`（+ test） | 4 × 4 の行列の積、グリッドのモデル行列、点の投影 | 2 |
 | `spike/src/candidates/terrarium.ts`（+ test） | Terrarium の符号化とタイルの RGBA の生成 | 2 |
@@ -148,12 +162,13 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 **Files:**
 - Modify: `package.json`、`pnpm-lock.yaml`、`tsconfig.json`、`vitest.config.ts`、`.gitignore`
 - Create: `spike/tsconfig.json`、`spike/vite.config.ts`、`spike/playwright.config.ts`、`spike/.gitignore`、`spike/index.html`
-- Create: `spike/src/types.ts`、`spike/src/params.ts`、`spike/src/params.test.ts`、`spike/src/scenes.ts`、`spike/src/scenes.test.ts`、`spike/src/fixtureTile.ts`、`spike/src/waitIdle.ts`、`spike/src/main.ts`
+- Create: `spike/src/types.ts`、`spike/src/params.ts`、`spike/src/params.test.ts`、`spike/src/scenes.ts`、`spike/src/scenes.test.ts`、`spike/src/demTiles.ts`、`spike/src/waitIdle.ts`、`spike/src/main.ts`
+- Create: `spike/scripts/dem-tiles.ts`、`spike/fixtures/gsi/dem1a-17-<x>-<y>.png`（9 枚）、`spike/fixtures/gsi/README.md`（Step 10b）、`spike/results/real-scene.md`（Step 14 の実行の結果）
 - Create: `spike/e2e/support/views.ts`、`spike/e2e/smoke.spec.ts`
 - Create: `docs/superpowers/spikes/2026-09-12-3d-rendering.md`（報告の下書きの骨組み）
 
 **Interfaces:**
-- Consumes: `computeGridRange(lon, lat, sizeM, z): GridRange`・`GridRange`（`src/dem/gridRange.ts`）、`assembleGrid(range, lookup): AssembledGrid`・`DemTileData`（`src/dem/DemGrid.ts`）、`decodeGsiDem(rgba): DecodedDem`（`src/dem/GsiDemDecoder.ts`）、`TILE_SIZE`（`src/dem/tileMath.ts`）、`analyzeTerrain(grid): TerrainAnalysis`（`src/simulation/terrain/analyzeTerrain.ts`。`fill: Float32Array`）、`createGsiPaleStyle(attribution): StyleSpecification`（`src/map/gsiStyle.ts`）、`routeGsi(context): Promise<GsiCounts>`（`tests/e2e/support/gsi.ts`）
+- Consumes: `computeGridRange(lon, lat, sizeM, z): GridRange`・`GridRange`（`src/dem/gridRange.ts`）、`assembleGrid(range, lookup): AssembledGrid`・`DemTileData`（`src/dem/DemGrid.ts`）、`decodeGsiDem(rgba): DecodedDem`（`src/dem/GsiDemDecoder.ts`）、`TILE_SIZE`（`src/dem/tileMath.ts`）、`analyzeTerrain(grid): TerrainAnalysis`（`src/simulation/terrain/analyzeTerrain.ts`。`fill: Float32Array`）、`createGsiPaleStyle(attribution): StyleSpecification`（`src/map/gsiStyle.ts`）、`routeGsi(context): Promise<GsiCounts>`（`tests/e2e/support/gsi.ts`）、`tilesInPixelRect(rect, z): TileCoord[]`（`src/dem/tileMath.ts`）、`rangePixelRect(range): PixelRect`（`src/dem/gridRange.ts`）、`demTileUrl(dem, tile): string`（`src/dem/demSources.ts`）、`tileKey(x, y): string`（`src/dem/demSelection.ts`）
 - Produces（`spike/src/types.ts`）:
   - `type ElevationSampler = (gx: number, gy: number) => number | null`（z17 のグローバルピクセル → 標高 m、null は無効値）
   - `type SceneName = 'synthetic' | 'real'`、`type WaterMode = 'fixed' | 'film' | 'dynamic'`、`type CandidateId = 'a' | 'a2' | 'b' | 'braw'`、`type ZFix = 'none' | 'offset' | 'offset2'`、`type WaterDebug = 'off' | 'mask' | 'mask-nodepth'`
@@ -163,9 +178,9 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
   - `type MountCandidate = (map: MapLibreMap, scene: Scene, params: SpikeParams) => Promise<CandidateHandle>`
   - `interface SpikeGlobal { map; scene; params; candidate: CandidateHandle | null; cspViolations: string[]; setView(view: View): Promise<void> }`（`window.spike`。後の Task で項目を足す）
 - Produces（`spike/src/params.ts`）: `interface SpikeParams { candidate: CandidateId | null; scene: SceneName; water: WaterMode; exaggeration: number; pitch: number; zoom: number; zfix: ZFix; capture: boolean; skirt: boolean; probe: 'fps' | null }`、`parseParams(search: string): SpikeParams`
-- Produces（`spike/src/scenes.ts`）: `SHIBUYA`、`RANGE_M = 500`、`DEM_Z = 17`、`POND_DEPTHS_M = [0.05, 0.5, 2]`、`FILM_DEPTH_M = 0.01`、`MIN_DEPTH_M = 0.0099`、`syntheticRange(): GridRange`、`syntheticSampler(range): ElevationSampler`、`isFilmCell(range, col, row): boolean`、`buildSyntheticScene(water: 'fixed' | 'film'): Scene`、`repeatTileSampler(tile: DemTileData): ElevationSampler`、`buildRealScene(tile: DemTileData): Scene`
-- Produces: `loadFixtureTile(): Promise<DemTileData>`（`fixtureTile.ts`）、`waitIdle(map): Promise<void>`（`waitIdle.ts`）
-- Produces（`spike/e2e/support/views.ts`）: `EXAGGERATIONS`・`PITCHES`・`ZOOMS`、`allViews(): View[]`、`spikeQuery(query: Record<string, string | number>): string`、`openSpike(page, context, query): Promise<string[]>`（ページのエラーの配列を返す）、`setView(page, view): Promise<void>`
+- Produces（`spike/src/scenes.ts`）: `SHIBUYA`、`RANGE_M = 500`、`DEM_Z = 17`、`POND_DEPTHS_M = [0.05, 0.5, 2]`、`FILM_DEPTH_M = 0.01`、`MIN_DEPTH_M = 0.0099`、`shibuyaRange(): GridRange`（合成と実データで共通）、`syntheticSampler(range): ElevationSampler`、`isFilmCell(range, col, row): boolean`、`buildSyntheticScene(water: 'fixed' | 'film'): Scene`、`tileBlockSampler(range: GridRange, tiles: ReadonlyMap<string, DemTileData>): ElevationSampler`、`buildRealScene(range: GridRange, tiles: ReadonlyMap<string, DemTileData>): Scene`
+- Produces: `loadDemTiles(range: GridRange): Promise<Map<string, DemTileData>>`（`demTiles.ts`）、`waitIdle(map): Promise<void>`（`waitIdle.ts`）
+- Produces（`spike/e2e/support/views.ts`）: `EXAGGERATIONS`・`PITCHES`・`ZOOMS`、`allViews(): View[]`、`spikeQuery(query: Record<string, string | number>): string`、`routeSpikeDem(context): Promise<void>`、`openSpike(page, context, query): Promise<string[]>`（ページのエラーの配列を返す。配列は後のエラーも受け取り続ける）、`setView(page, view): Promise<void>`
 
 - [ ] **Step 0: 本番のバンドルの基準値を控える**
 
@@ -508,6 +523,9 @@ Expected: PASS（3 件）
 ```ts
 import { describe, expect, it } from 'vitest'
 import type { DemTileData } from '../../src/dem/DemGrid.ts'
+import { tileKey } from '../../src/dem/demSelection.ts'
+import { rangePixelRect } from '../../src/dem/gridRange.ts'
+import { tilesInPixelRect } from '../../src/dem/tileMath.ts'
 import {
   buildRealScene,
   buildSyntheticScene,
@@ -515,18 +533,27 @@ import {
   isFilmCell,
   POND_DEPTHS_M,
   RANGE_M,
+  shibuyaRange,
 } from './scenes'
 
-/** 無効値を少し含む、規則的な標高のタイル（実タイルの代わり。Node では PNG を復号しない） */
-function patternTile(): DemTileData {
+/** 無効値を少し含み、タイルごとに値の違う規則的な標高のタイル（実タイルの代わり。Node では PNG を復号しない） */
+function patternTile(tx: number, ty: number): DemTileData {
   const elevation = new Float32Array(256 * 256)
   const validMask = new Uint8Array(256 * 256)
   for (let p = 0; p < elevation.length; p++) {
     if (p % 97 === 0) continue
-    elevation[p] = 10 + (p % 7) * 0.5 + Math.floor(p / 256) * 0.01
+    elevation[p] = 10 + (tx % 3) + (ty % 3) * 0.5 + (p % 7) * 0.1 + Math.floor(p / 256) * 0.01
     validMask[p] = 1
   }
   return { elevation, validMask }
+}
+
+/** 範囲にかかるタイル（渋谷では x・y とも 3 枚）を、02 の tileKey で引ける形にする */
+function patternTiles(): Map<string, DemTileData> {
+  const range = shibuyaRange()
+  return new Map(
+    tilesInPixelRect(rangePixelRect(range), range.z).map((t) => [tileKey(t.x, t.y), patternTile(t.x, t.y)]),
+  )
 }
 
 describe('合成の場面（計画 D4）', () => {
@@ -585,10 +612,22 @@ describe('合成の場面（計画 D4）', () => {
 })
 
 describe('実データの場面（計画 D4・D5）', () => {
-  const tile = patternTile()
-  const scene = buildRealScene(tile)
+  const tiles = patternTiles()
+  const scene = buildRealScene(shibuyaRange(), tiles)
   const { range } = scene
   const n = range.size
+
+  it('範囲にかかるタイルは 9 枚（x 116398〜116400・y 51622〜51624）', () => {
+    expect([...tiles.keys()].sort()).toEqual(
+      [116398, 116399, 116400].flatMap((x) => [51622, 51623, 51624].map((y) => tileKey(x, y))).sort(),
+    )
+  })
+
+  it('タイルの外は、並べたタイルの端の値を延ばす（A の地形が範囲の外で段差を作らない）', () => {
+    const x0 = 116398 * 256
+    const y = range.originY + 10
+    expect(scene.sample(x0 - 50, y)).toBe(scene.sample(x0, y))
+  })
 
   it('02 の assembleGrid で組んだグリッドは、A の地形に使うサンプラーと全セルで一致する', () => {
     let mismatches = 0
@@ -632,12 +671,13 @@ Expected: FAIL（`Failed to resolve import "./scenes"`）
 
 ```ts
 import { assembleGrid, type DemTileData } from '../../src/dem/DemGrid.ts'
-import { computeGridRange, type GridRange } from '../../src/dem/gridRange.ts'
-import { TILE_SIZE } from '../../src/dem/tileMath.ts'
+import { tileKey } from '../../src/dem/demSelection.ts'
+import { computeGridRange, type GridRange, rangePixelRect } from '../../src/dem/gridRange.ts'
+import { TILE_SIZE, tilesInPixelRect } from '../../src/dem/tileMath.ts'
 import { analyzeTerrain } from '../../src/simulation/terrain/analyzeTerrain.ts'
 import type { ElevationSampler, Scene } from './types'
 
-/** E2E と同じ渋谷の地点。フィクスチャのタイル（z17、116399・51623）を含む */
+/** E2E と同じ渋谷の地点。500m の範囲は DEM1A の z17 の x 116398〜116400・y 51622〜51624 の 9 枚にかかる（中央が 02 のフィクスチャ） */
 export const SHIBUYA = { lon: 139.7016, lat: 35.658 } as const
 export const RANGE_M = 500
 export const DEM_Z = 17
@@ -670,7 +710,8 @@ const sideM = (range: GridRange): number => range.size * range.cellSizeM
 const plateauM = (range: GridRange): number =>
   LOW_M + SLOPE_GRADE * (SLOPE_SOUTH - SLOPE_NORTH) * sideM(range)
 
-export function syntheticRange(): GridRange {
+/** 合成と実データで共通の範囲（渋谷の 500m 四方、z17） */
+export function shibuyaRange(): GridRange {
   return computeGridRange(SHIBUYA.lon, SHIBUYA.lat, RANGE_M, DEM_Z)
 }
 
@@ -708,7 +749,7 @@ function minValid(elevation: Float32Array, validMask: Uint8Array): number {
 }
 
 export function buildSyntheticScene(water: 'fixed' | 'film'): Scene {
-  const range = syntheticRange()
+  const range = shibuyaRange()
   const sample = syntheticSampler(range)
   const n = range.size
   const side = sideM(range)
@@ -746,20 +787,43 @@ export function buildSyntheticScene(water: 'fixed' | 'film'): Scene {
   }
 }
 
-const mod = (value: number, m: number): number => ((value % m) + m) % m
+/** 範囲にかかるタイルを並べたブロックの、z17 の画素の矩形（両端を含む） */
+function tileBlock(range: GridRange): { x0: number; y0: number; x1: number; y1: number } {
+  const tiles = tilesInPixelRect(rangePixelRect(range), range.z)
+  const xs = tiles.map((t) => t.x)
+  const ys = tiles.map((t) => t.y)
+  return {
+    x0: Math.min(...xs) * TILE_SIZE,
+    y0: Math.min(...ys) * TILE_SIZE,
+    x1: (Math.max(...xs) + 1) * TILE_SIZE - 1,
+    y1: (Math.max(...ys) + 1) * TILE_SIZE - 1,
+  }
+}
 
-/** すべてのタイルを同じ実タイルとみなす（E2E の routeGsi と同じ扱い） */
-export function repeatTileSampler(tile: DemTileData): ElevationSampler {
+/**
+ * 実タイルのサンプラー（計画 D5）。ブロックの外は端の値を延ばす（A の地形が範囲の外で 0m に落ちて
+ * 段差を作らないように）。無いタイル（404）と無効値は null
+ */
+export function tileBlockSampler(
+  range: GridRange,
+  tiles: ReadonlyMap<string, DemTileData>,
+): ElevationSampler {
+  const block = tileBlock(range)
   return (gx, gy) => {
-    const p = mod(gy, TILE_SIZE) * TILE_SIZE + mod(gx, TILE_SIZE)
+    const x = clamp(gx, block.x0, block.x1)
+    const y = clamp(gy, block.y0, block.y1)
+    const tx = Math.floor(x / TILE_SIZE)
+    const ty = Math.floor(y / TILE_SIZE)
+    const tile = tiles.get(tileKey(tx, ty))
+    if (tile === undefined) return null
+    const p = (y - ty * TILE_SIZE) * TILE_SIZE + (x - tx * TILE_SIZE)
     return tile.validMask[p] === 1 ? (tile.elevation[p] ?? 0) : null
   }
 }
 
-/** 02 の部品でグリッドを組み、水深は満水（fill − 標高）と 1cm の大きい方にする（計画 D4） */
-export function buildRealScene(tile: DemTileData): Scene {
-  const range = computeGridRange(SHIBUYA.lon, SHIBUYA.lat, RANGE_M, DEM_Z)
-  const grid = assembleGrid(range, () => tile)
+/** 02 の部品で実タイルからグリッドを組み、水深は満水（fill − 標高）と 1cm の大きい方にする（計画 D4） */
+export function buildRealScene(range: GridRange, tiles: ReadonlyMap<string, DemTileData>): Scene {
+  const grid = assembleGrid(range, (tx, ty) => tiles.get(tileKey(tx, ty)))
   const { fill } = analyzeTerrain(grid)
   const depth = new Float32Array(grid.elevation.length)
   for (let i = 0; i < depth.length; i++) {
@@ -773,17 +837,65 @@ export function buildRealScene(tile: DemTileData): Scene {
     elevation: grid.elevation,
     validMask: grid.validMask,
     depth,
-    sample: repeatTileSampler(tile),
+    sample: tileBlockSampler(range, tiles),
     minElevation: minValid(grid.elevation, grid.validMask),
   }
 }
 ```
 
 Run: `pnpm vitest run spike/src/scenes.test.ts`
-Expected: PASS（7 件）。池の最大の水深が 1mm の許容に入らなければ、池の中心に最も近いセルの中心とすり鉢の中心のずれ（最大で半セルの対角 約 0.69m、深さの差 約 0.4mm）を確かめ、許容を変えずに原因を調べる
+Expected: PASS（9 件）。池の最大の水深が 1mm の許容に入らなければ、池の中心に最も近いセルの中心とすり鉢の中心のずれ（最大で半セルの対角 約 0.69m、深さの差 約 0.4mm）を確かめ、許容を変えずに原因を調べる
 
-- [ ] **Step 11: ページ・フィクスチャの復号・待ち合わせ・入口を書く**
+- [ ] **Step 10b: 実データのタイルを一度だけ取得し、ブランチに置く（着手前の検査 G2）**
 
+範囲にかかるタイルを 02 の計算（`gridRange.ts`・`tileMath.ts`）で求め、本番と同じ URL（`src/dem/demSources.ts` の `demTileUrl`）を curl で取得する。取得はこの 1 回だけで、以後の自動の実行は `spike/fixtures/gsi/` のファイルで応答する（Step 12 の `routeSpikeDem`）。
+
+`spike/scripts/dem-tiles.ts`:
+
+```ts
+/**
+ * スパイクの実データの範囲にかかる DEM1A のタイルを 02 の計算で求め、取得の curl のコマンドを出す（一度だけ使う。G2）。
+ * Node 24 はこの .ts を直接実行できる（計画 03 の scripts/bench-engine.ts と同じ）
+ */
+import { demTileUrl } from '../../src/dem/demSources.ts'
+import { rangePixelRect } from '../../src/dem/gridRange.ts'
+import { tilesInPixelRect } from '../../src/dem/tileMath.ts'
+import { shibuyaRange } from '../src/scenes.ts'
+
+const range = shibuyaRange()
+for (const tile of tilesInPixelRect(rangePixelRect(range), range.z)) {
+  const file = `spike/fixtures/gsi/dem1a-17-${tile.x}-${tile.y}.png`
+  console.log(`curl -fsS -o ${file} ${demTileUrl('dem1a', tile)} || echo "取得できない: ${tile.x}/${tile.y}"`)
+}
+```
+
+```bash
+mkdir -p spike/fixtures/gsi spike/out
+node spike/scripts/dem-tiles.ts > spike/out/dem-tiles.sh
+cat spike/out/dem-tiles.sh
+sh spike/out/dem-tiles.sh
+ls -l spike/fixtures/gsi/*.png
+sha256sum spike/fixtures/gsi/*.png
+grep SHA-256 tests/fixtures/gsi/README.md
+```
+
+Expected: `dem-tiles.sh` は 9 行で、x 116398〜116400・y 51622〜51624（計画の作成時に 02 の式で求めた値）。9 枚の PNG ができる。中央の `dem1a-17-116399-51623.png` の SHA-256 は、`tests/fixtures/gsi/README.md` の `5ef12f36…` と同じ（違えば地理院がタイルを更新している。両方の値を README に書き、新しい方を使う）。「取得できない」と出たタイルは 404（データなし）で、ファイルを置かない（ページは 404 を全画素無効として扱う）。`node` が `../src/scenes.ts` を読み込めない場合は、`shibuyaRange()` の代わりに `computeGridRange(139.7016, 35.658, 500, 17)`（`src/dem/gridRange.ts`）を使う
+
+`spike/fixtures/gsi/README.md` を書く（取得日と SHA-256 の欄は、上のコマンドの実行の日付と出力で埋める）:
+
+```markdown
+# スパイク S の実データ（DEM1A、渋谷駅付近）
+
+- 出典: 国土地理院「地理院タイル」標高タイル（DEM1A）。出典: 国土地理院
+- URL: `https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/17/{x}/{y}.png`（`src/dem/demSources.ts` の `demTileUrl('dem1a', tile)` と同じ）
+- 範囲: 北緯 35.658°・東経 139.7016° を中心とする 500m 四方（z17、N = 516。R02-7 の渋谷駅付近）にかかる x 116398〜116400・y 51622〜51624 の 9 枚
+- 取得: `node spike/scripts/dem-tiles.ts > spike/out/dem-tiles.sh && sh spike/out/dem-tiles.sh`（取得日: YYYY-MM-DD の形で書く）
+- 使い方: 自動の実行では `spike/e2e/support/views.ts` の `routeSpikeDem` がこのファイルで応答する。手動の計測（Task 8）では地理院から取得する
+- 404 だったタイル: （無ければ「なし」）
+- SHA-256（`sha256sum spike/fixtures/gsi/*.png` の出力）:
+```
+
+- [ ] **Step 11: ページ・実タイルの取得と復号・待ち合わせ・入口を書く**
 `spike/index.html`:
 
 ```html
@@ -809,28 +921,44 @@ Expected: PASS（7 件）。池の最大の水深が 1mm の許容に入らな�
 </html>
 ```
 
-`spike/src/fixtureTile.ts`:
+`spike/src/demTiles.ts`:
 
 ```ts
 import type { DemTileData } from '../../src/dem/DemGrid.ts'
+import { tileKey } from '../../src/dem/demSelection.ts'
+import { demTileUrl } from '../../src/dem/demSources.ts'
+import { type GridRange, rangePixelRect } from '../../src/dem/gridRange.ts'
 import { decodeGsiDem } from '../../src/dem/GsiDemDecoder.ts'
-import { TILE_SIZE } from '../../src/dem/tileMath.ts'
-import fixtureUrl from '../../tests/fixtures/gsi/dem1a-17-116399-51623.png?url'
+import { TILE_SIZE, tilesInPixelRect } from '../../src/dem/tileMath.ts'
 
-/** 02 のフィクスチャ（DEM1A、渋谷）を 02 の Worker と同じ手順で復号する（色空間の変換とアルファの乗算をさせない） */
-export async function loadFixtureTile(): Promise<DemTileData> {
-  const blob = await (await fetch(fixtureUrl)).blob()
-  const bitmap = await createImageBitmap(blob, {
-    premultiplyAlpha: 'none',
-    colorSpaceConversion: 'none',
-  })
+/**
+ * 範囲にかかる DEM1A のタイルを本番と同じ URL で取得し、02 の Worker と同じ手順で復号する
+ * （色空間の変換とアルファの乗算をさせない）。404 のタイルは入れない（全画素無効）。
+ * 自動の実行では Playwright が spike/fixtures/gsi/ の PNG で応答する（計画 D4）
+ */
+export async function loadDemTiles(range: GridRange): Promise<Map<string, DemTileData>> {
   const context = new OffscreenCanvas(TILE_SIZE, TILE_SIZE).getContext('2d', {
     willReadFrequently: true,
   })
   if (context === null) throw new Error('OffscreenCanvas の 2D コンテキストを得られません')
-  context.drawImage(bitmap, 0, 0)
-  bitmap.close()
-  return decodeGsiDem(context.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data)
+  context.globalCompositeOperation = 'copy'
+  const tiles = new Map<string, DemTileData>()
+  for (const tile of tilesInPixelRect(rangePixelRect(range), range.z)) {
+    const response = await fetch(demTileUrl('dem1a', tile))
+    if (response.status === 404) continue
+    if (!response.ok) throw new Error(`DEM1A ${tile.x}/${tile.y}: HTTP ${response.status}`)
+    const bitmap = await createImageBitmap(await response.blob(), {
+      premultiplyAlpha: 'none',
+      colorSpaceConversion: 'none',
+    })
+    context.drawImage(bitmap, 0, 0)
+    bitmap.close()
+    tiles.set(
+      tileKey(tile.x, tile.y),
+      decodeGsiDem(context.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data),
+    )
+  }
+  return tiles
 }
 ```
 
@@ -857,9 +985,9 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createGsiPaleStyle } from '../../src/map/gsiStyle'
-import { loadFixtureTile } from './fixtureTile'
+import { loadDemTiles } from './demTiles'
 import { parseParams, type SpikeParams } from './params'
-import { buildRealScene, buildSyntheticScene } from './scenes'
+import { buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'
 import type { CandidateHandle, CandidateId, MountCandidate, Scene, SpikeGlobal, View } from './types'
 import { waitIdle } from './waitIdle'
 
@@ -874,7 +1002,10 @@ const show = (text: string): void => {
 }
 
 async function buildScene(params: SpikeParams): Promise<Scene> {
-  if (params.scene === 'real') return buildRealScene(await loadFixtureTile())
+  if (params.scene === 'real') {
+    const range = shibuyaRange()
+    return buildRealScene(range, await loadDemTiles(range))
+  }
   return buildSyntheticScene(params.water === 'film' ? 'film' : 'fixed')
 }
 
@@ -955,6 +1086,7 @@ start().catch((error: unknown) => {
 `spike/e2e/support/views.ts`:
 
 ```ts
+import { existsSync, readFileSync } from 'node:fs'
 import { type BrowserContext, expect, type Page } from '@playwright/test'
 import { routeGsi } from '../../../tests/e2e/support/gsi'
 import type { View } from '../../src/types'
@@ -974,7 +1106,28 @@ export function spikeQuery(query: Record<string, string | number>): string {
   return `/?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)])).toString()}`
 }
 
-/** 地理院への要求を差し替えてページを開き、準備ができるまで待つ。ページのエラーを集める配列を返す */
+const demDir = new URL('../../fixtures/gsi/', import.meta.url)
+
+/**
+ * DEM1A の要求に spike/fixtures/gsi/ の実タイル（Task 1 Step 10b で一度だけ取得）で応答する。無いタイルは 404。
+ * routeGsi の後に登録するので、DEM1A ではこちらが先に効く（計画 D4）
+ */
+export async function routeSpikeDem(context: BrowserContext): Promise<void> {
+  const cors = { 'access-control-allow-origin': '*' }
+  await context.route('https://cyberjapandata.gsi.go.jp/xyz/dem1a_png/17/**', (route) => {
+    const match = /\/(\d+)\/(\d+)\.png$/.exec(new URL(route.request().url()).pathname)
+    const file = match === null ? null : new URL(`dem1a-17-${match[1]}-${match[2]}.png`, demDir)
+    if (file === null || !existsSync(file)) {
+      return route.fulfill({ status: 404, headers: cors, body: 'not found' })
+    }
+    return route.fulfill({ status: 200, contentType: 'image/png', headers: cors, body: readFileSync(file) })
+  })
+}
+
+/**
+ * 地理院への要求を差し替えてページを開き、準備ができるまで待つ。ページのエラーを集める配列を返す。
+ * 配列は後のエラーも受け取り続けるので、呼び出し側は参照を持ち、最後に確かめる（1 回だけ展開して写さない。P20）
+ */
 export async function openSpike(
   page: Page,
   context: BrowserContext,
@@ -986,6 +1139,7 @@ export async function openSpike(
     if (message.type() === 'error') errors.push(message.text())
   })
   await routeGsi(context)
+  await routeSpikeDem(context)
   await page.goto(spikeQuery(query))
   await expect(page.locator('html[data-spike-ready="true"]')).toBeAttached({ timeout: 120_000 })
   return errors
@@ -1001,8 +1155,11 @@ export async function setView(page: Page, view: View): Promise<void> {
 `spike/e2e/smoke.spec.ts`:
 
 ```ts
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { openSpike } from './support/views'
+
+const results = new URL('../results/', import.meta.url)
 
 for (const scene of ['synthetic', 'real'] as const) {
   test(`候補なしの ${scene} の場面が開き、エラーと CSP 違反が無い`, async ({ page, context }) => {
@@ -1013,6 +1170,45 @@ for (const scene of ['synthetic', 'real'] as const) {
     }))
     expect(info.size).toBe(516)
     expect(info.csp).toEqual([])
+    if (scene === 'real') {
+      // 実データの範囲の値は決め打ちせず、実行時に求めて記録する（着手前の検査 G2）
+      const stats = await page.evaluate(() => {
+        const s = window.spike?.scene
+        if (s === undefined) return null
+        let min = Number.POSITIVE_INFINITY
+        let max = Number.NEGATIVE_INFINITY
+        let invalid = 0
+        let maxDepth = 0
+        for (let i = 0; i < s.elevation.length; i++) {
+          if (s.validMask[i] !== 1) {
+            invalid++
+            continue
+          }
+          const e = s.elevation[i] ?? 0
+          min = Math.min(min, e)
+          max = Math.max(max, e)
+          maxDepth = Math.max(maxDepth, s.depth[i] ?? 0)
+        }
+        return { min, max, invalidRatio: invalid / s.elevation.length, maxDepth }
+      })
+      expect(stats).not.toBeNull()
+      if (stats !== null) {
+        mkdirSync(results, { recursive: true })
+        writeFileSync(
+          new URL('real-scene.md', results),
+          [
+            '# 実データの場面（渋谷駅付近、DEM1A の実タイル 9 枚、500m）',
+            '',
+            '| 最低の標高 | 最高の標高 | 無効セル | 満水の最大の水深 |',
+            '|---:|---:|---:|---:|',
+            `| ${stats.min.toFixed(2)} m | ${stats.max.toFixed(2)} m | ${(stats.invalidRatio * 100).toFixed(2)}% | ${stats.maxDepth.toFixed(2)} m |`,
+            '',
+            '参考: 02 の手動確認（渋谷駅付近、500m）は 8.78〜33.06 m、無効セル 0.2%、最大の窪地の深さ 2.80 m。',
+            '',
+          ].join('\n'),
+        )
+      }
+    }
     expect(errors).toEqual([])
   })
 }
@@ -1047,6 +1243,8 @@ for (const scene of ['synthetic', 'real'] as const) {
 | 本番のバンドル（スパイクの前） | 初期ロード （Step 0 の値） KB / 総量 （Step 0 の値） KB |
 
 ## 3. 判定の方法
+
+- 入力: 合成の場面（計画 D4）と、実データの場面（渋谷駅付近の DEM1A の実タイル 9 枚。`spike/fixtures/gsi/`、取得日と出典は同じ場所の README。範囲の最低・最高の標高、無効セル、満水の最大の水深は `spike/results/real-scene.md` の値を Task 1 Step 14 で写す）
 
 （Task 3 で書く: 可視率・ちらつきの定義と閾値、計画 D9）
 
@@ -1092,7 +1290,7 @@ for (const scene of ['synthetic', 'real'] as const) {
 
 - raster-dem の `encoding: 'custom'`（GSI の係数 655.36・2.56・0.01）で `addProtocol` を省く方法は試していない。正の標高だけなら線形に読めるが、負の標高と無効値（2^23）で崩れる
 - B・B-raw の流れの矢印（インスタンス描画）は比べていない（05 で作る。計画 D20）
-- 無効セルを含む DEM: 無効の頂点（標高 0・水深 0）が水のある有効セルの隣にあると、`v_depth` の補間で細い三角形が z = 0 まで落ちる。05 では、無効の頂点の高さを隣の有効セルに寄せるか、その三角形を捨てる必要がある。フィクスチャに無効画素が無いので、このスパイクでは現れない
+- 無効セルを含む DEM: 無効の頂点（標高 0・水深 0）が水のある有効セルの隣にあると、`v_depth` の補間で細い三角形が z = 0 まで落ちる。05 では、無効の頂点の高さを隣の有効セルに寄せるか、その三角形を捨てる必要がある。実データ（渋谷の実タイル）には無効セルがある（02 の手動確認で 0.2%、線路に沿った線）ので、`real` のコンタクトシートで現れたかどうかと、そのコマを書く
 ```
 
 表の「（…の値）」は、この Step で Step 0 と Step 1 のメモから実際の値を書き入れる（空欄のままコミットしない）。
@@ -1100,10 +1298,10 @@ for (const scene of ['synthetic', 'real'] as const) {
 - [ ] **Step 14: 全体の検査とスパイクの E2E**
 
 Run: `pnpm lint && pnpm typecheck && pnpm test`
-Expected: すべて成功（既存のテストに加え、spike の 10 件）
+Expected: すべて成功（既存のテストに加え、spike の 12 件）
 
 Run: `pnpm spike:e2e spike/e2e/smoke.spec.ts`
-Expected: PASS（2 件）。CSP 違反が出たら、違反の文字列を報告の「11. 未確認の事項」の前に「CSP」として書き、CSP は緩めずに原因（どの資源が塞がれたか）を調べる
+Expected: PASS（2 件）。`spike/results/real-scene.md` ができる。その値を報告の §3 の「入力」の行に写す（02 の手動確認の 8.78〜33.06 m・無効 0.2%・最大の窪地の深さ 2.80 m と大きく違えば、地点の中心の違いか取得の誤りかを確かめて書く）。CSP 違反が出たら、違反の文字列を報告の「11. 未確認の事項」の前に「CSP」として書き、CSP は緩めずに原因（どの資源が塞がれたか）を調べる
 
 Run: `pnpm build && pnpm size`
 Expected: 初期ロードと総量が Step 0 と同じ（本番のビルドが変わらない）
@@ -1383,12 +1581,7 @@ export interface ApiProbeResult {
 `spike/src/candidates/a.ts`:
 
 ```ts
-import {
-  addProtocol,
-  type CustomRenderMethodInput,
-  type Map as MapLibreMap,
-  MercatorCoordinate,
-} from 'maplibre-gl'
+import { addProtocol, type CustomRenderMethodInput, MercatorCoordinate } from 'maplibre-gl'
 import { pixelToLonLat } from '../../../src/dem/tileMath.ts'
 import { projectToScreen } from '../mat4'
 import type { ApiProbeResult, CandidateHandle, ElevationSampler, MountCandidate, ProbePoint, Scene } from '../types'
@@ -2329,12 +2522,13 @@ for (const candidate of MATRIX_CANDIDATES) {
   test(`matrix: ${candidate}`, async ({ page, context }) => {
     mkdirSync(shotsDir, { recursive: true })
     mkdirSync(new URL('sheets/', results), { recursive: true })
-    const errors: string[] = []
+    // openSpike の配列は後のエラーも受け取り続けるので、参照を持って最後に確かめる（P20）
+    const lists: string[][] = []
     const rows: MeasureRow[] = []
 
     // 1. スクリーンショット（固定の水、対策あり）。場面ごとに 1 枚のコンタクトシート
     for (const scene of ['synthetic', 'real'] as const) {
-      errors.push(...(await openSpike(page, context, { candidate, scene, water: 'fixed' })))
+      lists.push(await openSpike(page, context, { candidate, scene, water: 'fixed' }))
       const shots: Shot[] = []
       for (const view of allViews()) {
         await setView(page, view)
@@ -2359,14 +2553,14 @@ for (const candidate of MATRIX_CANDIDATES) {
       { scene: 'real', water: 'fixed', zfix: 'offset' },
     ] as const
     for (const plan of plans) {
-      errors.push(
-        ...(await openSpike(page, context, {
+      lists.push(
+        await openSpike(page, context, {
           candidate,
           scene: plan.scene,
           water: plan.water,
           zfix: plan.zfix,
           capture: 1,
-        })),
+        }),
       )
       for (const view of MEASURE_VIEWS) {
         await setView(page, view)
@@ -2377,7 +2571,7 @@ for (const candidate of MATRIX_CANDIDATES) {
     const summary = plans.map((p) => summarize(rows, p.scene, p.zfix)).join('\n')
     writeFileSync(new URL(`water-${candidate}.md`, results), `# ${candidate} の水面の見え方\n\n${summary}`)
     console.log(summary)
-    expect(errors).toEqual([])
+    expect(lists.flat()).toEqual([])
   })
 }
 ```
@@ -2512,7 +2706,7 @@ export interface ResampleInfo {
 
 - [ ] **Step 2: A に A' の分岐を足す**
 
-`spike/src/candidates/a.ts` の import を次にする（`LngLat` と `MIN_DEPTH_M`・`ResampleInfo` を足す）:
+`spike/src/candidates/a.ts` の import を次にする（`LngLat`、`type Map as MapLibreMap`（Task 2 では使わないので外していた。P3）、`MIN_DEPTH_M`・`ResampleInfo` を足す）:
 
 ```ts
 import {
@@ -3070,7 +3264,7 @@ Expected: PASS
   boundaryStep(): { max: number; mean: number }
 ```
 
-`spike/src/main.ts` の `import { buildRealScene, buildSyntheticScene } from './scenes'` を `import { boundaryStepM, buildRealScene, buildSyntheticScene } from './scenes'` にし、`spike` のオブジェクトの `measure` の次に足す:
+`spike/src/main.ts` の `import { buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'` を `import { boundaryStepM, buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'` にし、`spike` のオブジェクトの `measure` の次に足す:
 
 ```ts
     boundaryStep: () => boundaryStepM(scene),
@@ -3322,11 +3516,11 @@ const results = new URL('../results/', import.meta.url)
 
 for (const candidate of SEAM_CANDIDATES) {
   test(`seam: ${candidate}`, async ({ page, context }) => {
-    const errors: string[] = []
+    const lists: string[][] = [] // P20
     const shots: Shot[] = []
     // 範囲の中心から北を向くと、北の縁（台地、段差が最大）が見える
     for (const skirt of [1, 0]) {
-      errors.push(...(await openSpike(page, context, { candidate, scene: 'synthetic', skirt })))
+      lists.push(await openSpike(page, context, { candidate, scene: 'synthetic', skirt }))
       for (const exaggeration of [1, 10]) {
         for (const pitch of [60, 85]) {
           await setView(page, { zoom: 16, exaggeration, pitch })
@@ -3341,14 +3535,14 @@ for (const candidate of SEAM_CANDIDATES) {
       `${candidate} の範囲の境界（ズーム 16、上: 縁あり、下: 縁なし）`,
       fileURLToPath(new URL(`sheets/${candidate}-seam.jpg`, results)),
     )
-    expect(errors).toEqual([])
+    expect(lists.flat()).toEqual([])
   })
 }
 
 test('境界の段差の表（倍率ごと、合成と実データ）', async ({ page, context }) => {
   const lines = ['| 場面 | 倍率 | 段差の最大 (m) | 段差の平均 (m) |', '|---|---|---:|---:|']
   for (const scene of ['synthetic', 'real'] as const) {
-    // 実データはフィクスチャの復号にブラウザが要るので、候補なしのページを開いて測る
+    // 実データはタイルの取得と復号にブラウザが要るので、候補なしのページを開いて測る
     const errors = await openSpike(page, context, { scene })
     const step = await page.evaluate(() => window.spike?.boundaryStep() ?? null)
     expect(step).not.toBeNull()
@@ -3778,7 +3972,8 @@ const scope = self as unknown as {
   postMessage(message: unknown, transfer: Transferable[]): void
 }
 
-let base = new Float32Array(0)
+// 型を明示する。TS 6 では new Float32Array(0) が Float32Array<ArrayBuffer> と推論され、受け取った配列を代入できない（P17）
+let base: Float32Array = new Float32Array(0)
 let n = 0
 
 scope.onmessage = (event) => {
@@ -3974,10 +4169,10 @@ import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { createGsiPaleStyle } from '../../src/map/gsiStyle'
 import { measureWater } from './capture'
-import { loadFixtureTile } from './fixtureTile'
+import { loadDemTiles } from './demTiles'
 import { rendererName, runFpsProbe } from './fps'
 import { parseParams, type SpikeParams } from './params'
-import { boundaryStepM, buildRealScene, buildSyntheticScene } from './scenes'
+import { boundaryStepM, buildRealScene, buildSyntheticScene, shibuyaRange } from './scenes'
 import type { CandidateHandle, CandidateId, MountCandidate, Scene, SpikeGlobal, View } from './types'
 import { waitIdle } from './waitIdle'
 import { DynamicWater } from './water/dynamicWater'
@@ -3985,7 +4180,8 @@ import { DynamicWater } from './water/dynamicWater'
 setWorkerUrl(workerUrl)
 
 /** 候補は動的 import で読み、候補ごとのチャンクにする（計画 D3、Task 9 で大きさを測る） */
-const candidates: Record<CandidateId, () => Promise<{ mount: MountCandidate }>> = {
+// 打ち切り（「日程」）で候補を外したときは、その行を消せば build と typecheck が通る（P15）
+const candidates: Partial<Record<CandidateId, () => Promise<{ mount: MountCandidate }>>> = {
   a: () => import('./candidates/a'),
   a2: () => import('./candidates/a'),
   b: () => import('./candidates/b'),
@@ -3998,7 +4194,10 @@ const show = (text: string): void => {
 }
 
 async function buildScene(params: SpikeParams): Promise<Scene> {
-  if (params.scene === 'real') return buildRealScene(await loadFixtureTile())
+  if (params.scene === 'real') {
+    const range = shibuyaRange()
+    return buildRealScene(range, await loadDemTiles(range))
+  }
   return buildSyntheticScene(params.water === 'film' ? 'film' : 'fixed')
 }
 
@@ -4031,7 +4230,9 @@ async function start(): Promise<void> {
 
   let candidate: CandidateHandle | null = null
   if (params.candidate !== null) {
-    candidate = await (await candidates[params.candidate]()).mount(map, scene, params)
+    const load = candidates[params.candidate]
+    if (load === undefined) throw new Error(`候補 ${params.candidate} はありません`)
+    candidate = await (await load()).mount(map, scene, params)
     candidate.setExaggeration(params.exaggeration)
   }
   // 毎フレーム変わる水深（計画 D16）。候補があるときだけ
@@ -4111,9 +4312,9 @@ const results = new URL('../results/', import.meta.url)
 
 test('fps（自動、ヘッドレスの Chromium。参考値）', async ({ page, context }) => {
   const rows: { candidate: string; view: View; result: FpsResult }[] = []
-  const errors: string[] = []
+  const lists: string[][] = [] // P20
   for (const candidate of FPS_CANDIDATES) {
-    errors.push(...(await openSpike(page, context, { candidate, scene: 'real', water: 'dynamic' })))
+    lists.push(await openSpike(page, context, { candidate, scene: 'real', water: 'dynamic' }))
     for (const view of FPS_VIEWS) {
       await setView(page, view)
       const result = await page.evaluate(async () => {
@@ -4138,7 +4339,7 @@ test('fps（自動、ヘッドレスの Chromium。参考値）', async ({ page,
   const table = `${lines.join('\n')}\n`
   writeFileSync(new URL('fps-auto.md', results), `# fps（自動）\n\n${table}`)
   console.log(table)
-  expect(errors).toEqual([])
+  expect(lists.flat()).toEqual([])
 })
 ```
 
@@ -4403,7 +4604,7 @@ git rev-parse HEAD
 
   あわせて、three を採らない場合に変わる tech-spec の箇所（§1 の表の「3D 描画 | Three.js」の行、§1.1 の react-three-fiber の理由、§14.2 の「Three.js」の記述、`vite.config.ts` のコメントの「05 で動的 import する Three.js」）を、改訂案の一覧として書く
 - §10 05 への申し送り: spec 05 §4 のどの列に絞るか、A 系を採る場合の流れの矢印の描き方（Task 5 Step 7 の `a-arrows.md` の (a)〜(c) から、symbol レイヤーで足りるか、Custom Layer で水面の高さに描く必要があるか）、採る z-fighting の対策と係数、水深のアップロードを含む render の CPU 時間（Task 8）、A' を採る場合は高さの取り直しの時間と 50ms の上限、B 系を採る場合はベースマップの合成と縁
-- §11 未確認の事項: 次を必ず含める。(a) raster-dem の `encoding: 'custom'` で変換を省く方法、(b) 本番の A は z15 以下で DEM5・DEM10B を使うので、このスパイクの A（z17 からの 1 点の取得）より LOD のずれが大きくなりうること（D5）、(c) B・B-raw の流れの矢印（インスタンス描画）は比べていないこと（05 で作る。D20）、(d) Firefox・Safari、WebGL のコンテキストの喪失、クリックからセルを求める方法（spec 05 の範囲）、(e) 実 GPU の fps が届いていなければそのこと、(f) 無効セルを含む DEM で無効の頂点が z = 0 へ落ちる細い三角形（骨組みの §11 の項目。R4）
+- §11 未確認の事項: 次を必ず含める。(a) raster-dem の `encoding: 'custom'` で変換を省く方法、(b) 本番の A は z15 以下で DEM5・DEM10B を使うので、このスパイクの A（z17 からの 1 点の取得）より LOD のずれが大きくなりうること（D5）、(c) B・B-raw の流れの矢印（インスタンス描画）は比べていないこと（05 で作る。D20）、(d) Firefox・Safari、WebGL のコンテキストの喪失、クリックからセルを求める方法（spec 05 の範囲）、(e) 実 GPU の fps が届いていなければそのこと、(f) 無効セルを含む DEM で無効の頂点が z = 0 へ落ちる細い三角形（骨組みの §11 の項目。R4。実データのコンタクトシートで現れたかを書く）
 
 ```bash
 git add docs/superpowers/spikes
