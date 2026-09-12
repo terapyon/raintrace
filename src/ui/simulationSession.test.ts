@@ -419,6 +419,8 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
       session.attach(fakeController(), () => overlay)
       session.start(100, 10) // runId 1
       session.reset() // runId 2
+      // reset 自身が水を消す（setWater(null)）。ここから先の古い frame で呼ばれないことを見る
+      overlay.setWater.mockClear()
 
       worker.reply(frameMessage(terrainId, 5, { runId: 1, arrows: Float32Array.of(0, 0, 90, 0.1) }))
       expect(overlay.setWater).not.toHaveBeenCalled()
@@ -444,12 +446,53 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     expect(overlay.clearArrows).toHaveBeenCalled()
   })
 
+  it('reset・start は overlay の水と矢印をすぐに消す（Reset の後に届く古い実行の frame で client が前のバッファを返しても、overlay がそれを参照し続けない。最終レビューの軽微）', () => {
+    const { worker, session, terrainId } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.start(100, 10) // runId 1
+    worker.reply(frameMessage(terrainId, 1, { arrows: Float32Array.of(0, 0, 90, 0.1) }))
+    overlay.setWater.mockClear()
+    overlay.clearArrows.mockClear()
+
+    session.reset() // runId 2
+    expect(overlay.setWater).toHaveBeenCalledWith(null)
+    expect(overlay.clearArrows).toHaveBeenCalled()
+    // 古い実行の frame が届くと client は前のバッファを返すが、session は overlay に渡さない
+    worker.reply(frameMessage(terrainId, 2, { runId: 1 }))
+    expect(overlay.setWater).toHaveBeenCalledTimes(1)
+    worker.reply(frameMessage(terrainId, 0, { runId: 2 }))
+    overlay.setWater.mockClear()
+    overlay.clearArrows.mockClear()
+
+    session.start(100, 10) // runId 3
+    expect(overlay.setWater).toHaveBeenCalledWith(null)
+    expect(overlay.clearArrows).toHaveBeenCalled()
+  })
+
+  it('start は間引き待ちの古い矢印を取り消す（消した矢印を前の実行の矢印で描き直さない）', () => {
+    vi.useFakeTimers()
+    const { worker, session, terrainId } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    // runId 0（terrainReady の直後）の frame: 1 つ目はすぐ、2 つ目は間引き待ちになる
+    worker.reply(frameMessage(terrainId, 1, { runId: 0, arrows: Float32Array.of(0, 0, 90, 0.1) }))
+    worker.reply(frameMessage(terrainId, 2, { runId: 0, arrows: Float32Array.of(1, 1, 90, 0.1) }))
+    overlay.setArrows.mockClear()
+    session.start(100, 10)
+    vi.advanceTimersByTime(STATS_INTERVAL_MS * 2)
+    expect(overlay.setArrows).not.toHaveBeenCalled()
+  })
+
   it('古い runId の simFailed は overlay に触れない', () => {
     const { worker, session, terrainId } = setup()
     const overlay = fakeOverlay()
     session.attach(fakeController(), () => overlay)
     session.start(100, 10) // runId 1
     session.reset() // runId 2
+    // reset 自身が水と矢印を消す。ここから先の古い simFailed で呼ばれないことを見る
+    overlay.setWater.mockClear()
+    overlay.clearArrows.mockClear()
     worker.reply(simFailedMessage(terrainId, { runId: 1, reason: 'no-elevation-at-rain-center' }))
     expect(overlay.setWater).not.toHaveBeenCalled()
     expect(overlay.clearArrows).not.toHaveBeenCalled()

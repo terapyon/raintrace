@@ -76,7 +76,7 @@ export function DisplaySettings({ app, settings }: { app: AppStore; settings: Se
         >
           {ARROW_SPACINGS.map((m) => (
             <ToggleButton key={m} value={m}>
-              {m} m
+              {strings.panel.flowSpacingValue(m)}
             </ToggleButton>
           ))}
         </ToggleButtonGroup>

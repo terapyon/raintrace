@@ -36,15 +36,38 @@ test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
     expect(errors).toEqual([])
   })
 
-  test('Reset で、投入水量が 0 に、Step が 0 に戻る', async ({ page }) => {
+  test('Reset で、投入水量が 0 に、Step が 0 に戻り、もう一度開始すると新しい実行が進む', async ({
+    page,
+  }) => {
     await page.goto(SHIBUYA)
     await waitTerrain(page)
     await page.getByRole('button', { name: strings.playback.start }).click()
     await expect(page.getByTestId('stat-total')).toHaveText('31.4 m³')
+    // 降雨中心のすぐ南のセルを開き、水があることを確かめておく（マーカーの画像は下端が地点）。
+    // ポップオーバー（MUI の Modal）が開いている間はパネルが読み上げの木から外れるので、見たら閉じる
+    const marker = await page.locator('.maplibregl-marker').boundingBox()
+    if (marker === null) throw new Error('マーカーがありません')
+    const nearCenter = { x: marker.x + marker.width / 2, y: marker.y + marker.height + 4 }
+    await page.mouse.click(nearCenter.x, nearCenter.y)
+    await expect(page.getByTestId('cell-depth')).not.toHaveText('0.00 m')
+    await page.getByRole('button', { name: strings.cellInfo.close }).click()
     await page.getByRole('button', { name: strings.playback.reset }).click()
     await expect(page.getByTestId('stat-total')).toHaveText('0.00 m³')
     await expect(page.getByTestId('stat-step')).toHaveText('Step 0')
     await expect(page.getByLabel(strings.rainfall.amount)).toBeEnabled()
+    // セル情報は SimulationClient の手元の水深を読む。client は runId に関わらず届いた frame の水深を持つので、
+    // Worker が reset を処理して step 0 の frame（水深 0）を送ったときだけ 0 になる。Worker が reset を無視して
+    // 前の実行を続けると、session が捨てる frame の水が残り、ここで落ちる（最終レビューの重要な指摘）
+    await page.mouse.click(nearCenter.x, nearCenter.y)
+    await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
+    await page.getByRole('button', { name: strings.cellInfo.close }).click()
+    // 上の 0 は Reset を押した時点でストアが出すので、Worker が reset を処理した後の実行が進むかは分からない。
+    // もう一度開始し、新しい runId の frame が届いて統計が進むことを確かめる（runId の食い違い・バッファの
+    // 取りこぼしがあると frame が捨てられ、0 のまま止まる）。前の実行の水が残っていれば 31.4 にならない
+    // （最終レビューの重要な指摘）
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    await expect(page.getByTestId('stat-total')).toHaveText('31.4 m³')
+    await expect(page.getByTestId('stat-step')).not.toHaveText('Step 0')
   })
 })
 

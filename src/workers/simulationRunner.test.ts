@@ -327,8 +327,9 @@ describe('SimulationRunner: 失敗と地形の差し替え', () => {
     const h = setup()
     h.runner.loadTerrain(4, basin(null), [])
     h.runner.handle({ type: 'start', rain: { ...RAIN, radiusM: 0.4 }, runId: 1 })
+    // runId は start の値をそのまま載せる（違うとメインの session がこの simFailed を捨て、画面が「再生中」のまま残る）
     expect(h.posted).toMatchObject([
-      { type: 'simFailed', terrainId: 4, reason: 'no-elevation-at-rain-center' },
+      { type: 'simFailed', terrainId: 4, reason: 'no-elevation-at-rain-center', runId: 1 },
     ])
     expect(h.timers.size).toBe(0)
   })
@@ -337,8 +338,10 @@ describe('SimulationRunner: 失敗と地形の差し替え', () => {
     const h = setup()
     h.runner.loadTerrain(5, basin(), [])
     // 5 × 5・セル 1m の半径の上限は (5 + 5) × 1 = 10m（planRainfall）
-    h.runner.handle({ type: 'start', rain: { ...RAIN, radiusM: 11 }, runId: 1 })
-    expect(h.posted).toMatchObject([{ type: 'simFailed', terrainId: 5, reason: 'internal' }])
+    h.runner.handle({ type: 'start', rain: { ...RAIN, radiusM: 11 }, runId: 3 })
+    expect(h.posted).toMatchObject([
+      { type: 'simFailed', terrainId: 5, reason: 'internal', runId: 3 },
+    ])
     expect(h.timers.size).toBe(0)
   })
 

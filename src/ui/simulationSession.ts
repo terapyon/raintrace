@@ -68,9 +68,7 @@ export class SimulationSession {
         this.statsThrottle.cancel()
         // simFailed の直前に SimulationClient が今の水深バッファを Worker へ返却済み（detach 済み）なので、
         // overlay が古い（切り離された）配列をなお参照し続けないよう、明示的に消す（レビューの追加指摘）
-        this.arrowsThrottle.cancel()
-        this.overlay?.setWater(null)
-        this.overlay?.clearArrows()
+        this.clearWater()
         this.store.getState().failed(reason)
       }
     })
@@ -153,6 +151,7 @@ export class SimulationSession {
     const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)
     this.runId += 1
     this.client.start({ x, y, radiusM, amountMm }, this.runId)
+    this.clearWater()
     this.store.getState().started()
   }
 
@@ -178,7 +177,7 @@ export class SimulationSession {
     this.runId += 1
     this.client.reset(this.runId)
     this.statsThrottle.cancel()
-    this.arrowsThrottle.cancel()
+    this.clearWater()
     this.store.getState().reset()
   }
 
@@ -222,9 +221,7 @@ export class SimulationSession {
     if (this.terrain !== null) {
       // Worker が居なくなった以上、それが持っていた水深・矢印はもう更新されない。overlay に古い絵を
       // 残さない（レビューの追加指摘。simFailed と同じ理由）
-      this.arrowsThrottle.cancel()
-      this.overlay?.setWater(null)
-      this.overlay?.clearArrows()
+      this.clearWater()
       this.store.getState().failed('worker')
       // 異常終了の後、新しい Worker には地形が無い。command() が start・resume・step を黙って
       // 捨てるのに任せるだけでなく、session 自身も「地形が無い」状態にする。そうしないと start() が
@@ -232,6 +229,18 @@ export class SimulationSession {
       // （UI 側の canStart のようなガードは、二重の安全策として残る）
       this.clearTerrainState()
     }
+  }
+
+  /**
+   * 表示の水と矢印をすぐに消し、間引き待ちの古い矢印も取り消す（reset・start・失敗・異常終了）。
+   * runId が進んだ後に古い実行の frame が届くと、SimulationClient は前のバッファを Worker へ返すが、
+   * その frame は overlay に渡らない。消しておかないと、overlay が返却済み（切り離し済み）のバッファを
+   * 参照し続ける（最終レビューの軽微）
+   */
+  private clearWater(): void {
+    this.arrowsThrottle.cancel()
+    this.overlay?.setWater(null)
+    this.overlay?.clearArrows()
   }
 
   /** 地形・降雨中心をまとめて消す（terrainCleared・異常終了で使う） */

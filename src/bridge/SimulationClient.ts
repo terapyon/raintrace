@@ -261,10 +261,14 @@ export class SimulationClient {
       stepsPerSecond: message.stepsPerSecond,
       runId: message.runId,
     }
-    for (const listener of this.frameListeners) listener(frame)
-    // 表示とセル情報は新しい方を読むので、古い方を返す。返した後は previous に触れない（tech-spec §5.2）
-    if (previous !== null) {
-      this.command({ type: 'returnBuffer', buffer: previous.buffer }, [previous.buffer])
+    try {
+      for (const listener of this.frameListeners) listener(frame)
+    } finally {
+      // 表示とセル情報は新しい方を読むので、古い方を返す。返した後は previous に触れない（tech-spec §5.2）。
+      // 購読者が例外を投げても必ず返す。返さないと Worker の 2 枚のバッファが尽き、再生が止まる（最終レビューの軽微）
+      if (previous !== null) {
+        this.command({ type: 'returnBuffer', buffer: previous.buffer }, [previous.buffer])
+      }
     }
   }
 

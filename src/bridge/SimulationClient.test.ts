@@ -298,6 +298,19 @@ describe('SimulationClient の再生（spec 04 §5）', () => {
     expect(worker.transferred).toContain(first.water)
   })
 
+  it('frame の購読者が例外を投げても、手元の古いバッファは返す（返さないと Worker のバッファが尽きて再生が止まる。最終レビューの軽微）', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const first = frameMessage(terrainId, 1)
+    worker.reply(first)
+    client.onFrame(() => {
+      throw new Error('購読者の失敗')
+    })
+    expect(() => worker.reply(frameMessage(terrainId, 2))).toThrow('購読者の失敗')
+    expect(client.water?.[0]).toBe(2)
+    expect(worker.posted.at(-1)).toEqual({ type: 'returnBuffer', buffer: first.water })
+    expect(worker.transferred).toContain(first.water)
+  })
+
   it('前の地形の frame は渡さず、バッファだけを返す', () => {
     const { worker, client, terrainId } = loadedSetup()
     const listener = vi.fn()

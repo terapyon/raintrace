@@ -25,7 +25,9 @@ export const strings = {
     dem5b: 'DEM5B',
     dem5c: 'DEM5C',
     dem10b: 'DEM10B',
-    partial: '一部',
+    /** 主の DEM に、ほかを「一部」として添える（formatDemLabel） */
+    withPartial: (main: string, others: readonly string[]) =>
+      `${main}（一部 ${others.join('、')}）`,
     // base-spec §40 の DEM1A が無い場合の注意文（base-spec の例は英語。画面は日本語のみ。tech-spec §9.4）
     notDem1aNote:
       'この地域には 1m の DEM が無いため、細かな地形のシミュレーションには限界があります。',
@@ -57,6 +59,7 @@ export const strings = {
     showDepressions: '窪地（満水時の深さ）',
     showFlow: '地形の流向',
     flowSpacing: '矢印の間隔',
+    flowSpacingValue: (spacingM: number) => `${spacingM} m`,
     loading: '標高データを読み込んでいます',
     retry: '再試行',
     showWaterFlow: '水の流れ',
@@ -114,7 +117,8 @@ export const strings = {
     continuous: '連続',
   },
   legend: {
-    water: '水深',
+    /** 見出し。palette は waterStepped・waterContinuous */
+    waterTitle: (palette: string) => `水深（${palette}）`,
     waterStepped: '5 cm 刻み',
     waterContinuous: '連続',
     waterMin: '0.01 m',
@@ -134,6 +138,17 @@ export const strings = {
     useAsCenter: 'ここを降雨中心にする',
     newPoint: 'ここを新しい地点にする',
     close: '閉じる',
+  },
+  /** 数値の単位と組み立て（src/ui/format.ts が使う。桁の丸めは format.ts が行い、ここは文字列だけ） */
+  format: {
+    meters: (value: string) => `${value} m`,
+    cellSize: (value: string) => `約 ${value} m`,
+    percent: (value: string) => `${value}%`,
+    cubicMeters: (value: string) => `${value} m³`,
+    area: (value: string) => `${value} m²`,
+    stepsPerSecond: (value: string) => `${value} step/秒`,
+    step: (step: number) => `Step ${step}`,
+    none: '—',
   },
   errors: {
     'no-data': 'この地域には標高データがありません',

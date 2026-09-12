@@ -20,7 +20,9 @@ interface Target {
 /**
  * 水深の 2D 表示（spec 04 §6.1、R04-7）と水の流れの矢印（§6.2）。範囲の四隅に合わせた canvas ソースを
  * animate: true で置き、描画フレームごとに最新の水深だけを着色する（届いた frame が多くても 1 回）。
- * 水深の配列は SimulationClient が持つもので、ここでは参照するだけ（返却済みのバッファは渡されない）
+ * 水深の配列は SimulationClient が持つもので、ここでは参照するだけ。client は次の frame で古い方を Worker へ
+ * 返す（転送で切り離す）。Reset の後に古い実行の frame が届くと、session は setWater を呼ばないまま client が
+ * 前のバッファを返すので、session は reset・start・失敗・異常終了のたびに setWater(null) で参照を外す
  */
 export class WaterOverlay {
   private readonly map: MapLibreMap
