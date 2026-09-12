@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { TERRAIN_LAYER_IDS } from '../../src/map/TerrainOverlay'
+import { WATER_LAYER_IDS } from '../../src/map/WaterOverlay'
 import { strings } from '../../src/ui/strings'
 import { acknowledgeDisclaimer, clickMap, collectErrors, tabTo, waitTerrain } from './support/app'
 import { routeGsi } from './support/gsi'
@@ -6,6 +8,13 @@ import { routeGsi } from './support/gsi'
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 /** ダークのときに <html> に付くクラス（Task 10 Step 5 で実ブラウザで確かめた名前。違えばここを直す） */
 const DARK_CLASS = 'dark'
+// MapController が render のたびに data-overlay-layers へ書く並びと同じ（レビュー指摘の修正・fix round 1）。
+// data-range-shown は addAll が立てるだけで setStyle で消えても消されないため、ベースマップの切り替えで
+// レイヤーが戻っているかの確かめには使えない。map.getLayer() で今のスタイルの実物を数えたこの印を使う
+const OVERLAY_LAYER_IDS = [
+  ...Object.values(TERRAIN_LAYER_IDS),
+  ...Object.values(WATER_LAYER_IDS),
+].join(',')
 
 test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
   test.beforeEach(async ({ context }) => {
@@ -187,12 +196,18 @@ test.describe('表示の設定（spec 04 §2）', () => {
     const errors = collectErrors(page)
     await page.goto(SHIBUYA)
     await waitTerrain(page)
+    const mapEl = page.locator('[data-map-loaded="true"]')
     await page.getByRole('button', { name: strings.playback.start }).click()
     await page.getByRole('button', { name: strings.map.basemaps.photo }).click()
     await expect.poll(() => counts.photo).toBeGreaterThan(0)
+    // data-range-shown は addAll が立てるだけで setStyle で消えても消されないので、
+    // 切り替え後にレイヤーが本当に戻っているかは map.getLayer() の実物を数えた印で確かめる
+    await expect(mapEl).toHaveAttribute('data-basemap', 'photo')
+    await expect(mapEl).toHaveAttribute('data-overlay-layers', OVERLAY_LAYER_IDS)
     await page.getByRole('button', { name: strings.map.basemaps.std }).click()
     await expect.poll(() => counts.std).toBeGreaterThan(0)
-    await expect(page.locator('[data-range-shown="true"]')).toBeAttached()
+    await expect(mapEl).toHaveAttribute('data-basemap', 'std')
+    await expect(mapEl).toHaveAttribute('data-overlay-layers', OVERLAY_LAYER_IDS)
     // 切り替えの後も、表示の切り替えが効く（消えたレイヤーを足し直している）
     await page.getByLabel(strings.panel.showWaterFlow).click()
     await page.getByLabel(strings.panel.showElevation).click()
@@ -208,11 +223,13 @@ test.describe('表示の設定（spec 04 §2）', () => {
     const errors = collectErrors(page)
     await page.goto(SHIBUYA)
     await waitTerrain(page)
+    const mapEl = page.locator('[data-map-loaded="true"]')
     // 既定は「淡色」なので、まず「標準」に切り替え、その style.load を待たずに続けて「写真」へ切り替える
     await page.getByRole('button', { name: strings.map.basemaps.std }).click()
     await page.getByRole('button', { name: strings.map.basemaps.photo }).click()
     await expect.poll(() => counts.photo).toBeGreaterThan(0)
-    await expect(page.locator('[data-range-shown="true"]')).toBeAttached()
+    await expect(mapEl).toHaveAttribute('data-basemap', 'photo')
+    await expect(mapEl).toHaveAttribute('data-overlay-layers', OVERLAY_LAYER_IDS)
     expect(errors).toEqual([])
   })
 
