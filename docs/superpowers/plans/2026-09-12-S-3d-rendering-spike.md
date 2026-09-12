@@ -40,8 +40,8 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | D6 | A の `addProtocol` の関数は、Terrarium 形式の RGBA から作った `ImageBitmap` をそのまま返す（PNG に符号化しない）。raster-dem の `tileSize: 256`、`maxzoom: 17`、`encoding: 'terrarium'`。無効値は 0m（spec 05 §4） | MapLibre 6.6.0 の画像の要求（`maplibre-gl-dev.mjs` の `doImageRequest`）は、応答の `data` が `ImageBitmap` ならそのまま使い、raster-dem の `loadTile` も `ImageBitmap` を受ける。符号化の往復を省ける |
 | D7 | 描画の行列は `options.defaultProjectionData.mainMatrix`（Float64Array）を使い、グリッドの局所座標（列 + 0.5、行 + 0.5、m）からメルカトルへのモデル行列を JS の倍精度で掛けてから Float32 にして渡す。三つの候補とも同じ `u_matrix` の uniform を使い、three でも `RawShaderMaterial` にこの行列を渡す（three のカメラの行列は使わない） | メルカトル座標（約 0.9）を float32 の頂点に入れると、1 セル（約 3e-8）が精度の限界に近く、頂点が揺れる。行列を 1 つにそろえると、候補の差が「three の有無」と「地形の描き方」だけになる |
 | D8 | 水面の頂点シェーダは `高さ = 水深 ≥ 1cm ? 標高 + 水深 : 標高`、フラグメントシェーダは水深 < 1cm を捨てる。1cm の比較には 0.0099 を使う（Float32 の 0.01 の丸めで膜が消えないように）。水面の色は 1 色（青、不透明度 0.7）。5cm 刻みの色分けは作らない | 色分けは 05 の仕事。沈み込みとちらつきの判定には 1 色で足りる |
-| D9 | **沈み込みとちらつきを数値でも測る。** `capture=1` のときだけ `preserveDrawingBuffer: true` にし、水面を不透明のマゼンタ（ブレンドなし）で描いた画像から (a) 可視率 = 深度テストありのマゼンタの画素数 ÷ 深度テストなしの画素数、(b) ちらつき = bearing を 0・+0.002°・−0.002° にした 3 枚で、深度テストなしの水面の内側（2 画素削った範囲。遠くの画素の移動をちらつきと取り違えないため）の画素のうち、見え方が変わった画素の割合、を求める。判定は**合成の斜面の 1cm の膜**（遮るものが無い）で行い、閾値は可視率 0.98 以上・ちらつき 1% 以下とする。実データの場面の値は、手前の地形が正当に隠す分を含むので参考値とする | spec は「並べて比べる」とするが、64 通り × 候補の目視だけでは合否の境目を決めにくい。数値は目視の補助で、判定の根拠を報告に残せる |
-| D10 | スクリーンショットの組み合わせは、垂直強調 1・2・5・10 × pitch 0・45・60・85 × ズーム 15・16・17・18 の 64 通りを、場面 2 つ × 候補 4 つで撮る（画面 960 × 600、bearing 0、範囲の中心）。個々の PNG は `spike/out/`（git 管理外）に置き、候補 × 場面ごとに 1 枚の**コンタクトシート**（行 = ズーム × 垂直強調の 16 行、列 = pitch の 4 列、1 コマ 240 × 150、JPEG 品質 70）を Playwright で合成して `spike/results/sheets/` にコミットする（最大 8 枚） | 数百枚の PNG をコミットしない。1 枚で 1 候補・1 場面の全体を見比べられる |
+| D9 | **沈み込みとちらつきを数値でも測る。** `capture=1` のときだけ `preserveDrawingBuffer: true` にし、水面を不透明のマゼンタ（ブレンドなし）で描いた画像から (a) 可視率 = 深度テストありのマゼンタの画素数 ÷ 深度テストなしの画素数、(b) ちらつき = bearing を 0・+0.002°・−0.002° にした 3 枚で、深度テストなしの水面の内側（2 画素削った範囲。遠くの画素の移動をちらつきと取り違えないため）の画素のうち、見え方が変わった画素の割合、を求める。判定は**合成の斜面の 1cm の膜**（遮るものが無い）で行い、閾値は可視率 0.98 以上・ちらつき 1% 以下とする。数値の計測の視点は 16 通り（ズーム 15〜18 × 倍率 1・10 × pitch 60・85。レビューの反映 R1）。実データの場面の値は、手前の地形が正当に隠す分を含むので参考値とする | spec は「並べて比べる」とするが、64 通り × 候補の目視だけでは合否の境目を決めにくい。数値は目視の補助で、判定の根拠を報告に残せる |
+| D10 | スクリーンショットの組み合わせは、垂直強調 1・2・5・10 × pitch 0・45・60・85 × ズーム 15・16・17・18 の 64 通りを、場面 2 つ × 候補 4 つで撮る（画面 960 × 600、bearing 0、範囲の中心）。個々の PNG は `spike/out/`（git 管理外）に置き、候補 × 場面ごとに 1 枚の**コンタクトシート**（行 = ズーム × 垂直強調の 16 行、列 = pitch の 4 列、1 コマ 240 × 150、JPEG 品質 70）を Playwright で合成して `spike/results/sheets/` にコミットする（最大 8 枚）。64 枚の PNG を data URI で 1 つの HTML に入れると 20〜30 MB になる。まず `setContent` で試し、1 枚に 1 分以上かかるなら、`out/` に HTML を書いて `file://` で開き、`out/shots/` の PNG を相対パスで読む形（Task 3 Step 7 の `writeContactSheetFromFiles`）に切り替える（レビューの反映 R5） | 数百枚の PNG をコミットしない。1 枚で 1 候補・1 場面の全体を見比べられる |
 | D11 | 報告の PR（`main` 向け）には、判断に効いた数枚（6 枚まで、各 200 KB 以下の JPEG）だけを `docs/superpowers/spikes/2026-09-12-3d-rendering/` に入れ、コンタクトシートとコードは `spike/3d-rendering` ブランチのコミットのハッシュ付きの URL で参照する。そのため、ユーザーに `spike/3d-rendering` も push してもらう（Task 10 の引き継ぎ） | `main` を軽く保ちつつ、spec S §4 の「コードはブランチに残し、報告から参照する」を満たす |
 | D12 | 報告のファイル名の日付は **2026-09-12**（RS-3 の裁定の日＝スパイクの開始日）に固定する。途中の結果は、各 Task でこのブランチの報告の下書き（同じパス）に書き足し、Task 10 で報告のブランチへ写す | 途中で止まっても結果が残る。パスが全 Task で同じになる |
 | D13 | この計画も、報告の PR に含めて `main` に入れる（`docs/superpowers/plans/2026-09-12-S-3d-rendering-spike.md`） | スパイクのブランチはマージしないので、ほかに計画を `main` に残す経路がない |
@@ -52,6 +52,19 @@ spec と依頼が決めていない細部を、最小限（YAGNI）で決めた�
 | D18 | 地形の見た目の補助として、A には同じ DEM の `hillshade` レイヤー（地形とは別のソース）を、B・B-raw には法線からの簡単な陰影を付ける | 陰影が無いと、淡色地図の上で起伏がスクリーンショットに写らない |
 | D19 | 型の確かめのためのユニットテストは、純粋な関数（URL の引数、場面の生成、グリッドとサンプラーの一致、Terrarium の符号化、メッシュの添字、行列の積）にだけ書く。描画は Playwright の数値とスクリーンショットで確かめる | TDD は結論を支える計算の正しさに絞る。描画の単体テストは tech-spec §11.4 のとおり行わない |
 | D20 | 流れの矢印（spec 05 §3.3）は、**A 系についてだけ最小の比較をする**（Task 5 Step 7、約 30〜45 分）。04 の `arrows` は使わず、範囲に 20m おきの固定の点（向きは南で一定）の GeoJSON と、ImageData から `addImage` した矢印の symbol レイヤーで描く（`text-field` は使わない。CSP がグリフのサーバーを許していないため）。垂直強調 1・5・10 × pitch 0・60°（ズーム 17）で、(a) 地形の面に載り倍率に従うか、(b) 水面の Custom Layer の前・後に置いたとき水面に隠れるか上に描かれるか、(c) 水面の高さへ上げる手段が 6.6.0 にあるか、を既存のコンタクトシートの仕組みで記録する。B・B-raw のインスタンス描画の矢印は 05 で作るので比べない（報告の §11） | spec 05 §3.3 が、方式 A について S での比較を求めている。04 の出力に依らない固定の点にすれば、スパイクを 05 の実装にせずに済む |
+
+## レビューの反映（2026-09-12）
+
+レビュー役の承認（要修正なし）の際の推奨と軽微な指摘を、次のとおり取り込んだ。
+
+| ID | 内容 | 反映先 |
+|---|---|---|
+| R1 | 判定 (2) の数値の計測を 16 視点（ズーム 15〜18 × 倍率 1・10 × pitch 60・85）に絞る。64 視点では 1 候補 約 1,500 回の idle（SwiftShader で 13〜50 分）になり、30 分の制限と 3 日に収まらない。スクリーンショットは 64 視点のまま。表の行はズーム × 倍率、閾値は変えない | D9、Task 3 Step 7・8・9、自己レビュー |
+| R2 | A' は、`measureWater` の最初の idle の後から終わりまで高さを取り直さない（`freezeElevation`）。ちらつきの 3 枚を同じ高さで比べる。取り直しは視点が変わったときだけ行い、`ResampleInfo` は setView の時の値だけを記録する | Task 5 Step 2（`a.ts`・`capture.ts`・`types.ts`） |
+| R3 | 判定 (2) の × の原因を分ける 2 つ目の規則: LOD の食い違いは「高さの差 × 倍率」で増えるので、× が倍率 1 → 10 で増えれば LOD、倍率によらず同じなら深度の精度。Task 2 のすり鉢の差と「1cm × 倍率」の比較で照らし合わせる | Task 3 Step 9 |
+| R4 | 報告の §11 に、無効セルの頂点が z = 0 へ落ちる細い三角形（05 で頂点を寄せるか三角形を捨てる。フィクスチャに無効画素が無いので、このスパイクでは現れない）を足す | 報告の骨組みの §11、Task 10 Step 4 |
+| R5 | コンタクトシートの HTML が重い場合（data URI で 20〜30 MB）の代わりの経路 | D10、Task 3 Step 7 |
+| R6 | 報告の §2 に「three はスパイクのブランチだけの依存で、main には入っていない」 | 報告の骨組みの §2 |
 
 ## 事前に確かめた事実（2026-09-12、main のチェックアウトの `node_modules` と `pnpm view` で確認）
 
@@ -1029,6 +1042,7 @@ for (const scene of ['synthetic', 'real'] as const) {
 | 起点のコミット | f199a02 |
 | MapLibre GL JS | 6.6.0 |
 | three | 0.185.1（@types/three 0.185.4、推移的依存 （Task 1 Step 1 の数） 個。開発時のみ） |
+| three の扱い | スパイクのブランチ（`spike/3d-rendering`）だけの依存。`main` には入っていない |
 | 自動の計測 | Playwright 1.62.1 の Chromium、`--enable-unsafe-swiftshader`、960 × 600、deviceScaleFactor 1 |
 | 本番のバンドル（スパイクの前） | 初期ロード （Step 0 の値） KB / 総量 （Step 0 の値） KB |
 
@@ -1078,6 +1092,7 @@ for (const scene of ['synthetic', 'real'] as const) {
 
 - raster-dem の `encoding: 'custom'`（GSI の係数 655.36・2.56・0.01）で `addProtocol` を省く方法は試していない。正の標高だけなら線形に読めるが、負の標高と無効値（2^23）で崩れる
 - B・B-raw の流れの矢印（インスタンス描画）は比べていない（05 で作る。計画 D20）
+- 無効セルを含む DEM: 無効の頂点（標高 0・水深 0）が水のある有効セルの隣にあると、`v_depth` の補間で細い三角形が z = 0 まで落ちる。05 では、無効の頂点の高さを隣の有効セルに寄せるか、その三角形を捨てる必要がある。フィクスチャに無効画素が無いので、このスパイクでは現れない
 ```
 
 表の「（…の値）」は、この Step で Step 0 と Step 1 のメモから実際の値を書き入れる（空欄のままコミットしない）。
@@ -1626,7 +1641,7 @@ git commit -m "スパイク S: 候補 A の地形（addProtocol で Terrarium �
 - Produces（`threeWater.ts`）: `interface ThreeWaterOptions { id: string; scene: Scene; elevation: Float32Array; elevScale: 'exaggeration' | 'one'; zfix: ZFix; renderTimes: number[] }`、`interface ThreeWater { layer: CustomLayerInterface; setExaggeration(value: number): void; setDepth(depth: Float32Array): void; setElevation(elevation: Float32Array): void; setDebug(mode: WaterDebug): void }`、`createThreeWater(map: MapLibreMap, options: ThreeWaterOptions): ThreeWater`
 - Produces（`capture.ts`・`types.ts`）: `interface WaterMeasure { footprintPx: number; visibleRatio: number; flickerRatio: number; interiorPx: number }`、`measureWater(map: MapLibreMap, candidate: CandidateHandle): Promise<WaterMeasure>`、`SpikeGlobal.measure(): Promise<WaterMeasure>`
 - Produces（`contactSheet.ts`）: `interface Shot { label: string; png: Buffer }`、`writeContactSheet(context: BrowserContext, shots: Shot[], columns: number, title: string, path: string): Promise<void>`
-- Produces（`matrix.spec.ts`）: 候補の一覧 `MATRIX_CANDIDATES`（この Task では `['a']`。Task 5〜7 で足す）。テスト名 `matrix: <候補>`（`-g "matrix: a$"` で 1 候補だけ回せる）
+- Produces（`matrix.spec.ts`）: 候補の一覧 `MATRIX_CANDIDATES`（この Task では `['a']`。Task 5〜7 で足す）、数値の計測の視点 `MEASURE_VIEWS`（16 通り。R1）。テスト名 `matrix: <候補>`（`-g "matrix: a$"` で 1 候補だけ回せる）
 
 - [ ] **Step 1: メッシュの失敗するテストを書く**
 
@@ -2189,6 +2204,69 @@ export async function writeContactSheet(
 }
 ```
 
+コンタクトシートの `setContent` が重い場合の代わり（R5。まず上の `writeContactSheet` で試し、1 枚に 1 分以上かかったときだけ使う）: `spike/e2e/support/contactSheet.ts` の先頭に `import { writeFileSync } from 'node:fs'` を足し、末尾に足す:
+
+```ts
+/**
+ * 代わりの経路（計画 D10）: data URI の HTML（20〜30 MB）を使わず、HTML を out/ に書いて file:// で開き、
+ * out/shots/ の PNG を相対パスで読ませる
+ */
+export async function writeContactSheetFromFiles(
+  context: BrowserContext,
+  shots: { label: string; file: string }[], // file は out/shots/ の中のファイル名
+  columns: number,
+  title: string,
+  outDir: URL, // spike/out/
+  path: string,
+): Promise<void> {
+  const html = new URL('contact.html', outDir)
+  const cells = shots
+    .map(
+      (shot) =>
+        `<figure><img src="shots/${encodeURIComponent(shot.file)}"><figcaption>${shot.label}</figcaption></figure>`,
+    )
+    .join('')
+  writeFileSync(
+    html,
+    `<!doctype html><meta charset="utf-8"><style>
+    body { margin: 8px; font: 11px sans-serif; }
+    h1 { margin: 0 0 4px; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(${columns}, 240px); }
+    figure { position: relative; margin: 0; }
+    img { display: block; width: 240px; height: 150px; }
+    figcaption { position: absolute; top: 2px; left: 2px; padding: 0 3px; background: #ffffffcc; }
+  </style><h1>${title}</h1><div class="grid">${cells}</div>`,
+  )
+  const page = await context.newPage()
+  await page.setViewportSize({ width: columns * 240 + 16, height: 600 })
+  await page.goto(html.href)
+  await page.screenshot({ path, type: 'jpeg', quality: 70, fullPage: true })
+  await page.close()
+}
+```
+
+切り替えるときは、下の `matrix.spec.ts` の「1. スクリーンショット」のループと `writeContactSheet` の呼び出しを次にする（import に `writeContactSheetFromFiles` を足す）:
+
+```ts
+      const files: { label: string; file: string }[] = []
+      for (const view of allViews()) {
+        await setView(page, view)
+        const file = `${candidate}-${scene}-${label(view).replaceAll(' ', '_')}.png`
+        writeFileSync(new URL(file, shotsDir), await page.screenshot())
+        files.push({ label: label(view), file })
+      }
+      await writeContactSheetFromFiles(
+        context,
+        files,
+        4,
+        `${candidate} / ${scene}（行: ズーム × 垂直強調、列: pitch 0・45・60・85）`,
+        new URL('../out/', import.meta.url),
+        fileURLToPath(new URL(`sheets/${candidate}-${scene}.jpg`, results)),
+      )
+```
+
+切り替えたら、そのことを報告の §3 に書く。
+
 `spike/e2e/matrix.spec.ts`:
 
 ```ts
@@ -2205,6 +2283,10 @@ const MATRIX_CANDIDATES = ['a'] as const
 // 判定の閾値（計画 D9）
 const MIN_VISIBLE = 0.98
 const MAX_FLICKER = 0.01
+// 数値の計測の視点（16 通り）: ズーム 15〜18 × 倍率 1・10 × pitch 60・85。スクリーンショットは 64 通りのまま（R1）
+const MEASURE_VIEWS: View[] = allViews().filter(
+  (v) => (v.exaggeration === 1 || v.exaggeration === 10) && (v.pitch === 60 || v.pitch === 85),
+)
 
 const results = new URL('../results/', import.meta.url)
 const shotsDir = new URL('../out/shots/', import.meta.url)
@@ -2269,7 +2351,7 @@ for (const candidate of MATRIX_CANDIDATES) {
       )
     }
 
-    // 2. 判定 (2): 合成の斜面の 1cm の膜だけを、対策なし・ありで測る。実データは対策ありの参考値
+    // 2. 判定 (2): 合成の斜面の 1cm の膜だけを、対策なし・ありで測る。実データは対策ありの参考値（16 視点。R1）
     const plans = [
       { scene: 'synthetic', water: 'film', zfix: 'none' },
       { scene: 'synthetic', water: 'film', zfix: 'offset' },
@@ -2286,7 +2368,7 @@ for (const candidate of MATRIX_CANDIDATES) {
           capture: 1,
         })),
       )
-      for (const view of allViews()) {
+      for (const view of MEASURE_VIEWS) {
         await setView(page, view)
         rows.push({ scene: plan.scene, zfix: plan.zfix, view, measure: await measure(page) })
       }
@@ -2306,7 +2388,7 @@ Run: `pnpm lint && pnpm typecheck && pnpm test`
 Expected: すべて成功
 
 Run: `pnpm spike:e2e spike/e2e/matrix.spec.ts -g "matrix: a$"`
-Expected: PASS（ページのエラーが無い）。`spike/results/water-a.{json,md}` と `spike/results/sheets/a-{synthetic,real}.jpg` ができる。所要時間をメモする（報告の「方法」に書く）。30 分を超えそうなら、`allViews()` を使う箇所のうち「2. 判定 (2)」の実データの行（参考値）を外して回し直し、外したことを報告に書く
+Expected: PASS（ページのエラーが無い）。`spike/results/water-a.{json,md}` と `spike/results/sheets/a-{synthetic,real}.jpg` ができる。所要時間をメモする（報告の「方法」に書く）。見積もり（R1）: スクリーンショット 128 視点 × idle 1 回と、数値の計測 4 通り × 16 視点 × idle 約 6 回で、計 約 510 回の idle。SwiftShader で idle が 0.5〜2 秒なら 5〜17 分。20 分を超えそうなら、`plans` から実データの行（参考値）を外して回し直し、外したことを報告に書く
 
 コンタクトシートを開き（`spike/results/sheets/a-synthetic.jpg`）、目で次を確かめてメモする: 3 つの池の縁が地形に沈んでいないか、斜面の膜がまだらになっていないか、垂直強調 10x で水面と地形がずれていないか（合格基準 2）。
 
@@ -2316,9 +2398,16 @@ Expected: PASS（ページのエラーが無い）。`spike/results/water-a.{jso
 
 | 観測 | 判定 |
 |---|---|
-| zfix=offset か offset2 の 16 行がすべて ○ | **合格**（対策で足りる）。zfix=none との差と、どちらの係数で足りたかを報告に書く |
+| zfix=offset か offset2 の 8 行（ズーム 4 × 倍率 1・10）がすべて ○ | **合格**（対策で足りる）。zfix=none との差と、どちらの係数で足りたかを報告に書く |
 | offset・offset2 のどちらにも × があるが、× の行が「ズーム 15・16 だけ」など LOD で説明できる（Task 2 の表のすり鉢の差が 1cm × 倍率を超えるズーム） | **不合格（LOD による沈み込み）**。深度の精度ではなく高さの食い違いが原因。A' で改善する見込みがある |
 | offset・offset2 のどちらにも × があり、LOD の差が小さいズーム（17・18）でも起きる | **不合格（深度の精度）**。A 系の対策（polygonOffset）では足りない |
+
+× の原因を分ける 2 つ目の規則（R3。上の表の 2 行目と 3 行目のどちらに当たるかを、次の 2 つで確かめる）:
+
+1. **倍率への依存:** LOD による食い違いは「高さの差 × 倍率」で大きくなる。同じズームで、× が倍率 1 では出ず倍率 10 で出る（または可視率が倍率 1 より 10 で明らかに下がる）なら **LOD による沈み込み**。倍率 1 と 10 で同じように × なら **深度の精度**
+2. **Task 2 との照合:** 水面は（シミュレーションの標高 + 0.01）× 倍率、地形は シミュレーションの標高 × 倍率 + d の高さに描かれる（d は Task 2 の表の最後の列「地形 − シミュ × 倍率」、倍率込みの m）。したがって d > 0.01 × 倍率（倍率 1 に直した差が 1cm を超える）のズームと倍率では、LOD だけで膜が沈む。× の出た（ズーム, 倍率）ごとに、`api-probe.json` の同じズーム・倍率の d と 0.01 × 倍率を比べ、超えていれば LOD、超えていなければ深度の精度とみなす（すり鉢の点の値なので斜面より大きめに出る。LOD 側に寄った見積もりであることを報告に書く）
+
+1 と 2 の見方が食い違ったら、両方の数値を報告に書き、判定は「深度の精度」（A 系にとって悪い方）にする。
 
 `docs/superpowers/spikes/2026-09-12-3d-rendering.md` を書き足す:
 - §3 に「可視率・ちらつきの定義（`WaterMeasure` の 4 項目の説明をそのまま）、閾値（可視率 0.98 以上・ちらつき 1% 以下）、判定に使う場面（合成の斜面の 1cm の膜。遮るものが無い）、実データの値は手前の地形が正当に隠す分を含む参考値であること、所要時間」
@@ -2383,7 +2472,7 @@ git commit -m "スパイク S: 1 日目の中間の判定（行列と地形の�
 **2 日目の午前。Task 4 の配分で「最小」なら Step 1〜7（約 2 時間 45 分）、「全部」なら Step 1〜9（約半日）。Step 7 の流れの矢印（D20）はどちらでも行う。**
 
 **Files:**
-- Modify: `spike/src/types.ts`（`ResampleInfo`・`ArrowPlacement`・`CandidateHandle.lastResample?`・`freezeElevation?`・`showArrows?`）、`spike/src/candidates/a.ts`（A' の分岐、矢印）、`spike/src/main.ts`（候補 `a2`）、`spike/e2e/matrix.spec.ts`（`MATRIX_CANDIDATES`）
+- Modify: `spike/src/types.ts`（`ResampleInfo`・`ArrowPlacement`・`CandidateHandle.lastResample?`・`freezeElevation?`・`showArrows?`）、`spike/src/candidates/a.ts`（A' の分岐、矢印）、`spike/src/capture.ts`（計測の間は高さを固定。R2）、`spike/src/main.ts`（候補 `a2`）、`spike/e2e/matrix.spec.ts`（`MATRIX_CANDIDATES`）
 - Create: `spike/e2e/resample.spec.ts`、`spike/src/candidates/arrows.ts`、`spike/e2e/arrows.spec.ts`、（全部のとき）`spike/e2e/stale.spec.ts`
 - Create（実行の結果）: `spike/results/water-a2.{json,md}`、`spike/results/sheets/a2-{synthetic,real}.jpg`、`spike/results/a2-resample.{json,md}`、`spike/results/a-arrows.md`、`spike/results/sheets/a-arrows.jpg`、（全部のとき）`spike/results/a2-stale.md`
 - Modify: `docs/superpowers/spikes/2026-09-12-3d-rendering.md`
@@ -2399,7 +2488,10 @@ git commit -m "スパイク S: 1 日目の中間の判定（行列と地形の�
 `spike/src/types.ts` の `ApiProbeResult` の次に足す:
 
 ```ts
-/** A' の高さの取り直しの記録（Task 5）。ms はメインスレッドを止めた時間（tech-spec §14.1 の 50ms と比べる） */
+/**
+ * A' の高さの取り直しの記録（Task 5）。ms はメインスレッドを止めた時間（tech-spec §14.1 の 50ms と比べる）。
+ * 視点が変わったとき（setView）の取り直しだけを記録する（R2）
+ */
 export interface ResampleInfo {
   ms: number
   zoom: number | null // queryTerrainElevation と同じ値を返す DEM のズーム。見つからなければ null
@@ -2531,9 +2623,19 @@ function resampleHeights(
 ```ts
   let lastResample: ResampleInfo | null = null
   let frozen = false
+  // 取り直しは視点（中心・ズーム・pitch・bearing・倍率）が変わったときだけ行い、そのときだけ記録する。
+  // measure の中の idle（同じ視点、または固定中）では取り直さないので、記録は setView の時の値になる（R2）
+  let resampledView = ''
+  const viewKey = (): string => {
+    const c = map.getCenter()
+    return [c.lng, c.lat, map.getZoom(), map.getPitch(), map.getBearing(), exaggeration].join(',')
+  }
   const whenIdle = async (): Promise<void> => {
     await waitIdle(map)
     if (variant !== 'a2' || frozen) return
+    const key = viewKey()
+    if (key === resampledView) return
+    resampledView = key
     const { heights, info } = resampleHeights(map, scene, exaggeration)
     lastResample = info
     water.setElevation(heights)
@@ -2570,6 +2672,28 @@ function resampleHeights(
 ```ts
 const MATRIX_CANDIDATES = ['a', 'a2'] as const
 ```
+
+`spike/src/capture.ts` の `measureWater` を、次の 2 か所で変える（R2。A' のちらつきの 3 枚を同じ高さで比べる。A・B 系には `freezeElevation` が無いので何もしない）。
+
+最初の idle の直後:
+
+```ts
+  candidate.setDebug('mask-nodepth')
+  await candidate.whenIdle()
+  // A' は、ここから終わりまで高さを取り直さない（bearing を ±0.002° 動かしても同じ高さで比べる）
+  candidate.freezeElevation?.(true)
+  const footprint = readMask(map)
+```
+
+最後（元の表示に戻した後）:
+
+```ts
+  candidate.setDebug('off')
+  await candidate.whenIdle()
+  candidate.freezeElevation?.(false)
+```
+
+`stale.spec.ts`（Step 8）は、計測の前に自分で固定し、計測の後に自分で外すので、意味は変わらない（計測の中で固定しても、最後に外しても、stale.spec の次の手順が外してから視点を戻す）。
 
 - [ ] **Step 3: 取り直しの時間と高さの差の E2E を書く**
 
@@ -4279,7 +4403,7 @@ git rev-parse HEAD
 
   あわせて、three を採らない場合に変わる tech-spec の箇所（§1 の表の「3D 描画 | Three.js」の行、§1.1 の react-three-fiber の理由、§14.2 の「Three.js」の記述、`vite.config.ts` のコメントの「05 で動的 import する Three.js」）を、改訂案の一覧として書く
 - §10 05 への申し送り: spec 05 §4 のどの列に絞るか、A 系を採る場合の流れの矢印の描き方（Task 5 Step 7 の `a-arrows.md` の (a)〜(c) から、symbol レイヤーで足りるか、Custom Layer で水面の高さに描く必要があるか）、採る z-fighting の対策と係数、水深のアップロードを含む render の CPU 時間（Task 8）、A' を採る場合は高さの取り直しの時間と 50ms の上限、B 系を採る場合はベースマップの合成と縁
-- §11 未確認の事項: 次を必ず含める。(a) raster-dem の `encoding: 'custom'` で変換を省く方法、(b) 本番の A は z15 以下で DEM5・DEM10B を使うので、このスパイクの A（z17 からの 1 点の取得）より LOD のずれが大きくなりうること（D5）、(c) B・B-raw の流れの矢印（インスタンス描画）は比べていないこと（05 で作る。D20）、(d) Firefox・Safari、WebGL のコンテキストの喪失、クリックからセルを求める方法（spec 05 の範囲）、(e) 実 GPU の fps が届いていなければそのこと
+- §11 未確認の事項: 次を必ず含める。(a) raster-dem の `encoding: 'custom'` で変換を省く方法、(b) 本番の A は z15 以下で DEM5・DEM10B を使うので、このスパイクの A（z17 からの 1 点の取得）より LOD のずれが大きくなりうること（D5）、(c) B・B-raw の流れの矢印（インスタンス描画）は比べていないこと（05 で作る。D20）、(d) Firefox・Safari、WebGL のコンテキストの喪失、クリックからセルを求める方法（spec 05 の範囲）、(e) 実 GPU の fps が届いていなければそのこと、(f) 無効セルを含む DEM で無効の頂点が z = 0 へ落ちる細い三角形（骨組みの §11 の項目。R4）
 
 ```bash
 git add docs/superpowers/spikes
@@ -4376,3 +4500,4 @@ gh pr create --base main --head docs/S-3d-rendering-report \
 - **プレースホルダ:** 報告の下書きの「（… の値）」は、同じ Step の中で実測値を書き入れる指示つきの欄である。コードの Step に TBD・TODO は無い
 - **型と名前の一致:** `Scene`・`ElevationSampler`・`CandidateHandle`（`setExaggeration`・`setDepth`・`setDebug`・`whenIdle`・`renderTimes`・`apiProbe?`・`lastResample?`・`freezeElevation?`）・`SpikeGlobal`（`setView`・`measure`・`boundaryStep`・`runFps`）・`WaterMeasure`・`FpsResult`・`ZFix`（`none`・`offset`・`offset2`）を、定義した Task と使う Task で照合した。`MATRIX_CANDIDATES` と `SEAM_CANDIDATES` は Task 5〜7 で候補を足す。`main.ts` の最終形は Task 8 Step 3 にまとめてある
 - **未検証の前提（実行の最初に確かめる）:** three 0.185.1 の `WebGLRenderer({ canvas, context })` と `RawShaderMaterial({ glslVersion: GLSL3 })` が MapLibre 6.6.0 の WebGL2 のコンテキストを共有できること（Task 3 Step 8 で分かる。だめなら、three の水面の代わりに B-raw の水面の描画を A に使い、そのことを A の回避策として報告に書く）。`map.painter.context.gl` の型（Task 1 Step 11 に代わりの書き方）。`addProtocol` の関数が `ImageBitmap` を返せること（D6。dist のコードで確認済み）
+- **時間（R1 の後）:** 数値の計測を 16 視点に絞ったので、1 候補の `matrix.spec.ts` は 約 510 回の idle（SwiftShader で 5〜17 分）。4 候補で 20〜70 分を、次の Task の作業と並行して回す。A' は計測の中で高さを取り直さない（R2）ので、A と同程度
