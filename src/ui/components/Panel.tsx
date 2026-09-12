@@ -3,30 +3,22 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import Drawer from '@mui/material/Drawer'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import LinearProgress from '@mui/material/LinearProgress'
-import Switch from '@mui/material/Switch'
 import { useTheme } from '@mui/material/styles'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { useStore } from 'zustand'
-import type { AppStore, CursorElevation, LoadFailureReason } from '../../state/appStore'
-import { ARROW_SPACINGS } from '../../state/persistedSettings'
+import type { LoadFailureReason } from '../../state/appStore'
 import type { SettingsStore } from '../../state/settingsStore'
-import {
-  formatCellSize,
-  formatCoordinate,
-  formatCubicMeters,
-  formatMeters,
-  formatPercent,
-} from '../format'
+import { formatCoordinate } from '../format'
 import { strings } from '../strings'
-import { DemInfoBadge } from './DemInfoBadge'
-import { DepressionLegend } from './DepressionLegend'
-import { WaterLegend } from './WaterLegend'
+import type { TerrainSession } from '../terrainSession'
+import { ControlsSection } from './ControlsSection'
+import { DisplaySettings } from './DisplaySettings'
+import { SpillNotices } from './SpillNotices'
+import { StatisticsPanel } from './StatisticsPanel'
+import { Row, TerrainInfo } from './TerrainInfo'
 
 const PANEL_WIDTH = 320
 
@@ -45,51 +37,16 @@ const FAILURE_DISPLAY: Record<
   worker: { severity: 'error', retryable: true },
 }
 
-function Row({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
-  return (
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, py: 0.25 }}>
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography variant="body2" component="div" data-testid={testId}>
-        {children}
-      </Typography>
-    </Box>
-  )
-}
-
-function cursorText(cursor: CursorElevation | null): string {
-  if (cursor === null) return '—'
-  if (cursor.kind === 'outside') return strings.panel.cursorOutside
-  if (cursor.kind === 'no-data') return strings.panel.cursorNoData
-  return formatMeters(cursor.meters)
-}
-
-/** 地点・DEM 情報・標高・窪地・表示の切り替え（spec 02 §6.2） */
-export function Panel({
-  store,
-  settings,
-  onRetry,
-}: {
-  store: AppStore
-  settings: SettingsStore
-  onRetry: () => void
-}) {
+export function Panel({ session, settings }: { session: TerrainSession; settings: SettingsStore }) {
   const theme = useTheme()
   const wide = useMediaQuery(theme.breakpoints.up('md'))
+  const [collapsed, setCollapsed] = useState(false)
+  const store = session.store
+  const simulation = session.simulation
   const selected = useStore(store, (s) => s.selected)
   const load = useStore(store, (s) => s.load)
-  const summary = useStore(store, (s) => s.summary)
-  const cursor = useStore(store, (s) => s.cursor)
-  const display = useStore(store, (s) => s.display)
-  const setDisplay = useStore(store, (s) => s.setDisplay)
   const sizeM = useStore(settings, (s) => s.area.sizeM)
-  const flowVectorSpacingM = useStore(settings, (s) => s.display.flowVectorSpacingM)
-  const toggle =
-    (key: 'elevation' | 'depressions' | 'flow') =>
-    (_: unknown, checked: boolean): void =>
-      setDisplay({ [key]: checked })
-
+  const hidden = collapsed && !wide
   return (
     <Drawer
       variant="permanent"
@@ -106,126 +63,74 @@ export function Panel({
       }}
     >
       <Box data-testid="panel">
-        <Typography variant="h6">{strings.panel.title}</Typography>
-        {selected === null ? (
-          <Typography variant="body2">{strings.panel.notSelected}</Typography>
-        ) : (
-          <>
-            <Row label={strings.panel.point} testId="selected-point">
-              {formatCoordinate(selected.lat)}, {formatCoordinate(selected.lon)}
-            </Row>
-            <Row label={strings.panel.range}>{strings.panel.rangeValue(sizeM)}</Row>
-          </>
-        )}
-        {load.status === 'loading' && (
-          <Box sx={{ my: 1 }}>
-            <Typography variant="body2">{strings.panel.loading}</Typography>
-            <LinearProgress
-              variant={load.started > 0 ? 'determinate' : 'indeterminate'}
-              value={load.started > 0 ? (load.done / load.started) * 100 : 0}
-            />
-          </Box>
-        )}
-        {load.status === 'failed' && (
-          <Alert
-            severity={FAILURE_DISPLAY[load.reason].severity}
-            data-testid="load-error"
-            sx={{ my: 1 }}
-            action={
-              FAILURE_DISPLAY[load.reason].retryable ? (
-                <Button color="inherit" size="small" onClick={onRetry}>
-                  {strings.panel.retry}
-                </Button>
-              ) : undefined
-            }
-          >
-            {strings.errors[load.reason]}
-          </Alert>
-        )}
-        {summary !== null && (
-          <>
-            <Divider sx={{ my: 1 }} />
-            <Row label={strings.panel.dem}>
-              <DemInfoBadge summary={summary} />
-            </Row>
-            <Row label={strings.panel.cellSize}>{formatCellSize(summary.cellSizeM)}</Row>
-            <Row label={strings.panel.invalidRatio} testId="invalid-ratio">
-              {formatPercent(summary.invalidRatio)}
-            </Row>
-            {summary.demLevel !== 1 && (
-              <Alert severity="warning" sx={{ my: 1 }}>
-                {strings.dem.notDem1aNote}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">{strings.panel.title}</Typography>
+          {!wide && (
+            <Button
+              size="small"
+              aria-expanded={!collapsed}
+              aria-controls="panel-body"
+              onClick={() => setCollapsed((c) => !c)}
+            >
+              {collapsed ? strings.panel.expand : strings.panel.collapse}
+            </Button>
+          )}
+        </Box>
+        {!hidden && (
+          <Box id="panel-body">
+            {selected === null ? (
+              <Typography variant="body2">{strings.panel.notSelected}</Typography>
+            ) : (
+              <>
+                <Row label={strings.panel.point} testId="selected-point">
+                  {formatCoordinate(selected.lat)}, {formatCoordinate(selected.lon)}
+                </Row>
+                <Row label={strings.panel.range}>{strings.panel.rangeValue(sizeM)}</Row>
+              </>
+            )}
+            {load.status === 'loading' && (
+              <Box sx={{ my: 1 }}>
+                <Typography variant="body2">{strings.panel.loading}</Typography>
+                <LinearProgress
+                  variant={load.started > 0 ? 'determinate' : 'indeterminate'}
+                  value={load.started > 0 ? (load.done / load.started) * 100 : 0}
+                />
+              </Box>
+            )}
+            {load.status === 'failed' && (
+              <Alert
+                severity={FAILURE_DISPLAY[load.reason].severity}
+                data-testid="load-error"
+                sx={{ my: 1 }}
+                action={
+                  FAILURE_DISPLAY[load.reason].retryable ? (
+                    <Button color="inherit" size="small" onClick={() => session.retry()}>
+                      {strings.panel.retry}
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {strings.errors[load.reason]}
               </Alert>
             )}
             <Divider sx={{ my: 1 }} />
-            <Typography variant="subtitle2">{strings.panel.elevation}</Typography>
-            {summary.elevationRange !== null && (
-              <>
-                <Row label={strings.panel.elevationMin} testId="elevation-min">
-                  {formatMeters(summary.elevationRange.min)}
-                </Row>
-                <Row label={strings.panel.elevationMax} testId="elevation-max">
-                  {formatMeters(summary.elevationRange.max)}
-                </Row>
-              </>
-            )}
-            <Row label={strings.panel.cursor} testId="cursor-elevation">
-              {cursorText(cursor)}
-            </Row>
+            <ControlsSection
+              settings={settings}
+              simulation={simulation.store}
+              hasTerrain={load.status === 'ready'}
+              actions={simulation}
+              onReload={() => session.retry()}
+            />
             <Divider sx={{ my: 1 }} />
-            <Typography variant="subtitle2">{strings.panel.depressions}</Typography>
-            <Row label={strings.panel.depressionCount} testId="depression-count">
-              {summary.depressionCount} {strings.panel.depressionCountUnit}
-            </Row>
-            {summary.largestDepression !== null && (
-              <>
-                <Typography variant="body2" color="text.secondary">
-                  {strings.panel.largest}
-                </Typography>
-                <Row label={strings.panel.maxDepth}>
-                  {formatMeters(summary.largestDepression.maxDepthM)}
-                </Row>
-                <Row label={strings.panel.capacity}>
-                  {formatCubicMeters(summary.largestDepression.capacityM3)}
-                </Row>
-                <Row label={strings.panel.spillElevation}>
-                  {formatMeters(summary.largestDepression.spillElevation)}
-                </Row>
-              </>
-            )}
-            <DepressionLegend />
-            <WaterLegend palette="stepped" />
+            <Typography variant="subtitle2">{strings.stats.title}</Typography>
+            <StatisticsPanel simulation={simulation.store} />
+            <SpillNotices simulation={simulation.store} />
             <Divider sx={{ my: 1 }} />
-            <Typography variant="subtitle2">{strings.panel.display}</Typography>
-            <FormControlLabel
-              control={<Switch checked={display.elevation} onChange={toggle('elevation')} />}
-              label={strings.panel.showElevation}
-            />
-            <FormControlLabel
-              control={<Switch checked={display.depressions} onChange={toggle('depressions')} />}
-              label={strings.panel.showDepressions}
-            />
-            <FormControlLabel
-              control={<Switch checked={display.flow} onChange={toggle('flow')} />}
-              label={strings.panel.showFlow}
-            />
-            <Row label={strings.panel.flowSpacing}>
-              <ToggleButtonGroup
-                size="small"
-                exclusive
-                value={flowVectorSpacingM}
-                onChange={(_, value: (typeof ARROW_SPACINGS)[number] | null) => {
-                  if (value !== null) settings.getState().setDisplay({ flowVectorSpacingM: value })
-                }}
-              >
-                {ARROW_SPACINGS.map((m) => (
-                  <ToggleButton key={m} value={m}>
-                    {m} m
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-            </Row>
-          </>
+            <Typography variant="subtitle2">{strings.panel.terrain}</Typography>
+            <TerrainInfo store={store} />
+            <Divider sx={{ my: 1 }} />
+            <DisplaySettings app={store} settings={settings} />
+          </Box>
         )}
       </Box>
     </Drawer>

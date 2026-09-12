@@ -25,9 +25,7 @@ export function App({ missingFeatures, session, settings }: Props) {
         <>
           {/* Worker を起動できなかった場合（session が null）は、地図だけを出す */}
           <MapView>{session !== null && <TerrainSessionBinder session={session} />}</MapView>
-          {session !== null && (
-            <Panel store={session.store} settings={settings} onRetry={() => session.retry()} />
-          )}
+          {session !== null && <Panel session={session} settings={settings} />}
           {session !== null && <CellInfoHost session={session} />}
         </>
       )}
