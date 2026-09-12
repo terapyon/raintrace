@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { pixelToLonLat } from '../dem/tileMath'
 import type { TerrainPayload } from '../shared/protocol'
 import { NEIGHBOR_DX, NEIGHBOR_DY } from '../simulation/terrain/neighbors'
-import { makeDepression } from '../simulation/terrain/testGrids'
+import { makeDepression } from '../simulation/testing/terrainGrids.test-support'
 import { cellCenter, flowFeatures, markerFeatures, outlineFeature } from './terrainFeatures'
 
 const geo = {

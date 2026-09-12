@@ -12,7 +12,7 @@ import {
   twoBasins,
   walledBasin,
   wetSurfaceRange,
-} from './testing/fixtures.ts'
+} from './testing/fixtures.test-support.ts'
 import type { SimulationEvent } from './types.ts'
 
 describe('base-spec §47 の 4 ケースと平衡水位（spec 03 §6.1）', () => {

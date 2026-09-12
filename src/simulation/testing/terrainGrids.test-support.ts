@@ -1,4 +1,8 @@
-import type { Depression, TerrainGrid } from './types.ts'
+/**
+ * テスト用: 02 の地形解析のテストが使う地形（TerrainGrid）と窪地の組み立て。
+ * 03 のエンジンのテストの組み立て（fixtures.test-support.ts）とは使い手が別なので、統合しない（spec 04 の計画 Task 12）
+ */
+import type { Depression, TerrainGrid } from '../terrain/types.ts'
 
 /** テスト用: 行ごとの標高の配列から地形を作る。null は無効セル */
 export function gridFromRows(rows: (number | null)[][], cellSizeM = 1): TerrainGrid {

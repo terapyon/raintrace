@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEPTH_TOLERANCE_M as DEPTH_TOLERANCE_M_TERRAIN } from '../simulation/terrain/analyzeDepressions'
-import { makeDepression } from '../simulation/terrain/testGrids'
+import { makeDepression } from '../simulation/testing/terrainGrids.test-support'
 import {
   DEPTH_TOLERANCE_M,
   depressionLegendCss,

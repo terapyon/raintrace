@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TerrainGeo } from '../shared/protocol'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain'
-import { makeDepression } from '../simulation/terrain/testGrids'
+import { makeDepression } from '../simulation/testing/terrainGrids.test-support'
 import { packTerrain } from './terrainResult'
 
 const geo: TerrainGeo = {

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FrameMessage, WorkerToMainMessage } from '../shared/protocol'
 import { TsSimulationEngine } from '../simulation/TsSimulationEngine'
-import { gridFromRows, makeDepression } from '../simulation/terrain/testGrids'
 import type { TerrainGrid } from '../simulation/terrain/types'
+import { gridFromRows, makeDepression } from '../simulation/testing/terrainGrids.test-support'
 import { TICK_INTERVAL_MS } from './playbackScheduler'
 import { ARROW_INTERVAL_MS, SimulationRunner } from './simulationRunner'
 

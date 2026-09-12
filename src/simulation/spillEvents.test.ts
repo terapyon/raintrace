@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SPILL_TOLERANCE_M } from './constants.ts'
 import type { TsSimulationEngine } from './TsSimulationEngine.ts'
-import { buildTerrain, cellCenter, engineOn, walledBasin } from './testing/fixtures.ts'
+import { buildTerrain, cellCenter, engineOn, walledBasin } from './testing/fixtures.test-support.ts'
 import type { SimulationEvent } from './types.ts'
 
 // 7 × 7 の盆地（床 0m、縁 10m、床は列・行 1〜5 の 25m²）。中央のセルを最低点、spill 標高 0.3m とする手組みの窪地

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildTerrain, engineOn } from '../simulation/testing/fixtures'
+import { buildTerrain, engineOn } from '../simulation/testing/fixtures.test-support'
 import { thinFlowArrows } from './flowArrows'
 
 describe('thinFlowArrows（spec 04 §5.1）', () => {

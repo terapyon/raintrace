@@ -8,7 +8,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/*.test-support.ts'],
       // tech-spec §11.5。対象のディレクトリができた spec で足す（src/state は 04）
       thresholds: {
         'src/simulation/**': { lines: 90 },

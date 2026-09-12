@@ -7,7 +7,7 @@ import {
   outletDistances,
   runUntilSettled,
   type Terrain,
-} from './testing/fixtures.ts'
+} from './testing/fixtures.test-support.ts'
 
 /** 02 の地形解析による満水時の水面 F（無効セルは 0）。02 の API に合わせるのはこの関数だけ */
 function filledSurface(t: Terrain): Float32Array {

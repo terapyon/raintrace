@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { gridFromRows } from '../testing/terrainGrids.test-support.ts'
 import { analyzeDepressions } from './analyzeDepressions.ts'
 import { analyzeTerrain } from './analyzeTerrain.ts'
 import { d8FlowDirection } from './d8FlowDirection.ts'
 import { lowestCell } from './lowestCell.ts'
-import { gridFromRows } from './testGrids.ts'
 
 describe('analyzeTerrain', () => {
   it('各解析の結果をまとめ、表示対象の窪地と標高の範囲を加える', () => {

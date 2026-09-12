@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { gridFromRows, indexOf } from '../testing/terrainGrids.test-support.ts'
 import { lowestCell } from './lowestCell.ts'
-import { gridFromRows, indexOf } from './testGrids.ts'
 
 describe('lowestCell', () => {
   it('標高が最小の有効セルを返す。無効セルは見ない', () => {

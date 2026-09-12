@@ -2,7 +2,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { massTolerance } from './constants.ts'
 import type { ScanMode, TsSimulationEngine } from './TsSimulationEngine.ts'
-import { buildTerrain, engineOn, sameBits, type Terrain } from './testing/fixtures.ts'
+import { buildTerrain, engineOn, sameBits, type Terrain } from './testing/fixtures.test-support.ts'
 import type { RainfallInput, StepStats } from './types.ts'
 
 interface Scenario {

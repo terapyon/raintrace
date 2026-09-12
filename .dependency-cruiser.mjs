@@ -63,13 +63,14 @@ export default {
     {
       name: 'not-reachable-from-entry',
       comment:
-        'エントリ（main.tsx、Worker のエントリ）とテストのどれからも到達できないモジュールを禁止する。orphan は依存も被依存も無いものだけなので、import を持つ死んだモジュールはこの規則で捕まえる（tech-spec §4.2）',
+        'エントリ（main.tsx、Worker のエントリ）から到達できないモジュールを禁止する。テストと、テスト用の組み立て（*.test-support.ts）は対象外。orphan は依存も被依存も無いものだけなので、import を持つ死んだモジュールや、テストからしか使わないモジュールはこの規則で捕まえる（tech-spec §4.2。04 でエンジンが Worker につながったので、テストを起点から外した）',
       severity: 'error',
-      from: { path: ['^src/main\\.tsx$', '^src/workers/[^/]+\\.worker\\.ts$', '\\.test\\.tsx?$'] },
+      from: { path: ['^src/main\\.tsx$', '^src/workers/[^/]+\\.worker\\.ts$'] },
       to: {
         path: '^src/',
         pathNot: [
           '\\.(test|spec)\\.tsx?$',
+          '\\.test-support\\.ts$',
           '\\.d\\.ts$',
           '^src/main\\.tsx$',
           '^src/workers/[^/]+\\.worker\\.ts$',

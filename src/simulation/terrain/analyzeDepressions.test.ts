@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { gridFromRows, indexOf } from '../testing/terrainGrids.test-support.ts'
 import { analyzeDepressions, isSignificant } from './analyzeDepressions.ts'
-import { gridFromRows, indexOf } from './testGrids.ts'
 import type { Depression } from './types.ts'
 
 // 周囲 10 の縁、北の縁の中央だけ 9、内側 3×3 が 8、中央が 7 の単一の窪地

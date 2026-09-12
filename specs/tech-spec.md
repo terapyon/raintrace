@@ -139,7 +139,7 @@ raintrace/
       FlowSolver.ts       1 step 分の水移動計算（エンジン内部）
       WaterGrid.ts        水深の2つのバッファと走査範囲（外接矩形。実装 spec 03 §3.5）
       Rainfall.ts         降雨の投入先と水深（実装 spec 03 §3.6）
-      testing/            テストとベンチマーク用の地形と補助関数
+      testing/            テスト用の組み立て（`*.test-support.ts`。02 の地形と 03 のエンジンの補助関数）
       terrain/            地形解析（D8 流向・窪地・spill point。実装 spec 02 §5）
       constants.ts        許容誤差などの定数（§6.6）
     dem/                  純粋 TypeScript。RGBA → 標高の変換とグリッド組み立て（I/O なし）
@@ -224,7 +224,7 @@ dem ───────→ （何にも依存しない）
 | `workers-isolated` | `src/workers/` から `simulation`・`dem`・`shared` 以外の自作モジュールへの import を禁止（Worker にメインスレッド側のコードを持ち込まない） |
 | `no-circular` | 循環依存を禁止 |
 | `no-orphans` | 依存も被依存も無いモジュールを禁止（テストと型宣言は除外） |
-| `not-reachable-from-entry` | エントリ（`src/main.tsx`、`src/workers/*.worker.ts`）とテストのどれからも到達できないモジュールを禁止。dependency-cruiser の orphan は「依存も被依存も無い」ものだけなので、import を持つ死んだモジュールはこの規則で捕まえる |
+| `not-reachable-from-entry` | エントリ（`src/main.tsx`、`src/workers/*.worker.ts`）から到達できないモジュールを禁止（テストと、テスト用の組み立て `*.test-support.ts` は対象外）。dependency-cruiser の orphan は「依存も被依存も無い」ものだけなので、import を持つ死んだモジュールや、テストからしか使わないモジュールはこの規則で捕まえる |
 
 `types-only-from-core` は、dependency-cruiser の `options.tsPreCompilationDeps: "specify"` で型のみの import を区別し、`dependencyTypesNot: ["type-only"]` を持つルールで違反を検出する。§10.1 の `verbatimModuleSyntax` により型のみの import には必ず `import type` が付くため、判定は確実である。
 

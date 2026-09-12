@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { gridFromRows, indexOf } from '../testing/terrainGrids.test-support.ts'
 import { d8FlowDirection } from './d8FlowDirection.ts'
-import { gridFromRows, indexOf } from './testGrids.ts'
 
 // 方向の番号: 1 東、2 南東、3 南、4 南西、5 西、6 北西、7 北、8 北東
 describe('d8FlowDirection', () => {

@@ -11,7 +11,7 @@ import {
   runUntilSettled,
   sameBits,
   walledBasin,
-} from './testing/fixtures.ts'
+} from './testing/fixtures.test-support.ts'
 
 describe('loadTerrain', () => {
   it('loadTerrain の前に呼ぶとエラー', () => {
