@@ -480,4 +480,12 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     detach()
     expect(overlay.clear).toHaveBeenCalled()
   })
+
+  it('restoreOverlay は overlay の restore を呼ぶ（ベースマップの切り替えで消えたレイヤーの足し直し）', () => {
+    const { session } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.restoreOverlay()
+    expect(overlay.restore).toHaveBeenCalled()
+  })
 })
