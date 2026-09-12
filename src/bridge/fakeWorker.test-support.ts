@@ -1,6 +1,7 @@
 import type {
   FrameMessage,
   MainToWorkerMessage,
+  SimFailedMessage,
   TerrainPayload,
   WorkerToMainMessage,
 } from '../shared/protocol'
@@ -77,7 +78,7 @@ export function statsAt(
   }
 }
 
-/** 水深が 4 セルすべて step の frame */
+/** 水深が 4 セルすべて step の frame。runId は既定で 1（テストの多くは start・reset を 1 回だけ呼ぶ） */
 export function frameMessage(
   terrainId: number,
   step: number,
@@ -91,6 +92,22 @@ export function frameMessage(
     arrows: null,
     stats: statsAt(step),
     stepsPerSecond: 60,
+    runId: 1,
+    ...overrides,
+  }
+}
+
+/** runId は既定で 1（frameMessage と同じ） */
+export function simFailedMessage(
+  terrainId: number,
+  overrides: Partial<SimFailedMessage> = {},
+): SimFailedMessage {
+  return {
+    type: 'simFailed',
+    terrainId,
+    reason: 'internal',
+    message: '',
+    runId: 1,
     ...overrides,
   }
 }

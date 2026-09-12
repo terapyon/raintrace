@@ -69,18 +69,21 @@ base-spec §58 の「3 操作以内」は、初回の免責の了解を除いて
 ### 5.1 メッセージ（`shared/protocol.ts`）
 
 > 2026-09-12 に実装計画で改訂: メッセージの名前を 02 の実装（`loadTerrain` など）に合わせ、`setArrowSpacing` を `setArrows` に、`error` を `simFailed` にした。
+>
+> タスク 5 の実装（タスクレビューの重要な指摘・追加の裁定）で `start`・`reset` に `runId: number` を足した。`frame`・`simFailed` にも同じ `runId` を載せて返す（メインだけが振る通し番号。`terrainId` と同様にメインが「今の実行」の frame だけを扱うために使う）。
 
 | 方向 | メッセージ | 内容 |
 |---|---|---|
 | メイン → Worker | `loadTerrain` | 02 で定義済み（`{ requestId, lon, lat, sizeM }`） |
-| | `start` | `{ rain: RainfallInput }`。雨を置いて再生 |
-| | `pause`・`resume`・`step`・`reset` | |
+| | `start` | `{ rain: RainfallInput, runId: number }`。雨を置いて再生 |
+| | `pause`・`resume`・`step` | |
+| | `reset` | `{ runId: number }` |
 | | `setSpeed` | `{ speed: 0.25 \| 0.5 \| 1 \| 2 \| 4 \| 'max' }`（`'max'` は「最速」） |
 | | `setArrows` | `{ visible: boolean, spacingM: 5 \| 10 \| 20 }`。非表示なら Worker は `flowVectors()` を呼ばない |
 | | `returnBuffer` | `{ buffer: ArrayBuffer }`（Transferable） |
 | Worker → メイン | `terrainLoaded`・`terrainProgress`・`terrainFailed` | 02 で定義済み |
-| | `frame` | `{ terrainId, step, water: ArrayBuffer（Transferable、Float32 × N²）, arrows: Float32Array \| null, stats: StepStats, stepsPerSecond }` |
-| | `simFailed` | `{ terrainId, reason: 'no-elevation-at-rain-center' \| 'internal', message }` |
+| | `frame` | `{ terrainId, step, water: ArrayBuffer（Transferable、Float32 × N²）, arrows: Float32Array \| null, stats: StepStats, stepsPerSecond, runId: number }` |
+| | `simFailed` | `{ terrainId, reason: 'no-elevation-at-rain-center' \| 'internal', message, runId: number }` |
 
 `terrainId` は、その地形を読み込んだ `loadTerrain` の `requestId`。地点を変えた直後に届く前の地形の frame を、メインは表示せずにバッファだけ返す。
 

@@ -23,11 +23,19 @@ export class SimulationSession {
   private terrain: TerrainPayload | null = null
   private center: { lon: number; lat: number } | null = null
   /**
-   * 実行中の Reset の直後、Worker が reset を処理する前に送っていた frame（最大 2 枚。tech-spec §5.2 の
-   * ダブルバッファ）が遅れて届く。前の実行の統計・越流イベントを出さないよう、Worker が水を消した
-   * step 0 の frame（ZERO_STATS）が届くまでそれらの frame を無視する（レビューの重要な指摘）
+   * 直前に送った start・reset の通し番号。frame・simFailed に同じ番号が載って返ってくるので、
+   * 「今の実行」のものだけをストアへ反映できる（タスクレビューの重要な指摘・追加の裁定）。
+   *
+   * なぜ必要か: 以前は「水を消した step 0 の frame（ZERO_STATS）が届くまで無視する」という目印で
+   * 実行の新旧を区別していたが、PlaybackScheduler の保留枠は 1 つしかなく（`playbackScheduler.ts` の
+   * `pending`）、reset の直後に start が来ると、reset がまだ送れていない ZERO_STATS は start の
+   * suspend()（discardPending()）でそのまま消えてしまう。バッファが尽きている（congestion）と
+   * この discardPending がちょうど間に合ってしまい、reset の step 0 の frame が二度と届かず、
+   * それ以降のすべての frame を無視し続けてしまう実害があった。runId は Worker 側では作らず、
+   * ここ（メイン）だけが振る。frame・simFailed には常にその時点の runId をそのまま載せて返すだけ
+   * なので、保留枠に何が残っていても取り違えない
    */
-  private awaitingResetFrame = false
+  private runId = 0
 
   constructor(client: SimulationClient, store: SimulationStore) {
     this.client = client
@@ -36,8 +44,8 @@ export class SimulationSession {
       this.store.getState().setStats(u.stats, u.stepsPerSecond),
     )
     client.onFrame((frame) => this.onFrame(frame))
-    client.onSimFailed((reason) => {
-      if (this.terrain !== null) {
+    client.onSimFailed((reason, runId) => {
+      if (this.terrain !== null && runId === this.runId) {
         // 間引き待ちの古い統計を、失敗の後に上書きしない（stats: null を保つ）
         this.statsThrottle.cancel()
         this.store.getState().failed(reason)
@@ -57,6 +65,10 @@ export class SimulationSession {
   terrainReady(terrain: TerrainPayload, center: { lon: number; lat: number }): void {
     this.terrain = terrain
     this.center = center
+    // Worker は loadTerrain の直後 runId を 0 にする（新しい地形では実行がまだ始まっていない）。
+    // 異常終了で作り直した Worker も、terrainReady は必ず新しい読み込みの後に呼ばれるので、
+    // ここで揃えておけば両者は常に同じ基準（0）から始まる
+    this.runId = 0
     // 異常終了で作り直した Worker（新しい PlaybackScheduler）は速度 1・既定の矢印設定で始まり、
     // ストアが持つ今の速度とずれる。読み込みが済むたびに送り直して揃える（コントローラーの追加の裁定。
     // 矢印の設定はこの段階の session がまだ知らないので、矢印を扱う段になったら同様に送り直す）
@@ -66,7 +78,8 @@ export class SimulationSession {
   start(amountMm: number, radiusM: number): void {
     if (this.terrain === null || this.center === null) return
     const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)
-    this.client.start({ x, y, radiusM, amountMm })
+    this.runId += 1
+    this.client.start({ x, y, radiusM, amountMm }, this.runId)
     this.store.getState().started()
   }
 
@@ -89,12 +102,10 @@ export class SimulationSession {
   }
 
   reset(): void {
-    this.client.reset()
+    this.runId += 1
+    this.client.reset(this.runId)
     this.statsThrottle.cancel()
     this.store.getState().reset()
-    // Worker が reset を処理する前に送っていた frame が遅れて届いても、水を消した step 0 の
-    // frame が届くまでは入れない（レビューの重要な指摘）
-    this.awaitingResetFrame = true
   }
 
   setSpeed(speed: PlaybackSpeed): void {
@@ -104,24 +115,10 @@ export class SimulationSession {
 
   private onFrame(frame: FrameView): void {
     if (this.terrain === null) return
+    // 今の実行のものだけを反映する（バッファの返却は SimulationClient 側でこれまでどおり行われる。
+    // frame の受信そのものは止めない）
+    if (frame.runId !== this.runId) return
     const { events, ...stats } = frame.stats
-    if (this.awaitingResetFrame) {
-      // バッファの返却は SimulationClient 側でこれまでどおり行われる（frame の受信そのものは止めない）。
-      // ここで無視するのはストアへの反映（統計・越流イベント）だけ。
-      //
-      // なぜ step 0 で判定してよいか: Worker の SimulationRunner.reset() は必ず ZERO_STATS（step 0）を
-      // offer() する。suspend()（reset・start の両方が最初に呼ぶ）は保留中の offer を discardPending() で
-      // 捨てるので、この reset が offer した ZERO_STATS より後に古い frame が紛れ込むことはなく、
-      // step 0 の frame は「直前の reset」の後にしか作られない。つまり「新しい世代の始まり」の目印になる。
-      //
-      // 残る限界: メインスレッドが丸ごと 1 回の start → reset 分だけ処理を遅らせ、reset₁ の ZERO_STATS が
-      // 届く前に reset₂ まで進んでしまうと、reset₁ の ZERO_STATS を reset₂ の最初の frame と取り違え、
-      // reset₂ が本当に送った ZERO_STATS が届くまでの間、reset₁ 側の step ≥ 1 の古い frame が一瞬だけ
-      // 表示されうる。極端な遅延でしか起きず実害は小さいと見て、今回は対応しない。もし問題になれば、
-      // reset に通し番号を振り、terrainId と同様に frame へ載せて突き合わせる形にするとよい。
-      if (stats.step !== 0) return
-      this.awaitingResetFrame = false
-    }
     const state = this.store.getState()
     if (events.length > 0) state.addSpills(events)
     const update = { stats, stepsPerSecond: frame.stepsPerSecond }
@@ -135,7 +132,7 @@ export class SimulationSession {
       return
     }
     // 止まっている間の frame（Step・Reset・矢印の切り替え）はすぐに入れる。
-    // Reset の直後に届く前の frame が settled でも、idle のままにする
+    // idle の間（reset・失敗の直後）は settled でも状態を変えない
     this.statsThrottle.cancel()
     if (stats.settled && state.status === 'paused') state.settle(stats, frame.stepsPerSecond)
     else state.setStats(stats, frame.stepsPerSecond)
@@ -154,10 +151,9 @@ export class SimulationSession {
     }
   }
 
-  /** 地形・降雨中心・Reset 待ちの状態をまとめて消す（terrainCleared・異常終了で使う） */
+  /** 地形・降雨中心をまとめて消す（terrainCleared・異常終了で使う） */
   private clearTerrainState(): void {
     this.terrain = null
     this.center = null
-    this.awaitingResetFrame = false
   }
 }

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FakeWorker, frameMessage, statsAt } from '../bridge/fakeWorker.test-support'
+import {
+  FakeWorker,
+  frameMessage,
+  simFailedMessage,
+  statsAt,
+} from '../bridge/fakeWorker.test-support'
 import { SimulationClient } from '../bridge/SimulationClient'
 import { lonLatToPixel } from '../dem/tileMath'
 import type { TerrainPayload } from '../shared/protocol'
@@ -45,6 +50,7 @@ describe('SimulationSession: 命令（spec 04 §3）', () => {
         radiusM: 10,
         amountMm: 100,
       },
+      runId: 1,
     })
     expect(store.getState().status).toBe('running')
   })
@@ -119,6 +125,32 @@ describe('SimulationSession: Worker の作り直しの後の速度の立て直�
     session.terrainReady(terrain, CENTER)
     expect(worker.posted.at(-1)).toEqual({ type: 'setSpeed', speed: 'max' })
   })
+
+  it(
+    '作り直した Worker は loadTerrain の直後 runId 0 から始まるので、terrainReady で session の ' +
+      'runId も 0 に戻す（追加の裁定。両者が同じ基準から始まらないと runId の突き合わせがずれる）',
+    () => {
+      const worker = new FakeWorker()
+      const client = new SimulationClient(() => worker)
+      const store = createSimulationStore()
+      const session = new SimulationSession(client, store)
+      void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
+      worker.loaded(terrain)
+      session.terrainReady(terrain, CENTER)
+      session.start(100, 10) // runId 1
+      session.reset() // runId 2
+
+      worker.crash()
+      void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
+      const reloadedId = worker.loaded(terrain)
+      session.terrainReady(terrain, CENTER)
+
+      // 作り直した Worker の loadTerrain 直後は runId 0（例: 止まっている間の setArrows の再送で届く frame）。
+      // session の runId が 2 のままだと、この frame は「古い実行」として無視されてしまう
+      worker.reply(frameMessage(reloadedId, 0, { runId: 0, stats: statsAt(0) }))
+      expect(store.getState().stats?.step).toBe(0)
+    },
+  )
 })
 
 describe('SimulationSession: frame → ストア', () => {
@@ -155,38 +187,69 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('止まっている間の frame（Step）はすぐに入れる。idle の間は settled でも状態を変えない', () => {
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10)
+    session.start(100, 10) // runId 1
     session.pause()
-    worker.reply(frameMessage(terrainId, 11))
+    worker.reply(frameMessage(terrainId, 11, { runId: 1 }))
     expect(store.getState().stats?.step).toBe(11)
-    session.reset()
-    worker.reply(frameMessage(terrainId, 12, { stats: statsAt(12, { settled: true }) }))
+    session.reset() // runId 2
+    worker.reply(frameMessage(terrainId, 12, { runId: 2, stats: statsAt(12, { settled: true }) }))
     expect(store.getState().status).toBe('idle')
   })
 
   it(
-    '実行中の Reset の後に届く古い frame（Worker が reset を処理する前に送っていた分）は、' +
-      '統計・越流イベントを入れない。Worker が水を消した step 0 の frame が届くと通常に戻る（重要な指摘）',
+    '実行中の Reset の後に届く古い runId の frame（Worker が reset を処理する前に送っていた分）は、' +
+      '統計・越流イベントを入れない。reset の runId の frame が届くと通常に戻る（重要な指摘）',
     () => {
       const { worker, store, session, terrainId } = setup()
-      session.start(100, 10)
-      worker.reply(frameMessage(terrainId, 5))
-      session.reset()
+      session.start(100, 10) // runId 1
+      worker.reply(frameMessage(terrainId, 5, { runId: 1 }))
+      session.reset() // runId 2
       expect(store.getState()).toMatchObject({ status: 'idle', stats: null, spills: [] })
 
-      // Worker が reset を処理する前に送っていた frame が、越流イベントつきで遅れて届く
+      // Worker が reset を処理する前に送っていた、古い runId（1）の frame が越流イベントつきで遅れて届く
       const staleEvents = [{ type: 'spill' as const, step: 6, depressionId: 1, spillElevation: 3 }]
-      worker.reply(frameMessage(terrainId, 6, { stats: statsAt(6, { events: staleEvents }) }))
+      worker.reply(
+        frameMessage(terrainId, 6, { runId: 1, stats: statsAt(6, { events: staleEvents }) }),
+      )
       expect(store.getState().spills).toEqual([])
       expect(store.getState().stats).toBeNull()
 
-      // Worker が水を消した step 0 の frame（ZERO_STATS）が届くと、通常の扱いに戻る
-      worker.reply(frameMessage(terrainId, 0, { stats: statsAt(0) }))
+      // reset の runId（2）の frame が届くと、通常の扱いに戻る
+      worker.reply(frameMessage(terrainId, 0, { runId: 2, stats: statsAt(0) }))
       expect(store.getState().stats?.step).toBe(0)
-      worker.reply(frameMessage(terrainId, 1))
+      worker.reply(frameMessage(terrainId, 1, { runId: 2 }))
       expect(store.getState().stats?.step).toBe(1)
     },
   )
+
+  it(
+    'reset の直後に start しても、reset の frame が 1 枚も届かなくても start の runId の frame は ' +
+      '扱われる（重要な指摘が見つけた回帰: congestion で reset の step 0 の frame が消えるケース）',
+    () => {
+      const { worker, store, session, terrainId } = setup()
+      session.start(100, 10) // runId 1
+      session.reset() // runId 2。この frame は 1 枚も届かない想定（congestion で discardPending に消える）
+      session.start(200, 5) // runId 3
+      worker.reply(frameMessage(terrainId, 1, { runId: 3 }))
+      expect(store.getState()).toMatchObject({ status: 'running' })
+      expect(store.getState().stats?.step).toBe(1)
+    },
+  )
+
+  it('terrainReady の直後（runId 0）に届く frame は扱う。start の後に届く古い runId 0 の frame は無視する', () => {
+    const { worker, store, session, terrainId } = setup()
+    // terrainReady 直後は runId 0（例: 止まっている間の setArrows の再送で届く frame）
+    worker.reply(frameMessage(terrainId, 0, { runId: 0, stats: statsAt(0) }))
+    expect(store.getState().stats?.step).toBe(0)
+
+    session.start(100, 10) // runId 1
+    worker.reply(frameMessage(terrainId, 1, { runId: 1 }))
+    expect(store.getState().stats?.step).toBe(1)
+
+    // 古い runId 0 の frame が遅れて届いても無視する
+    worker.reply(frameMessage(terrainId, 0, { runId: 0, stats: statsAt(0) }))
+    expect(store.getState().stats?.step).toBe(1)
+  })
 
   it('地点の読み込みを始めた後の frame は入れない', () => {
     const { worker, store, session, terrainId } = setup()
@@ -197,17 +260,21 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('simFailed は理由をストアに入れ、idle に戻す', () => {
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10)
-    worker.reply({
-      type: 'simFailed',
-      terrainId,
-      reason: 'no-elevation-at-rain-center',
-      message: '',
-    })
+    session.start(100, 10) // runId 1
+    worker.reply(simFailedMessage(terrainId, { reason: 'no-elevation-at-rain-center' }))
     expect(store.getState()).toMatchObject({
       status: 'idle',
       error: 'no-elevation-at-rain-center',
     })
+  })
+
+  it('今の実行と runId が違う simFailed は無視する', () => {
+    const { worker, store, session, terrainId } = setup()
+    session.start(100, 10) // runId 1
+    session.reset() // runId 2
+    // runId 1（前の実行）の simFailed が遅れて届いても、idle のまま・エラーも付かない
+    worker.reply(simFailedMessage(terrainId, { runId: 1, reason: 'no-elevation-at-rain-center' }))
+    expect(store.getState()).toMatchObject({ status: 'idle', error: null })
   })
 
   it('simFailed が届く前に間引き待ちだった統計を、後から上書きしない（間引きを止める）', () => {
@@ -216,12 +283,7 @@ describe('SimulationSession: frame → ストア', () => {
     session.start(100, 10)
     worker.reply(frameMessage(terrainId, 1))
     worker.reply(frameMessage(terrainId, 2))
-    worker.reply({
-      type: 'simFailed',
-      terrainId,
-      reason: 'no-elevation-at-rain-center',
-      message: '',
-    })
+    worker.reply(simFailedMessage(terrainId, { reason: 'no-elevation-at-rain-center' }))
     expect(store.getState().stats).toBeNull()
     vi.advanceTimersByTime(STATS_INTERVAL_MS)
     expect(store.getState().stats).toBeNull()

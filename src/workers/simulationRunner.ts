@@ -64,6 +64,11 @@ export class SimulationRunner {
   /** 表示・間隔が変わった、または地形・水が変わった。次の frame で必ず矢印を送る */
   private arrowsDirty = false
   private arrowsAt = Number.NEGATIVE_INFINITY
+  /**
+   * 直前に受けた start・reset の runId。メイン（SimulationSession）だけが振る番号で、ここでは作らない。
+   * frame・simFailed にそのまま載せて返す（タスクレビューの重要な指摘・追加の裁定）
+   */
+  private runId = 0
 
   constructor(ports: RunnerPorts) {
     this.ports = ports
@@ -97,6 +102,8 @@ export class SimulationRunner {
     this.events = []
     this.lastStats = ZERO_STATS
     this.arrowsDirty = true
+    // 新しい地形では、実行はまだ始まっていない（コントローラー追加の裁定）
+    this.runId = 0
   }
 
   /** 再生を止め、保留中の frame を捨てる（新しい地点の読み込みの開始、地形の差し替え） */
@@ -108,7 +115,7 @@ export class SimulationRunner {
   handle(command: SimulationCommand): void {
     switch (command.type) {
       case 'start':
-        this.start(command.rain)
+        this.start(command.rain, command.runId)
         break
       case 'pause':
         this.scheduler.pause()
@@ -120,7 +127,7 @@ export class SimulationRunner {
         if (this.loaded !== null) this.scheduler.stepOnce()
         break
       case 'reset':
-        this.reset()
+        this.reset(command.runId)
         break
       case 'setSpeed':
         this.scheduler.setSpeed(command.speed)
@@ -134,7 +141,9 @@ export class SimulationRunner {
     }
   }
 
-  private start(rain: RainfallInput): void {
+  private start(rain: RainfallInput, runId: number): void {
+    // 失敗（simFailed）もこの新しい実行のものとして runId を載せるので、addRainfall を試す前に控える
+    this.runId = runId
     const loaded = this.loaded
     if (loaded === null) return
     this.suspend()
@@ -150,7 +159,13 @@ export class SimulationRunner {
           ? 'no-elevation-at-rain-center'
           : 'internal'
       this.ports.post(
-        { type: 'simFailed', terrainId: loaded.terrainId, reason, message: String(error) },
+        {
+          type: 'simFailed',
+          terrainId: loaded.terrainId,
+          reason,
+          message: String(error),
+          runId: this.runId,
+        },
         [],
       )
       return
@@ -159,7 +174,8 @@ export class SimulationRunner {
     this.scheduler.play()
   }
 
-  private reset(): void {
+  private reset(runId: number): void {
+    this.runId = runId
     if (this.loaded === null) return
     this.suspend()
     this.engine.reset()
@@ -208,6 +224,7 @@ export class SimulationRunner {
         arrows,
         stats: { ...stats, events },
         stepsPerSecond,
+        runId: this.runId,
       },
       transfer,
     )

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TerrainPayload } from '../shared/protocol'
-import { FakeWorker, frameMessage } from './fakeWorker.test-support'
+import { FakeWorker, frameMessage, simFailedMessage } from './fakeWorker.test-support'
 import { LOAD_STALL_TIMEOUT_MS, SimulationClient } from './SimulationClient'
 
 function setup() {
@@ -249,25 +249,38 @@ function loadedSetup() {
 }
 
 describe('SimulationClient の再生（spec 04 §5）', () => {
-  it('再生の命令をそのまま送る', () => {
+  it('再生の命令をそのまま送る。start・reset の runId もそのまま送る（タスクレビューの追加の裁定）', () => {
     const { worker, client } = loadedSetup()
     const rain = { x: 1, y: 2, radiusM: 10, amountMm: 100 }
-    client.start(rain)
+    client.start(rain, 1)
     client.pause()
     client.resume()
     client.step()
-    client.reset()
+    client.reset(2)
     client.setSpeed('max')
     client.setArrows(true, 20)
     expect(worker.posted.slice(-7)).toEqual([
-      { type: 'start', rain },
+      { type: 'start', rain, runId: 1 },
       { type: 'pause' },
       { type: 'resume' },
       { type: 'step' },
-      { type: 'reset' },
+      { type: 'reset', runId: 2 },
       { type: 'setSpeed', speed: 'max' },
       { type: 'setArrows', visible: true, spacingM: 20 },
     ])
+  })
+
+  it('frame の runId をそのまま FrameView に、simFailed の runId をそのままリスナーに渡す', () => {
+    const { worker, client, terrainId } = loadedSetup()
+    const runIds: number[] = []
+    client.onFrame((frame) => runIds.push(frame.runId))
+    worker.reply(frameMessage(terrainId, 1, { runId: 7 }))
+    expect(runIds).toEqual([7])
+
+    const failed: number[] = []
+    client.onSimFailed((_reason, runId) => failed.push(runId))
+    worker.reply(simFailedMessage(terrainId, { runId: 9 }))
+    expect(failed).toEqual([9])
   })
 
   it('frame の水深を渡し、手元の古いバッファを transfer つきの returnBuffer で返す（tech-spec §5.2）', () => {
@@ -309,13 +322,8 @@ describe('SimulationClient の再生（spec 04 §5）', () => {
     const { worker, client, terrainId } = loadedSetup()
     const reasons: string[] = []
     client.onSimFailed((reason) => reasons.push(reason))
-    worker.reply({ type: 'simFailed', terrainId: terrainId - 1, reason: 'internal', message: '' })
-    worker.reply({
-      type: 'simFailed',
-      terrainId,
-      reason: 'no-elevation-at-rain-center',
-      message: '',
-    })
+    worker.reply(simFailedMessage(terrainId - 1))
+    worker.reply(simFailedMessage(terrainId, { reason: 'no-elevation-at-rain-center' }))
     expect(reasons).toEqual(['no-elevation-at-rain-center'])
   })
 
@@ -324,7 +332,7 @@ describe('SimulationClient の再生（spec 04 §5）', () => {
     const frame = frameMessage(terrainId, 3)
     worker.reply(frame)
     expect(client.water).not.toBeNull()
-    worker.reply({ type: 'simFailed', terrainId, reason: 'internal', message: '' })
+    worker.reply(simFailedMessage(terrainId))
     expect(client.water).toBeNull()
     expect(worker.posted.at(-1)).toEqual({ type: 'returnBuffer', buffer: frame.water })
     expect(worker.transferred).toContain(frame.water)
@@ -334,7 +342,7 @@ describe('SimulationClient の再生（spec 04 §5）', () => {
     const { worker, client, terrainId } = loadedSetup()
     const frame = frameMessage(terrainId, 3)
     worker.reply(frame)
-    worker.reply({ type: 'simFailed', terrainId: terrainId - 1, reason: 'internal', message: '' })
+    worker.reply(simFailedMessage(terrainId - 1))
     expect(client.water).not.toBeNull()
     expect(worker.posted.some((m) => m.type === 'returnBuffer')).toBe(false)
   })
@@ -347,8 +355,8 @@ describe('SimulationClient の異常終了の通知と番犬（02 の申し送�
     client.onCrash(crashes)
     nth(workers, 0).crash()
     expect(crashes).toHaveBeenCalledTimes(1)
-    client.start({ x: 0, y: 0, radiusM: 1, amountMm: 1 })
-    client.reset()
+    client.start({ x: 0, y: 0, radiusM: 1, amountMm: 1 }, 1)
+    client.reset(2)
     expect(workers).toHaveLength(1)
     expect(nth(workers, 0).posted.some((m) => m.type === 'start')).toBe(false)
   })

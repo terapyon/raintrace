@@ -15,14 +15,21 @@ export type ArrowSpacingM = 5 | 10 | 20
 
 /**
  * 再生の命令（spec 04 §5.1）。setArrows は spec の setArrowSpacing の代わり。
- * 矢印が非表示なら Worker は flowVectors() を呼ばない（呼ぶたびに 2 × N² を確保する）
+ * 矢印が非表示なら Worker は flowVectors() を呼ばない（呼ぶたびに 2 × N² を確保する）。
+ *
+ * start・reset の runId は、メイン（SimulationSession）だけが振る通し番号（タスクレビューの重要な指摘・
+ * 追加の裁定）。Worker 側では作らない（異常終了で作り直した Worker が番号を巻き戻さないため）。
+ * Worker は受け取った runId をそのまま覚え、以降の frame・simFailed に載せて返す。PlaybackScheduler の
+ * 保留枠は 1 つしかなく、reset が送る step 0 の frame（ZERO_STATS）は、直後に start が来ると
+ * 届く前に discardPending() で消えることがあるので、frame の新旧は「step が 0 かどうか」ではなく
+ * runId で区別する
  */
 export type SimulationCommand =
-  | { type: 'start'; rain: RainfallInput }
+  | { type: 'start'; rain: RainfallInput; runId: number }
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'step' }
-  | { type: 'reset' }
+  | { type: 'reset'; runId: number }
   | { type: 'setSpeed'; speed: PlaybackSpeed }
   | { type: 'setArrows'; visible: boolean; spacingM: ArrowSpacingM }
   | { type: 'returnBuffer'; buffer: ArrayBuffer }
@@ -70,7 +77,9 @@ export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
  * 水深と統計（spec 04 §5.1、tech-spec §5.2）。terrainId はその地形を読み込んだ loadTerrain の requestId。
  * water は Float32 × N² の転送バッファで、メインは次の frame を受けたら returnBuffer で返す。
  * arrows は [列, 行, 方位（度。北が 0、時計回り）, 大きさ（m／step）] の並び。null は前の矢印のまま。
- * stats.events は前に送った frame からの越流イベントの累計（見送った frame の分を含む）
+ * stats.events は前に送った frame からの越流イベントの累計（見送った frame の分を含む）。
+ * runId はこの frame を生んだ直前の start・reset の通し番号（SimulationCommand の説明を参照）。
+ * loadTerrain の直後は 0（まだ実行が始まっていない）
  */
 export interface FrameMessage {
   type: 'frame'
@@ -80,13 +89,16 @@ export interface FrameMessage {
   arrows: Float32Array | null
   stats: StepStats
   stepsPerSecond: number
+  runId: number
 }
 
+/** runId は FrameMessage と同じ（SimulationCommand の説明を参照） */
 export interface SimFailedMessage {
   type: 'simFailed'
   terrainId: number
   reason: SimFailureReason
   message: string
+  runId: number
 }
 
 export type WorkerToMainMessage =

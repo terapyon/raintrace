@@ -46,12 +46,13 @@ export class TerrainLoadError extends Error {
   }
 }
 
-/** メインが受け取った frame。water は次の frame が届くまで手元に置く */
+/** メインが受け取った frame。water は次の frame が届くまで手元に置く。runId は FrameMessage と同じ */
 export interface FrameView {
   water: Float32Array<ArrayBuffer>
   arrows: Float32Array | null
   stats: FrameMessage['stats']
   stepsPerSecond: number
+  runId: number
 }
 
 type RainfallInput = Extract<SimulationCommand, { type: 'start' }>['rain']
@@ -84,7 +85,7 @@ export class SimulationClient {
   private readonly pendingPings = new Map<number, PendingPing>()
   private pendingTerrain: PendingTerrain | null = null
   private readonly frameListeners = new Set<(frame: FrameView) => void>()
-  private readonly simFailedListeners = new Set<(reason: SimFailureReason) => void>()
+  private readonly simFailedListeners = new Set<(reason: SimFailureReason, runId: number) => void>()
   private readonly crashListeners = new Set<() => void>()
   private watchdog: ReturnType<typeof setTimeout> | undefined
   private crashed = false
@@ -137,7 +138,7 @@ export class SimulationClient {
             this.water = null
             this.command({ type: 'returnBuffer', buffer }, [buffer])
           }
-          for (const listener of this.simFailedListeners) listener(message.reason)
+          for (const listener of this.simFailedListeners) listener(message.reason, message.runId)
         }
         break
     }
@@ -192,8 +193,9 @@ export class SimulationClient {
     })
   }
 
-  start(rain: RainfallInput): void {
-    this.command({ type: 'start', rain })
+  /** runId は SimulationSession が振る通し番号。そのまま Worker へ渡す（タスクレビューの追加の裁定） */
+  start(rain: RainfallInput, runId: number): void {
+    this.command({ type: 'start', rain, runId })
   }
   pause(): void {
     this.command({ type: 'pause' })
@@ -204,8 +206,9 @@ export class SimulationClient {
   step(): void {
     this.command({ type: 'step' })
   }
-  reset(): void {
-    this.command({ type: 'reset' })
+  /** runId は start と同じ（タスクレビューの追加の裁定） */
+  reset(runId: number): void {
+    this.command({ type: 'reset', runId })
   }
   setSpeed(speed: PlaybackSpeed): void {
     this.command({ type: 'setSpeed', speed })
@@ -221,7 +224,7 @@ export class SimulationClient {
     }
   }
 
-  onSimFailed(listener: (reason: SimFailureReason) => void): () => void {
+  onSimFailed(listener: (reason: SimFailureReason, runId: number) => void): () => void {
     this.simFailedListeners.add(listener)
     return () => {
       this.simFailedListeners.delete(listener)
@@ -256,6 +259,7 @@ export class SimulationClient {
       arrows: message.arrows,
       stats: message.stats,
       stepsPerSecond: message.stepsPerSecond,
+      runId: message.runId,
     }
     for (const listener of this.frameListeners) listener(frame)
     // 表示とセル情報は新しい方を読むので、古い方を返す。返した後は previous に触れない（tech-spec §5.2）
