@@ -7,6 +7,8 @@ import {
   buildRealScene,
   buildSyntheticScene,
   FILM_DEPTH_M,
+  fillInvalidNearest,
+  isBowlCell,
   isFilmCell,
   POND_DEPTHS_M,
   RANGE_M,
@@ -92,6 +94,26 @@ describe('合成の場面（計画 D4）', () => {
     }
     expect(wetOutsideFilm).toBe(0)
   })
+
+  it('bowlFilm の水はすり鉢の中の 1cm の膜だけで、斜面の膜と池が無い', () => {
+    const bowl = buildSyntheticScene('bowlFilm')
+    let wet = 0
+    let bad = 0
+    for (let row = 0; row < n; row++) {
+      for (let col = 0; col < n; col++) {
+        const d = bowl.depth[row * n + col] ?? 0
+        if (isBowlCell(range, col, row)) {
+          wet++
+          if (d !== Math.fround(FILM_DEPTH_M)) bad++
+        } else if (d !== 0) {
+          bad++
+        }
+      }
+    }
+    // 3 つのすり鉢（半径 60m）の面積は 約 3 × π × 60² ≈ 33,900 m²（約 36,000 セル）
+    expect(wet).toBeGreaterThan(30_000)
+    expect(bad).toBe(0)
+  })
 })
 
 describe('実データの場面（計画 D4・D5）', () => {
@@ -141,5 +163,38 @@ describe('実データの場面（計画 D4・D5）', () => {
     }
     expect(invalid).toBeGreaterThan(0)
     expect(bad).toBe(0)
+  })
+
+  it('fillInvalid のときは A の地形のサンプラーだけが無効画素を埋め、グリッドは変えない', () => {
+    const filledScene = buildRealScene(shibuyaRange(), tiles, true)
+    const i = scene.validMask.findIndex((v) => v === 0)
+    const col = i % n
+    const row = Math.floor(i / n)
+    expect(scene.sample(range.originX + col, range.originY + row)).toBeNull()
+    expect(filledScene.sample(range.originX + col, range.originY + row)).not.toBeNull()
+    expect(filledScene.validMask[i]).toBe(0)
+    expect(filledScene.depth[i]).toBe(0)
+  })
+})
+
+describe('無効画素の穴埋め（M2 の切り分け用）', () => {
+  it('無効画素は最も近い有効画素の標高になり、元の配列は変えない', () => {
+    const elevation = new Float32Array(256 * 256).fill(20)
+    const validMask = new Uint8Array(256 * 256).fill(1)
+    elevation[1000] = 0 // (232, 3) の 1 画素の穴
+    validMask[1000] = 0
+    elevation[1001] = 25
+    const filled = fillInvalidNearest({ elevation, validMask })
+    expect(filled.validMask.every((v) => v === 1)).toBe(true)
+    expect([20, 25]).toContain(filled.elevation[1000])
+    expect(validMask[1000]).toBe(0)
+  })
+
+  it('全画素が無効のタイルは、そのまま無効', () => {
+    const filled = fillInvalidNearest({
+      elevation: new Float32Array(256 * 256),
+      validMask: new Uint8Array(256 * 256),
+    })
+    expect(filled.validMask.every((v) => v === 0)).toBe(true)
   })
 })

@@ -14,6 +14,7 @@ describe('parseParams', () => {
       capture: false,
       skirt: true,
       probe: null,
+      demFill: 'zero',
     })
   })
 
@@ -32,6 +33,7 @@ describe('parseParams', () => {
       capture: true,
       skirt: false,
       probe: 'fps',
+      demFill: 'zero',
     })
   })
 
@@ -42,5 +44,14 @@ describe('parseParams', () => {
     expect(params.pitch).toBe(60)
     expect(params.zoom).toBe(17)
     expect(params.exaggeration).toBe(1)
+  })
+
+  it('曲面の膜の水（bowlFilm）を読む', () => {
+    expect(parseParams('?water=bowlFilm').water).toBe('bowlFilm')
+  })
+
+  it('無効画素の扱い（demFill）を読む', () => {
+    expect(parseParams('?demFill=nearest').demFill).toBe('nearest')
+    expect(parseParams('?demFill=x').demFill).toBe('zero')
   })
 })

@@ -11,6 +11,7 @@ export interface SpikeParams {
   capture: boolean // preserveDrawingBuffer を有効にし、画面を読み取れるようにする（計画 D9）
   skirt: boolean // B・B-raw の縁（計画 D17）
   probe: 'fps' | null
+  demFill: 'zero' | 'nearest' // 実データの A の地形の無効画素（M2 の切り分け用）
 }
 
 function pick<T extends string>(value: string | null, options: readonly T[], fallback: T): T {
@@ -30,7 +31,7 @@ export function parseParams(search: string): SpikeParams {
   return {
     candidate: candidates.find((id) => id === query.get('candidate')) ?? null,
     scene: pick(query.get('scene'), ['synthetic', 'real'], 'synthetic'),
-    water: pick(query.get('water'), ['fixed', 'film', 'dynamic'], 'fixed'),
+    water: pick(query.get('water'), ['fixed', 'film', 'bowlFilm', 'dynamic'], 'fixed'),
     exaggeration: numberIn(query.get('exaggeration'), 0.1, 20, 1),
     pitch: numberIn(query.get('pitch'), 0, 85, 60),
     zoom: numberIn(query.get('zoom'), 2, 18, 17),
@@ -38,5 +39,6 @@ export function parseParams(search: string): SpikeParams {
     capture: query.get('capture') === '1',
     skirt: query.get('skirt') !== '0',
     probe: query.get('probe') === 'fps' ? 'fps' : null,
+    demFill: query.get('demFill') === 'nearest' ? 'nearest' : 'zero',
   }
 }

@@ -1,0 +1,482 @@
+[
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 3704,
+      "visibleRatio": 0.9997300215982722,
+      "interiorPx": 2960,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 579,
+      "visibleRatio": 1,
+      "interiorPx": 0,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 3900,
+      "visibleRatio": 0.9735897435897436,
+      "interiorPx": 3160,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 1908,
+      "visibleRatio": 0.32075471698113206,
+      "interiorPx": 1253,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 12553,
+      "visibleRatio": 0.9996016888393213,
+      "interiorPx": 11124,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 2055,
+      "visibleRatio": 1,
+      "interiorPx": 808,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 13380,
+      "visibleRatio": 0.9476831091180867,
+      "interiorPx": 11950,
+      "flickerRatio": 0.00008368200836820084
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 6775,
+      "visibleRatio": 0.3288560885608856,
+      "interiorPx": 5502,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 36946,
+      "visibleRatio": 0.9999458669409408,
+      "interiorPx": 34347,
+      "flickerRatio": 0.00002911462427577372
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 5933,
+      "visibleRatio": 0.9946064385639642,
+      "interiorPx": 3611,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 40668,
+      "visibleRatio": 0.9126586013573326,
+      "interiorPx": 38022,
+      "flickerRatio": 0.000052601125664089215
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 21386,
+      "visibleRatio": 0.2749929860656504,
+      "interiorPx": 19047,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 69957,
+      "visibleRatio": 1,
+      "interiorPx": 66168,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 11746,
+      "visibleRatio": 0.9616039502809467,
+      "interiorPx": 8474,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 84519,
+      "visibleRatio": 0.8308309374223547,
+      "interiorPx": 80556,
+      "flickerRatio": 0.00009930979691146532
+    }
+  },
+  {
+    "scene": "a",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 50703,
+      "visibleRatio": 0.21318265191408792,
+      "interiorPx": 47176,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 3701,
+      "visibleRatio": 0.9997298027560119,
+      "interiorPx": 2957,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 583,
+      "visibleRatio": 1,
+      "interiorPx": 0,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 3866,
+      "visibleRatio": 0.9756854630108639,
+      "interiorPx": 3120,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 15,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 1843,
+      "visibleRatio": 0.3011394465545307,
+      "interiorPx": 1197,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 12555,
+      "visibleRatio": 0.9996017522899243,
+      "interiorPx": 11124,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 2048,
+      "visibleRatio": 1,
+      "interiorPx": 802,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 13274,
+      "visibleRatio": 0.9483200241072773,
+      "interiorPx": 11848,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 6636,
+      "visibleRatio": 0.3157022302591923,
+      "interiorPx": 5370,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 36940,
+      "visibleRatio": 0.9999458581483487,
+      "interiorPx": 34339,
+      "flickerRatio": 0.000029121407146393315
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 5939,
+      "visibleRatio": 0.9966324297019701,
+      "interiorPx": 3621,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 40502,
+      "visibleRatio": 0.9133376129573848,
+      "interiorPx": 37883,
+      "flickerRatio": 0.00010558825858564528
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 21222,
+      "visibleRatio": 0.269201771746301,
+      "interiorPx": 18894,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 1,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 69966,
+      "visibleRatio": 1,
+      "interiorPx": 66182,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 1,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 11739,
+      "visibleRatio": 0.9623477297895903,
+      "interiorPx": 8470,
+      "flickerRatio": 0
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 10,
+      "pitch": 60
+    },
+    "measure": {
+      "footprintPx": 84265,
+      "visibleRatio": 0.8305464902391265,
+      "interiorPx": 80336,
+      "flickerRatio": 0.00014937263493328023
+    }
+  },
+  {
+    "scene": "a2",
+    "zfix": "offset",
+    "view": {
+      "zoom": 18,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "measure": {
+      "footprintPx": 50285,
+      "visibleRatio": 0.20626429352689668,
+      "interiorPx": 46792,
+      "flickerRatio": 0
+    }
+  }
+]

@@ -68,6 +68,16 @@ export function isFilmCell(range: GridRange, col: number, row: number): boolean 
   return x >= FILM.x0 * side && x < FILM.x1 * side && y >= FILM.y0 * side && y < FILM.y1 * side
 }
 
+/** すり鉢（半径 60m）の中のセルか（セルの中心で判定。M1 の曲面の膜） */
+export function isBowlCell(range: GridRange, col: number, row: number): boolean {
+  const side = sideM(range)
+  const x = (col + 0.5) * range.cellSizeM
+  const y = (row + 0.5) * range.cellSizeM
+  return BOWL_CENTERS.some(
+    ([cx, cy]) => (x - cx * side) ** 2 + (y - cy * side) ** 2 < BOWL_RADIUS_M ** 2,
+  )
+}
+
 function minValid(elevation: Float32Array, validMask: Uint8Array): number {
   let min = Number.POSITIVE_INFINITY
   for (let i = 0; i < elevation.length; i++) {
@@ -76,7 +86,7 @@ function minValid(elevation: Float32Array, validMask: Uint8Array): number {
   return Number.isFinite(min) ? min : 0
 }
 
-export function buildSyntheticScene(water: 'fixed' | 'film'): Scene {
+export function buildSyntheticScene(water: 'fixed' | 'film' | 'bowlFilm'): Scene {
   const range = shibuyaRange()
   const sample = syntheticSampler(range)
   const n = range.size
@@ -89,6 +99,11 @@ export function buildSyntheticScene(water: 'fixed' | 'film'): Scene {
     for (let col = 0; col < n; col++) {
       const i = row * n + col
       elevation[i] = sample(range.originX + col, range.originY + row) ?? 0
+      if (water === 'bowlFilm') {
+        // 曲面（すり鉢の面）に一様な 1cm の膜。斜面の膜と池は置かない（M1）
+        if (isBowlCell(range, col, row)) depth[i] = FILM_DEPTH_M
+        continue
+      }
       if (isFilmCell(range, col, row)) {
         depth[i] = FILM_DEPTH_M
         continue
@@ -129,6 +144,42 @@ function tileBlock(range: GridRange): { x0: number; y0: number; x1: number; y1: 
 }
 
 /**
+ * 無効画素を、4 近傍で段数が最も少ない有効画素の標高で埋めた写し（M2 の切り分け用）。
+ * 有効画素から幅優先で広げる。全画素が無効のタイルはそのまま
+ */
+export function fillInvalidNearest(tile: DemTileData): DemTileData {
+  const elevation = tile.elevation.slice()
+  const validMask = tile.validMask.slice()
+  const queue = new Int32Array(elevation.length)
+  let head = 0
+  let tail = 0
+  for (let p = 0; p < elevation.length; p++) {
+    if (validMask[p] === 1) queue[tail++] = p
+  }
+  while (head < tail) {
+    const p = queue[head++] ?? 0
+    const x = p % TILE_SIZE
+    const y = (p - x) / TILE_SIZE
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= TILE_SIZE || ny >= TILE_SIZE) continue
+      const q = ny * TILE_SIZE + nx
+      if (validMask[q] === 1) continue
+      validMask[q] = 1
+      elevation[q] = elevation[p] ?? 0
+      queue[tail++] = q
+    }
+  }
+  return { elevation, validMask }
+}
+
+/**
  * 実タイルのサンプラー（計画 D5）。ブロックの外は端の値を延ばす（A の地形が範囲の外で 0m に落ちて
  * 段差を作らないように）。無いタイル（404）と無効値は null
  */
@@ -149,8 +200,15 @@ export function tileBlockSampler(
   }
 }
 
-/** 02 の部品で実タイルからグリッドを組み、水深は満水（fill − 標高）と 1cm の大きい方にする（計画 D4） */
-export function buildRealScene(range: GridRange, tiles: ReadonlyMap<string, DemTileData>): Scene {
+/**
+ * 02 の部品で実タイルからグリッドを組み、水深は満水（fill − 標高）と 1cm の大きい方にする（計画 D4）。
+ * fillInvalid は A の地形のサンプラーだけに効く（M2 の切り分け用。グリッドと水面は変えない）
+ */
+export function buildRealScene(
+  range: GridRange,
+  tiles: ReadonlyMap<string, DemTileData>,
+  fillInvalid = false,
+): Scene {
   const grid = assembleGrid(range, (tx, ty) => tiles.get(tileKey(tx, ty)))
   const { fill } = analyzeTerrain(grid)
   const depth = new Float32Array(grid.elevation.length)
@@ -158,6 +216,9 @@ export function buildRealScene(range: GridRange, tiles: ReadonlyMap<string, DemT
     if (grid.validMask[i] !== 1) continue
     depth[i] = Math.max(FILM_DEPTH_M, (fill[i] ?? 0) - (grid.elevation[i] ?? 0))
   }
+  const sampled = fillInvalid
+    ? new Map([...tiles].map(([key, tile]) => [key, fillInvalidNearest(tile)]))
+    : tiles
   return {
     name: 'real',
     center: SHIBUYA,
@@ -165,7 +226,7 @@ export function buildRealScene(range: GridRange, tiles: ReadonlyMap<string, DemT
     elevation: grid.elevation,
     validMask: grid.validMask,
     depth,
-    sample: tileBlockSampler(range, tiles),
+    sample: tileBlockSampler(range, sampled),
     minElevation: minValid(grid.elevation, grid.validMask),
   }
 }
