@@ -21,7 +21,7 @@ import {
   Scene as ThreeScene,
   WebGLRenderer,
 } from 'three'
-import { gridVertices, maskedGridIndices } from '../gridMesh'
+import { gridVertices, maskedGridIndices, ringCellValid } from '../gridMesh'
 import { gridModelMatrix, multiply } from '../mat4'
 import { MIN_DEPTH_M } from '../scenes'
 import { TERRAIN_FRAGMENT, TERRAIN_VERTEX, WATER_FRAGMENT, WATER_VERTEX } from '../shaders'
@@ -58,14 +58,9 @@ export const mount: MountCandidate = async (map, scene, params) => {
   const depthTexture = floatTexture(depthData, n)
 
   // シェーダには無効セルの入力が無いので（05 の申し送り §11）、無効セルにかかる四角形は
-  // JS 側の index（三角形の頂点番号）の組み立てで落とす。縁（範囲の外、a_cell が [0, n) の外）は
-  // 高さが常に 0 に固定される（TERRAIN_VERTEX の ring 判定）ので無効セルの対象にしない
-  const isValid = (col: number, row: number): boolean => {
-    const cx = col - 1
-    const cy = row - 1
-    if (cx < 0 || cy < 0 || cx >= n || cy >= n) return true
-    return scene.validMask[cy * n + cx] === 1
-  }
+  // JS 側の index（三角形の頂点番号）の組み立てで落とす（`gridMesh.ts` の `ringCellValid` に集約。
+  // B-raw（Task 7）も同じ判定を使う）
+  const isValid = ringCellValid(n, scene.validMask)
 
   // 頂点は地形と水面で共有する。水面は内側の n × n だけ、地形は縁を含めるかを skirt で選ぶ
   const cells = new BufferAttribute(gridVertices(n, true), 2)

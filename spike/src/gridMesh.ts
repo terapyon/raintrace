@@ -51,3 +51,22 @@ export function maskedGridIndices(
   }
   return Uint32Array.from(out)
 }
+
+/**
+ * 縁つきの頂点配置（`gridVertices(n, true)`、offset=1）の頂点番号（col, row）を受け取り、
+ * `maskedGridIndices` にそのまま渡せる isValid を返す。縁（範囲の外、セル番号が [0, n) の外）は
+ * 常に有効（TERRAIN_VERTEX の ring 判定で高さが常に 0 になるため対象外）。範囲の中は `validMask` を見る。
+ * B・B-raw の地形（縁あり／なし）・水面のどの index 呼び出しからも同じ判定になるよう、ここに集約する
+ * （B と B-raw で無効セルの扱いがずれないように。中間の判定の反映レビュー対応）
+ */
+export function ringCellValid(
+  n: number,
+  validMask: Uint8Array,
+): (col: number, row: number) => boolean {
+  return (col: number, row: number): boolean => {
+    const cx = col - 1
+    const cy = row - 1
+    if (cx < 0 || cy < 0 || cx >= n || cy >= n) return true
+    return validMask[cy * n + cx] === 1
+  }
+}
