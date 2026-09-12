@@ -83,12 +83,26 @@ describe('SimulationSession: 地形の読み込み中は再生の命令を送ら
   it('読み込み中でも pause・reset・setSpeed は送る', () => {
     const { worker, session } = setup()
     session.terrainCleared()
+    // setup() の terrainReady が setSpeed を送っているので、その後だけを見る（レビューの軽微）
+    const postedBefore = worker.posted.length
     session.pause()
     session.reset()
     session.setSpeed('max')
-    expect(worker.posted.map((m) => m.type)).toEqual(
-      expect.arrayContaining(['pause', 'reset', 'setSpeed']),
-    )
+    expect(worker.posted.slice(postedBefore).map((m) => m.type)).toEqual([
+      'pause',
+      'reset',
+      'setSpeed',
+    ])
+  })
+
+  it('読み込みが失敗した後（terrainReady が呼ばれていない）も start・resume・step を送らない', () => {
+    const { worker, session } = setup()
+    session.terrainCleared()
+    const postedBefore = worker.posted.length
+    session.start(100, 10)
+    session.resume()
+    session.step()
+    expect(worker.posted.slice(postedBefore)).toEqual([])
   })
 })
 
@@ -139,7 +153,7 @@ describe('SimulationSession: frame → ストア', () => {
     expect(store.getState().spills).toEqual([{ depressionId: 4, spillElevation: 12.7, step: 9 }])
   })
 
-  it('止まっている間の frame（Step・Reset）はすぐに入れる。idle の間は settled でも状態を変えない', () => {
+  it('止まっている間の frame（Step）はすぐに入れる。idle の間は settled でも状態を変えない', () => {
     const { worker, store, session, terrainId } = setup()
     session.start(100, 10)
     session.pause()
@@ -149,6 +163,30 @@ describe('SimulationSession: frame → ストア', () => {
     worker.reply(frameMessage(terrainId, 12, { stats: statsAt(12, { settled: true }) }))
     expect(store.getState().status).toBe('idle')
   })
+
+  it(
+    '実行中の Reset の後に届く古い frame（Worker が reset を処理する前に送っていた分）は、' +
+      '統計・越流イベントを入れない。Worker が水を消した step 0 の frame が届くと通常に戻る（重要な指摘）',
+    () => {
+      const { worker, store, session, terrainId } = setup()
+      session.start(100, 10)
+      worker.reply(frameMessage(terrainId, 5))
+      session.reset()
+      expect(store.getState()).toMatchObject({ status: 'idle', stats: null, spills: [] })
+
+      // Worker が reset を処理する前に送っていた frame が、越流イベントつきで遅れて届く
+      const staleEvents = [{ type: 'spill' as const, step: 6, depressionId: 1, spillElevation: 3 }]
+      worker.reply(frameMessage(terrainId, 6, { stats: statsAt(6, { events: staleEvents }) }))
+      expect(store.getState().spills).toEqual([])
+      expect(store.getState().stats).toBeNull()
+
+      // Worker が水を消した step 0 の frame（ZERO_STATS）が届くと、通常の扱いに戻る
+      worker.reply(frameMessage(terrainId, 0, { stats: statsAt(0) }))
+      expect(store.getState().stats?.step).toBe(0)
+      worker.reply(frameMessage(terrainId, 1))
+      expect(store.getState().stats?.step).toBe(1)
+    },
+  )
 
   it('地点の読み込みを始めた後の frame は入れない', () => {
     const { worker, store, session, terrainId } = setup()
@@ -195,4 +233,19 @@ describe('SimulationSession: frame → ストア', () => {
     worker.crash()
     expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
   })
+
+  it(
+    '異常終了の後は session 自身も地形が無い状態にする。start・resume を呼んでも再生中に戻さず、' +
+      'エラーも消さない（コントローラー追加の裁定）',
+    () => {
+      const { worker, store, session } = setup()
+      session.start(100, 10)
+      worker.crash()
+      expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
+      session.start(100, 10)
+      expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
+      session.resume()
+      expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
+    },
+  )
 })
