@@ -37,14 +37,31 @@ export class TerrainOverlay {
   private flowSpacingM = 10
   private generation = 0
 
-  constructor(map: MapLibreMap, whenMapLoaded: (run: () => void) => void) {
+  private readonly onMarkerDragEnd: (lon: number, lat: number) => void
+
+  constructor(
+    map: MapLibreMap,
+    whenMapLoaded: (run: () => void) => void,
+    onMarkerDragEnd: (lon: number, lat: number) => void = () => {},
+  ) {
     this.map = map
     this.whenMapLoaded = whenMapLoaded
+    this.onMarkerDragEnd = onMarkerDragEnd
   }
 
   showSelection(lon: number, lat: number): void {
-    this.marker ??= new Marker({ color: '#d32f2f' })
+    this.marker ??= this.createMarker()
     this.marker.setLngLat([lon, lat]).addTo(this.map)
+  }
+
+  /** 降雨マーカー。ドラッグで動かせ、離した位置が新しい地点になる（spec 04 §4） */
+  private createMarker(): Marker {
+    const marker = new Marker({ color: '#d32f2f', draggable: true })
+    marker.on('dragend', () => {
+      const p = marker.getLngLat()
+      this.onMarkerDragEnd(p.lng, p.lat)
+    })
+    return marker
   }
 
   showTerrain(terrain: TerrainPayload, display: OverlayDisplay): void {

@@ -69,6 +69,15 @@ export const strings = {
     depressionMax: '0.35 m 以上',
     depressionAria: '窪地の凡例。5 cm 刻みの 8 段で、深いほど濃い赤紫',
   },
+  cellInfo: {
+    elevation: '標高',
+    depth: '水深',
+    level: '水位',
+    noData: '標高データなし',
+    useAsCenter: 'ここを降雨中心にする',
+    newPoint: 'ここを新しい地点にする',
+    close: '閉じる',
+  },
   errors: {
     'no-data': 'この地域には標高データがありません',
     network: '標高データを取得できませんでした',

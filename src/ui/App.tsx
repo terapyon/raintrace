@@ -1,6 +1,7 @@
 import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
 import type { SettingsStore } from '../state/settingsStore'
+import { CellInfoHost } from './components/CellInfoHost'
 import { MapView } from './components/MapView'
 import { Panel } from './components/Panel'
 import { TerrainSessionBinder } from './components/TerrainSessionBinder'
@@ -27,6 +28,7 @@ export function App({ missingFeatures, session, settings }: Props) {
           {session !== null && (
             <Panel store={session.store} settings={settings} onRetry={() => session.retry()} />
           )}
+          {session !== null && <CellInfoHost session={session} />}
         </>
       )}
     </ThemeProvider>

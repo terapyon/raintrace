@@ -1,13 +1,14 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
-import { cellAt } from '../dem/gridRange'
 import { wrapLongitude } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
+import { type ClickEvent, type ClickTarget, reduceClick } from '../state/clickState'
 import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
+import { type CellInfo, cellInfoAt } from './cellInfo'
 import type { SimulationSession } from './simulationSession'
 
 /**
@@ -17,7 +18,7 @@ import type { SimulationSession } from './simulationSession'
 export class TerrainSession {
   readonly store: AppStore
   private readonly client: SimulationClient
-  private readonly simulation: SimulationSession
+  readonly simulation: SimulationSession
   private readonly settings: SettingsStore
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
@@ -50,11 +51,28 @@ export class TerrainSession {
   attach(controller: MapController): () => void {
     const { map } = controller
     this.controller = controller
-    this.overlay = new TerrainOverlay(map, (run) => controller.whenLoaded(run))
+    this.overlay = new TerrainOverlay(
+      map,
+      (run) => controller.whenLoaded(run),
+      (lon, lat) => this.dispatchClick({ type: 'marker-drag-end', lon, lat }),
+    )
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
 
-    const onClick = (event: MapMouseEvent): void => this.select(event.lngLat.lng, event.lngLat.lat)
+    const onClick = (event: MapMouseEvent): void => {
+      const { lng, lat } = event.lngLat
+      // event.point は地図の要素の中の座標。ポップオーバーはビューポートの座標で置くので、要素の左上を足す
+      // （地図の要素が画面の左上から始まるとは限らない）
+      const rect = map.getContainer().getBoundingClientRect()
+      this.dispatchClick({
+        type: 'map-click',
+        target: this.clickTarget(lng, lat),
+        lon: lng,
+        lat,
+        x: rect.left + event.point.x,
+        y: rect.top + event.point.y,
+      })
+    }
     let frame = 0
     let pending: { lng: number; lat: number } | null = null
     // カーソル位置の標高は、描画フレームごとに 1 回だけストアへ反映する（spec 02 §6.2）
@@ -148,22 +166,39 @@ export class TerrainSession {
     }
   }
 
-  private updateCursor(lon: number, lat: number): void {
+  /** 地図のクリック・ポップオーバーのボタン・マーカーのドラッグ（spec 04 §4）。遷移は clickState.ts */
+  dispatchClick(event: ClickEvent): void {
+    const { popover, select } = reduceClick(this.store.getState().popover, event)
+    this.store.getState().setPopover(popover)
+    if (select !== null) this.select(select.lon, select.lat)
+  }
+
+  /** 地点のセルの標高・水深・水位。範囲の外や地形が無ければ null */
+  cellInfo(lon: number, lat: number): CellInfo | null {
     const terrain = this.client.terrain
-    if (terrain === null || this.store.getState().load.status !== 'ready') return
-    // 世界のコピーの上のカーソルも、選んだ地点と同じ [−180, 180) の経度で調べる
-    const cell = cellAt(terrain.geo, wrapLongitude(lon), lat)
-    if (cell === null) {
-      this.store.getState().setCursor({ kind: 'outside' })
-      return
+    if (terrain === null) return null
+    return cellInfoAt(terrain, this.client.water, lon, lat)
+  }
+
+  private clickTarget(lon: number, lat: number): ClickTarget {
+    if (this.client.terrain === null || this.store.getState().load.status !== 'ready') {
+      return 'no-range'
     }
-    const index = cell.row * terrain.geo.size + cell.col
+    return this.cellInfo(lon, lat) === null ? 'outside' : 'inside'
+  }
+
+  /** カーソル位置の標高（spec 02 §6.2）。02 の振る舞い（範囲の外は outside、無効セルは no-data）のまま、cellInfo で読む */
+  private updateCursor(lon: number, lat: number): void {
+    if (this.store.getState().load.status !== 'ready') return
+    const info = this.cellInfo(lon, lat)
     this.store
       .getState()
       .setCursor(
-        terrain.validMask[index] === 1
-          ? { kind: 'value', meters: terrain.elevation[index] ?? 0 }
-          : { kind: 'no-data' },
+        info === null
+          ? { kind: 'outside' }
+          : info.kind === 'value'
+            ? { kind: 'value', meters: info.elevationM }
+            : { kind: 'no-data' },
       )
   }
 

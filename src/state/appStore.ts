@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { DemId } from '../dem/demSources'
 import type { TerrainErrorReason, TerrainPayload } from '../shared/protocol'
+import { CLOSED, type Popover } from './clickState'
 
 /** 読み込みの失敗の理由。superseded（新しい地点に置き換わった）は失敗として置かない */
 export type LoadFailureReason = Exclude<TerrainErrorReason, 'superseded'>
@@ -39,6 +40,7 @@ export interface AppState {
   summary: TerrainSummary | null
   display: DisplaySettings
   cursor: CursorElevation | null
+  popover: Popover
 }
 
 export interface AppActions {
@@ -48,6 +50,7 @@ export interface AppActions {
   setFailed(reason: LoadFailureReason): void
   setDisplay(patch: Partial<DisplaySettings>): void
   setCursor(cursor: CursorElevation | null): void
+  setPopover(popover: Popover): void
 }
 
 export type AppStore = StoreApi<AppState & AppActions>
@@ -67,12 +70,14 @@ export function createAppStore(): AppStore {
     summary: null,
     display: { elevation: true, depressions: true, flow: true },
     cursor: null,
+    popover: CLOSED,
     selectPoint: (lon, lat) =>
       set({
         selected: { lon, lat },
         load: { status: 'loading', done: 0, started: 0 },
         summary: null,
         cursor: null,
+        popover: CLOSED,
       }),
     setProgress: (done, started) => set({ load: { status: 'loading', done, started } }),
     setTerrain: (summary) => set({ summary, load: { status: 'ready' } }),
@@ -80,6 +85,7 @@ export function createAppStore(): AppStore {
     setDisplay: (patch) => set((state) => ({ display: { ...state.display, ...patch } })),
     // マウスの移動のたびに呼ばれる。同じ値なら同じ state を返し、購読者（パネル）に知らせない
     setCursor: (cursor) => set((state) => (sameCursor(state.cursor, cursor) ? state : { cursor })),
+    setPopover: (popover) => set({ popover }),
   }))
 }
 

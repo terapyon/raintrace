@@ -49,12 +49,14 @@ describe('createAppStore', () => {
     const store = createAppStore()
     store.getState().setTerrain(summarizeTerrain(terrain))
     store.getState().setCursor({ kind: 'value', meters: 3 })
+    store.getState().setPopover({ kind: 'cell', lon: 1, lat: 2, x: 3, y: 4 })
     store.getState().selectPoint(139.7, 35.6)
     expect(store.getState()).toMatchObject({
       selected: { lon: 139.7, lat: 35.6 },
       load: { status: 'loading', done: 0, started: 0 },
       summary: null,
       cursor: null,
+      popover: { kind: 'closed' },
     })
   })
 
