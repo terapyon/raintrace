@@ -4,7 +4,9 @@
     "noEmit": true,
     "tsBuildInfoFile": "node_modules/.tmp/tsc/test.tsbuildinfo",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node", "vitest"],
+    // vite/client: simulationSession.test.ts が simulationSession.ts 経由で MapController.ts に届き、
+    // その .css・?worker&url の副作用 import の型がここでも要る（タスク 6 で判明）
+    "types": ["node", "vitest", "vite/client"],
     "jsx": "react-jsx"
   },
   "include": ["src/**/*.test.ts", "src/**/*.test.tsx"],

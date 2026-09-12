@@ -28,6 +28,8 @@ import {
 } from '../format'
 import { strings } from '../strings'
 import { DemInfoBadge } from './DemInfoBadge'
+import { DepressionLegend } from './DepressionLegend'
+import { WaterLegend } from './WaterLegend'
 
 const PANEL_WIDTH = 320
 const FLOW_SPACINGS = [5, 10, 20] as const
@@ -185,6 +187,8 @@ export function Panel({ store, onRetry }: { store: AppStore; onRetry: () => void
                 </Row>
               </>
             )}
+            <DepressionLegend />
+            <WaterLegend palette="stepped" />
             <Divider sx={{ my: 1 }} />
             <Typography variant="subtitle2">{strings.panel.display}</Typography>
             <FormControlLabel

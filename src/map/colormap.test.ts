@@ -3,10 +3,12 @@ import { DEPTH_TOLERANCE_M as DEPTH_TOLERANCE_M_TERRAIN } from '../simulation/te
 import { makeDepression } from '../simulation/terrain/testGrids'
 import {
   DEPTH_TOLERANCE_M,
+  depressionLegendCss,
   depressionRgba,
   depthBand,
   elevationColor,
   elevationRgba,
+  interpolateStops,
 } from './colormap'
 
 describe('elevationColor', () => {
@@ -84,5 +86,28 @@ describe('depressionRgba', () => {
       [],
     )
     expect(rgba[3]).toBe(0)
+  })
+})
+
+describe('depressionLegendCss', () => {
+  it('窪地の 8 帯の色の境目を持つ線形グラデーション（02 の申し送り L4）', () => {
+    const css = depressionLegendCss()
+    expect(css.startsWith('linear-gradient(to right, ')).toBe(true)
+    expect(css.split('rgb(').length - 1).toBe(8)
+  })
+})
+
+describe('interpolateStops（標高と水深の配色で共有する線形補間）', () => {
+  const stops = [
+    [0, 0, 0],
+    [100, 200, 50],
+    [200, 200, 250],
+  ] as const
+
+  it('点の間を線形に補間し、0〜1 の外は端の色に丸める', () => {
+    expect(interpolateStops(stops, 0.25)).toEqual([50, 100, 25])
+    expect(interpolateStops(stops, 1)).toEqual([200, 200, 250])
+    expect(interpolateStops(stops, -1)).toEqual([0, 0, 0])
+    expect(interpolateStops(stops, 2)).toEqual([200, 200, 250])
   })
 })

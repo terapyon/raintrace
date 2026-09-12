@@ -1,6 +1,6 @@
 import type { TerrainPayload } from '../shared/protocol'
 
-type Rgb = readonly [number, number, number]
+export type Rgb = readonly [number, number, number]
 
 // 標高: 色覚特性に配慮した連続色（cividis に近い 5 点を線形補間。tech-spec §9.5）
 const ELEVATION_STOPS: readonly Rgb[] = [
@@ -31,18 +31,23 @@ const ELEVATION_ALPHA = 200
 const DEPRESSION_ALPHA = 220
 const BLACK: Rgb = [0, 0, 0]
 
-export function elevationColor(t: number): Rgb {
+/** 色の点の列を t（0〜1。範囲の外は端に丸める）で線形補間する。標高と水深の配色で共有する */
+export function interpolateStops(stops: readonly Rgb[], t: number): Rgb {
   const clamped = Math.min(1, Math.max(0, t))
-  const position = clamped * (ELEVATION_STOPS.length - 1)
-  const lower = Math.min(ELEVATION_STOPS.length - 2, Math.floor(position))
+  const position = clamped * (stops.length - 1)
+  const lower = Math.min(stops.length - 2, Math.floor(position))
   const f = position - lower
-  const a = ELEVATION_STOPS[lower] ?? BLACK
-  const b = ELEVATION_STOPS[lower + 1] ?? a
+  const a = stops[lower] ?? BLACK
+  const b = stops[lower + 1] ?? a
   return [
     Math.round(a[0] + (b[0] - a[0]) * f),
     Math.round(a[1] + (b[1] - a[1]) * f),
     Math.round(a[2] + (b[2] - a[2]) * f),
   ]
+}
+
+export function elevationColor(t: number): Rgb {
+  return interpolateStops(ELEVATION_STOPS, t)
 }
 
 /** 5cm 刻みの帯の番号（0 から）。Float32 の丸めを吸収する余裕を持たせる。最後の帯で頭打ち */
@@ -86,4 +91,14 @@ export function depressionRgba(
     rgba.set([color[0], color[1], color[2], DEPRESSION_ALPHA], i * 4)
   }
   return rgba
+}
+
+/** 窪地の配色の凡例の背景（CSS）。帯の境目をそのまま（02 の申し送り L4） */
+export function depressionLegendCss(): string {
+  const width = 100 / DEPRESSION_BANDS.length
+  const stops = DEPRESSION_BANDS.map(
+    ([r, g, b], k) =>
+      `rgb(${r} ${g} ${b}) ${(k * width).toFixed(2)}% ${((k + 1) * width).toFixed(2)}%`,
+  )
+  return `linear-gradient(to right, ${stops.join(', ')})`
 }

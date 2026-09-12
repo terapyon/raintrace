@@ -1,5 +1,6 @@
 import { type GeoJSONSource, type Map as MapLibreMap, Marker } from 'maplibre-gl'
 import type { TerrainPayload } from '../shared/protocol'
+import { ensureArrowImage } from './arrowImage'
 import { depressionRgba, elevationRgba } from './colormap'
 import { flowFeatures, markerFeatures, outlineFeature } from './terrainFeatures'
 
@@ -11,7 +12,7 @@ export interface OverlayDisplay {
   flowSpacingM: number
 }
 
-const ID = {
+export const TERRAIN_LAYER_IDS = {
   elevation: 'terrain-elevation',
   depressions: 'terrain-depressions',
   outline: 'terrain-outline',
@@ -59,7 +60,7 @@ export class TerrainOverlay {
       const { corners } = terrain.geo
       const range = terrain.elevationRange ?? { min: 0, max: 0 }
       this.addCanvasLayer(
-        ID.elevation,
+        TERRAIN_LAYER_IDS.elevation,
         elevationRgba(terrain.elevation, terrain.validMask, range.min, range.max),
         0.75,
       )
@@ -67,26 +68,29 @@ export class TerrainOverlay {
       // 窪地を depressions[label − 1] で引く（窪地の id は 1 から順）。エンジンの setDepressions に
       // significant だけを渡すのは Worker（workers/simulationRunner.ts）で、ここは絞らない
       this.addCanvasLayer(
-        ID.depressions,
+        TERRAIN_LAYER_IDS.depressions,
         depressionRgba(terrain.fill, terrain.elevation, terrain.labels, terrain.depressions),
         0.85,
       )
-      this.map.addSource(ID.outline, { type: 'geojson', data: outlineFeature(corners) })
+      this.map.addSource(TERRAIN_LAYER_IDS.outline, {
+        type: 'geojson',
+        data: outlineFeature(corners),
+      })
       this.map.addLayer({
-        id: ID.outline,
+        id: TERRAIN_LAYER_IDS.outline,
         type: 'line',
-        source: ID.outline,
+        source: TERRAIN_LAYER_IDS.outline,
         paint: { 'line-color': '#d32f2f', 'line-width': 2 },
       })
-      this.ensureArrowImage()
-      this.map.addSource(ID.flow, {
+      ensureArrowImage(this.map, ARROW_IMAGE, '#263238')
+      this.map.addSource(TERRAIN_LAYER_IDS.flow, {
         type: 'geojson',
         data: flowFeatures(terrain, this.flowSpacingM),
       })
       this.map.addLayer({
-        id: ID.flow,
+        id: TERRAIN_LAYER_IDS.flow,
         type: 'symbol',
-        source: ID.flow,
+        source: TERRAIN_LAYER_IDS.flow,
         layout: {
           'icon-image': ARROW_IMAGE,
           'icon-rotate': ['get', 'bearing'],
@@ -95,11 +99,14 @@ export class TerrainOverlay {
           'icon-size': 0.6,
         },
       })
-      this.map.addSource(ID.markers, { type: 'geojson', data: markerFeatures(terrain) })
+      this.map.addSource(TERRAIN_LAYER_IDS.markers, {
+        type: 'geojson',
+        data: markerFeatures(terrain),
+      })
       this.map.addLayer({
-        id: ID.markers,
+        id: TERRAIN_LAYER_IDS.markers,
         type: 'circle',
-        source: ID.markers,
+        source: TERRAIN_LAYER_IDS.markers,
         paint: {
           'circle-radius': 6,
           'circle-color': ['match', ['get', 'kind'], 'lowest', '#1565c0', '#ef6c00'],
@@ -119,13 +126,21 @@ export class TerrainOverlay {
     const terrain = this.terrain
     if (terrain === null) return
     const visibility = (visible: boolean): 'visible' | 'none' => (visible ? 'visible' : 'none')
-    this.map.setLayoutProperty(ID.elevation, 'visibility', visibility(display.elevation))
-    this.map.setLayoutProperty(ID.depressions, 'visibility', visibility(display.depressions))
-    this.map.setLayoutProperty(ID.flow, 'visibility', visibility(display.flow))
+    this.map.setLayoutProperty(
+      TERRAIN_LAYER_IDS.elevation,
+      'visibility',
+      visibility(display.elevation),
+    )
+    this.map.setLayoutProperty(
+      TERRAIN_LAYER_IDS.depressions,
+      'visibility',
+      visibility(display.depressions),
+    )
+    this.map.setLayoutProperty(TERRAIN_LAYER_IDS.flow, 'visibility', visibility(display.flow))
     if (display.flowSpacingM !== this.flowSpacingM) {
       this.flowSpacingM = display.flowSpacingM
       this.map
-        .getSource<GeoJSONSource>(ID.flow)
+        .getSource<GeoJSONSource>(TERRAIN_LAYER_IDS.flow)
         ?.setData(flowFeatures(terrain, display.flowSpacingM))
     }
   }
@@ -143,7 +158,7 @@ export class TerrainOverlay {
 
   /** レイヤー・ソースと範囲の表示の印を消す。generation には触らない（待っている描画は取り消さない） */
   private removeLayers(): void {
-    for (const id of Object.values(ID)) {
+    for (const id of Object.values(TERRAIN_LAYER_IDS)) {
       if (this.map.getLayer(id) !== undefined) this.map.removeLayer(id)
       if (this.map.getSource(id) !== undefined) this.map.removeSource(id)
     }
@@ -167,26 +182,5 @@ export class TerrainOverlay {
       source: id,
       paint: { 'raster-opacity': opacity, 'raster-resampling': 'nearest' },
     })
-  }
-
-  /** 流向の矢印の画像（北向き）を一度だけ作る。外部の画像を読まない（CSP） */
-  private ensureArrowImage(): void {
-    if (this.map.hasImage(ARROW_IMAGE)) return
-    const size = 24
-    const canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    const context = canvas.getContext('2d')
-    if (context === null) return
-    context.fillStyle = '#263238'
-    context.beginPath()
-    context.moveTo(size / 2, 2)
-    context.lineTo(size - 5, size - 4)
-    context.lineTo(size / 2, size - 9)
-    context.lineTo(5, size - 4)
-    context.closePath()
-    context.fill()
-    const { data } = context.getImageData(0, 0, size, size)
-    this.map.addImage(ARROW_IMAGE, { width: size, height: size, data: new Uint8Array(data.buffer) })
   }
 }

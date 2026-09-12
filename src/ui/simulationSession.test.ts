@@ -7,6 +7,8 @@ import {
 } from '../bridge/fakeWorker.test-support'
 import { SimulationClient } from '../bridge/SimulationClient'
 import { lonLatToPixel } from '../dem/tileMath'
+import type { MapController } from '../map/MapController'
+import type { WaterOverlay } from '../map/WaterOverlay'
 import type { TerrainPayload } from '../shared/protocol'
 import { createSimulationStore } from '../state/simulationStore'
 import { SimulationSession, STATS_INTERVAL_MS } from './simulationSession'
@@ -26,6 +28,43 @@ const geo = {
   cellSizeM: 0.98,
 } as TerrainPayload['geo']
 const terrain = { geo } as TerrainPayload
+
+/** WaterOverlay の偽物。attach() の第 2 引数（テストの差し替え口）で使う */
+function fakeOverlay(): WaterOverlay & {
+  show: ReturnType<typeof vi.fn>
+  setWater: ReturnType<typeof vi.fn>
+  setPalette: ReturnType<typeof vi.fn>
+  setArrows: ReturnType<typeof vi.fn>
+  setArrowsVisible: ReturnType<typeof vi.fn>
+  clearArrows: ReturnType<typeof vi.fn>
+  clear: ReturnType<typeof vi.fn>
+  restore: ReturnType<typeof vi.fn>
+} {
+  return {
+    show: vi.fn(),
+    setWater: vi.fn(),
+    setPalette: vi.fn(),
+    setArrows: vi.fn(),
+    setArrowsVisible: vi.fn(),
+    clearArrows: vi.fn(),
+    clear: vi.fn(),
+    restore: vi.fn(),
+  } as unknown as WaterOverlay & {
+    show: ReturnType<typeof vi.fn>
+    setWater: ReturnType<typeof vi.fn>
+    setPalette: ReturnType<typeof vi.fn>
+    setArrows: ReturnType<typeof vi.fn>
+    setArrowsVisible: ReturnType<typeof vi.fn>
+    clearArrows: ReturnType<typeof vi.fn>
+    clear: ReturnType<typeof vi.fn>
+    restore: ReturnType<typeof vi.fn>
+  }
+}
+
+/** MapController の偽物。map には触れない（テストは overlay の偽物への呼び出しだけを見る） */
+function fakeController(): MapController {
+  return { map: {}, whenLoaded: (run: () => void) => run() } as unknown as MapController
+}
 
 function setup() {
   const worker = new FakeWorker()
@@ -123,7 +162,9 @@ describe('SimulationSession: Worker の作り直しの後の速度の立て直�
     void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
     worker.loaded(terrain)
     session.terrainReady(terrain, CENTER)
-    expect(worker.posted.at(-1)).toEqual({ type: 'setSpeed', speed: 'max' })
+    // terrainReady は setSpeed の後に setArrows も送り直す（タスク 6。矢印の設定の立て直し）ので、
+    // 最後のメッセージではなく、setSpeed が送られたことを見る
+    expect(worker.posted.some((m) => m.type === 'setSpeed' && m.speed === 'max')).toBe(true)
   })
 
   it(
@@ -310,4 +351,124 @@ describe('SimulationSession: frame → ストア', () => {
       expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
     },
   )
+})
+
+describe('SimulationSession: 水の流れの矢印の設定', () => {
+  it('地形が読み込まれたら、今の矢印の設定を Worker に送る（既定は表示・10m）', () => {
+    const { worker } = setup()
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: true, spacingM: 10 })
+  })
+
+  it('setArrows は地形があれば Worker に送り、無ければ覚えるだけ', () => {
+    const { worker, session } = setup()
+    session.setArrows(false, 20)
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: false, spacingM: 20 })
+    session.terrainCleared()
+    const count = worker.posted.length
+    session.setArrows(true, 5)
+    expect(worker.posted).toHaveLength(count)
+  })
+})
+
+describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加の裁定 D2/D3 とは別に、runId のルーティングを確かめる）', () => {
+  it('attach は今の配色・矢印の表示設定を渡し、地形があれば表示する', () => {
+    const { session } = setup()
+    const overlay = fakeOverlay()
+    session.setPalette('continuous')
+    session.setArrows(false, 20)
+    session.attach(fakeController(), () => overlay)
+    expect(overlay.setPalette).toHaveBeenCalledWith('continuous')
+    expect(overlay.setArrowsVisible).toHaveBeenCalledWith(false)
+    expect(overlay.show).toHaveBeenCalledWith(terrain.geo)
+  })
+
+  it('今の runId の frame は overlay へ水を渡し、矢印つきなら間引いて渡す', () => {
+    const { worker, session, terrainId } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.start(100, 10) // runId 1
+    const water = new Float32Array(4).fill(0.1)
+    worker.reply(
+      frameMessage(terrainId, 1, {
+        water: water.buffer,
+        arrows: Float32Array.of(0, 0, 90, 0.1),
+      }),
+    )
+    expect(overlay.setWater).toHaveBeenCalledWith(expect.any(Float32Array))
+    expect(overlay.setArrows).toHaveBeenCalledWith({
+      type: 'FeatureCollection',
+      features: expect.any(Array),
+    })
+  })
+
+  it(
+    '古い runId の frame（Reset の後に遅れて届く分）は overlay の水・矢印を更新しない。' +
+      'runId が合う frame は通常どおり反映する（client.onFrame を直接見ると素通りしてしまうための回帰）',
+    () => {
+      const { worker, session, terrainId } = setup()
+      const overlay = fakeOverlay()
+      session.attach(fakeController(), () => overlay)
+      session.start(100, 10) // runId 1
+      session.reset() // runId 2
+
+      worker.reply(frameMessage(terrainId, 5, { runId: 1, arrows: Float32Array.of(0, 0, 90, 0.1) }))
+      expect(overlay.setWater).not.toHaveBeenCalled()
+      expect(overlay.setArrows).not.toHaveBeenCalled()
+
+      worker.reply(
+        frameMessage(terrainId, 0, { runId: 2, arrows: Float32Array.of(1, 1, 180, 0.2) }),
+      )
+      expect(overlay.setWater).toHaveBeenCalled()
+      expect(overlay.setArrows).toHaveBeenCalled()
+    },
+  )
+
+  it('今の runId の simFailed は overlay の水と矢印を消す（レビューの追加指摘: 返却済みバッファの参照を残さない）', () => {
+    const { worker, session, terrainId } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.start(100, 10) // runId 1
+    worker.reply(frameMessage(terrainId, 1, { arrows: Float32Array.of(0, 0, 90, 0.1) }))
+    overlay.setWater.mockClear()
+    worker.reply(simFailedMessage(terrainId, { runId: 1, reason: 'no-elevation-at-rain-center' }))
+    expect(overlay.setWater).toHaveBeenCalledWith(null)
+    expect(overlay.clearArrows).toHaveBeenCalled()
+  })
+
+  it('古い runId の simFailed は overlay に触れない', () => {
+    const { worker, session, terrainId } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.start(100, 10) // runId 1
+    session.reset() // runId 2
+    worker.reply(simFailedMessage(terrainId, { runId: 1, reason: 'no-elevation-at-rain-center' }))
+    expect(overlay.setWater).not.toHaveBeenCalled()
+    expect(overlay.clearArrows).not.toHaveBeenCalled()
+  })
+
+  it('Worker の異常終了でも overlay の水と矢印を消す', () => {
+    const { worker, session } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.start(100, 10)
+    worker.crash()
+    expect(overlay.setWater).toHaveBeenCalledWith(null)
+    expect(overlay.clearArrows).toHaveBeenCalled()
+  })
+
+  it('terrainCleared は overlay を消し、矢印の間引きを取り消す', () => {
+    const { session } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.terrainCleared()
+    expect(overlay.clear).toHaveBeenCalled()
+  })
+
+  it('attach の戻り値で外すと、overlay を消す', () => {
+    const { session } = setup()
+    const overlay = fakeOverlay()
+    const detach = session.attach(fakeController(), () => overlay)
+    detach()
+    expect(overlay.clear).toHaveBeenCalled()
+  })
 })

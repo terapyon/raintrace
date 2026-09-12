@@ -1,6 +1,10 @@
 import type { FrameView, SimulationClient } from '../bridge/SimulationClient'
 import { gridPositionM } from '../dem/gridRange'
-import type { PlaybackSpeed, TerrainPayload } from '../shared/protocol'
+import type { MapController } from '../map/MapController'
+import { WaterOverlay } from '../map/WaterOverlay'
+import type { WaterPalette } from '../map/waterColormap'
+import { waterArrowFeatures } from '../map/waterFeatures'
+import type { ArrowSpacingM, PlaybackSpeed, TerrainPayload } from '../shared/protocol'
 import type { DisplayStats, SimulationStore } from '../state/simulationStore'
 import { createThrottle, type Throttle } from '../state/throttle'
 
@@ -36,6 +40,13 @@ export class SimulationSession {
    * なので、保留枠に何が残っていても取り違えない
    */
   private runId = 0
+  private overlay: WaterOverlay | null = null
+  private readonly arrowsThrottle: Throttle<Float32Array>
+  private arrowSettings: { visible: boolean; spacingM: ArrowSpacingM } = {
+    visible: true,
+    spacingM: 10,
+  }
+  private palette: WaterPalette = 'stepped'
 
   constructor(client: SimulationClient, store: SimulationStore) {
     this.client = client
@@ -43,11 +54,22 @@ export class SimulationSession {
     this.statsThrottle = createThrottle<StatsUpdate>(STATS_INTERVAL_MS, (u) =>
       this.store.getState().setStats(u.stats, u.stepsPerSecond),
     )
+    // 矢印の地図への反映は 10Hz に間引く（spec 04 §6.2）
+    this.arrowsThrottle = createThrottle<Float32Array>(STATS_INTERVAL_MS, (arrows) => {
+      if (this.terrain !== null) {
+        this.overlay?.setArrows(waterArrowFeatures(arrows, this.terrain.geo))
+      }
+    })
     client.onFrame((frame) => this.onFrame(frame))
     client.onSimFailed((reason, runId) => {
       if (this.terrain !== null && runId === this.runId) {
         // 間引き待ちの古い統計を、失敗の後に上書きしない（stats: null を保つ）
         this.statsThrottle.cancel()
+        // simFailed の直前に SimulationClient が今の水深バッファを Worker へ返却済み（detach 済み）なので、
+        // overlay が古い（切り離された）配列をなお参照し続けないよう、明示的に消す（レビューの追加指摘）
+        this.arrowsThrottle.cancel()
+        this.overlay?.setWater(null)
+        this.overlay?.clearArrows()
         this.store.getState().failed(reason)
       }
     })
@@ -58,6 +80,8 @@ export class SimulationSession {
   terrainCleared(): void {
     this.clearTerrainState()
     this.statsThrottle.cancel()
+    this.arrowsThrottle.cancel()
+    this.overlay?.clear()
     this.store.getState().reset()
   }
 
@@ -70,9 +94,42 @@ export class SimulationSession {
     // ここで揃えておけば両者は常に同じ基準（0）から始まる
     this.runId = 0
     // 異常終了で作り直した Worker（新しい PlaybackScheduler）は速度 1・既定の矢印設定で始まり、
-    // ストアが持つ今の速度とずれる。読み込みが済むたびに送り直して揃える（コントローラーの追加の裁定。
-    // 矢印の設定はこの段階の session がまだ知らないので、矢印を扱う段になったら同様に送り直す）
+    // ストアが持つ今の速度とずれる。読み込みが済むたびに送り直して揃える（コントローラーの追加の裁定）
     this.client.setSpeed(this.store.getState().speed)
+    this.overlay?.show(terrain.geo)
+    this.client.setArrows(this.arrowSettings.visible, this.arrowSettings.spacingM)
+  }
+
+  /** 地図ができたら水深と矢印のレイヤーを置く。戻り値で外す */
+  attach(
+    controller: MapController,
+    createOverlay: (
+      map: MapController['map'],
+      whenLoaded: (run: () => void) => void,
+    ) => WaterOverlay = (map, whenLoaded) => new WaterOverlay(map, whenLoaded),
+  ): () => void {
+    const overlay = createOverlay(controller.map, (run) => controller.whenLoaded(run))
+    overlay.setPalette(this.palette)
+    overlay.setArrowsVisible(this.arrowSettings.visible)
+    if (this.terrain !== null) overlay.show(this.terrain.geo)
+    this.overlay = overlay
+    return () => {
+      this.arrowsThrottle.cancel()
+      overlay.clear()
+      this.overlay = null
+    }
+  }
+
+  /** 水の流れの矢印の表示と間隔。非表示なら Worker は flowVectors() を呼ばない */
+  setArrows(visible: boolean, spacingM: ArrowSpacingM): void {
+    this.arrowSettings = { visible, spacingM }
+    this.overlay?.setArrowsVisible(visible)
+    if (this.terrain !== null) this.client.setArrows(visible, spacingM)
+  }
+
+  setPalette(palette: WaterPalette): void {
+    this.palette = palette
+    this.overlay?.setPalette(palette)
   }
 
   start(amountMm: number, radiusM: number): void {
@@ -105,6 +162,7 @@ export class SimulationSession {
     this.runId += 1
     this.client.reset(this.runId)
     this.statsThrottle.cancel()
+    this.arrowsThrottle.cancel()
     this.store.getState().reset()
   }
 
@@ -116,8 +174,12 @@ export class SimulationSession {
   private onFrame(frame: FrameView): void {
     if (this.terrain === null) return
     // 今の実行のものだけを反映する（バッファの返却は SimulationClient 側でこれまでどおり行われる。
-    // frame の受信そのものは止めない）
+    // frame の受信そのものは止めない）。overlay・矢印への反映もこの判定の後に置き、古い runId の frame が
+    // client.onFrame を素通りしても overlay まで届かないようにする（タスク 6 のレビューの追加指摘）
     if (frame.runId !== this.runId) return
+    // 着色は描画フレームごとに最新の 1 つだけ（WaterOverlay）。矢印は null なら前のまま
+    this.overlay?.setWater(frame.water)
+    if (frame.arrows !== null) this.arrowsThrottle.push(frame.arrows)
     const { events, ...stats } = frame.stats
     const state = this.store.getState()
     if (events.length > 0) state.addSpills(events)
@@ -142,6 +204,11 @@ export class SimulationSession {
     this.statsThrottle.cancel()
     // 読み込み中の異常終了は、読み込みの失敗（'worker'）として TerrainSession が出す
     if (this.terrain !== null) {
+      // Worker が居なくなった以上、それが持っていた水深・矢印はもう更新されない。overlay に古い絵を
+      // 残さない（レビューの追加指摘。simFailed と同じ理由）
+      this.arrowsThrottle.cancel()
+      this.overlay?.setWater(null)
+      this.overlay?.clearArrows()
       this.store.getState().failed('worker')
       // 異常終了の後、新しい Worker には地形が無い。command() が start・resume・step を黙って
       // 捨てるのに任せるだけでなく、session 自身も「地形が無い」状態にする。そうしないと start() が

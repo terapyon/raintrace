@@ -34,6 +34,8 @@ export class TerrainSession {
     const { map } = controller
     this.controller = controller
     this.overlay = new TerrainOverlay(map, (run) => controller.whenLoaded(run))
+    // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
+    const detachWater = this.simulation.attach(controller)
 
     const onClick = (event: MapMouseEvent): void => this.select(event.lngLat.lng, event.lngLat.lat)
     let frame = 0
@@ -75,6 +77,7 @@ export class TerrainSession {
       cancelAnimationFrame(frame)
       clearTimeout(urlTimer)
       unsubscribe()
+      detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()
       this.overlay = null
