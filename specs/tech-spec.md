@@ -1189,13 +1189,14 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 |---|---:|---:|
 | `map` | 246.6 KB | 260 KB |
 | `ui` | 160.0 KB | 150 KB（超過） |
-| `index` | 18.0 KB（別に rolldown のランタイム 0.4 KB） | 20 KB |
-| 初期ロードの合計 | 424.9 KB | 500 KB |
+| `index` | 18.1 KB（別に rolldown のランタイム 0.4 KB） | 20 KB |
+| 初期ロードの合計 | 425.0 KB | 500 KB |
 | `maplibre-gl-worker` | 131.8 KB | — |
 | `simulation.worker` | 8.7 KB | — |
-| 総量 | 565.3 KB | 1.2 MB |
+| 総量 | 565.5 KB | 1.2 MB |
 
 - `ui` がチャンクの予算（150 KB）を 10 KB 超えた。実装 spec 04 で足した MUI の部品（`TextField`・`Slider`・`ToggleButtonGroup`・`Popover`・`Dialog`・`Snackbar` など）による。とくに `TextField` は、使わなくても `Select`・`Menu`・`Popover` の実装を静的に import する（本アプリのコードはこれらを使わず、列挙の選択は §9.3 のとおり `ToggleButtonGroup` にしている）。予算が詰まってきたら、パネルの遅延ロードと合わせて、`TextField` を `OutlinedInput`（または `InputBase`）と `FormControl` の組み合わせに置き換えることを検討する（裁定 RB-1 の順序）
+- 範囲 1000 m の確認（2026-09-13、04 の最終レビューの推奨。渋谷駅付近、本番ビルド、実タイル、headless の Chrome 135・実 GPU）: グリッド 1031 × 1031（DEM1A、セル 0.97 m）で、水深の frame は 4.25 MB、水深のテクスチャは 1031 × 1031。「1000 m」を押してから地形が出るまで 0.8 秒（`?size=1000` を新しいプロファイルで直接開くと 1.6 秒）。読み込みの番犬（30 秒）は発火せず、進捗の最長の途切れは窪地の解析の 0.3 秒。既定の雨は「最速」で Step 49,332・46 秒で平衡し、実行速度は中央値 985 step／秒、再生中の 50 ms を超えるタスクは 0 件。**ただし読み込みの終わりに 123 ms のタスクが 1 回ある**（§14.1 の 50 ms を超える。250・500 m では 0 件）。CPU プロファイルでは主に、メインスレッドでの標高の色分け（`elevationRgba`、75 ms）。対応は別に決める
 
 ## 14.3 メモリ
 
