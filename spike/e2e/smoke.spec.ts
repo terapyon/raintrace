@@ -55,3 +55,11 @@ for (const scene of ['synthetic', 'real'] as const) {
     expect(errors).toEqual([])
   })
 }
+
+for (const candidate of ['a', 'a2', 'b', 'braw'] as const) {
+  test(`候補 ${candidate} の読み込みで CSP 違反とエラーが無い`, async ({ page, context }) => {
+    const errors = await openSpike(page, context, { candidate, scene: 'real' })
+    expect(await page.evaluate(() => window.spike?.cspViolations)).toEqual([])
+    expect(errors).toEqual([])
+  })
+}
