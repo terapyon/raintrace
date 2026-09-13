@@ -31,7 +31,7 @@ export function Row({
 }
 
 function cursorText(cursor: CursorElevation | null): string {
-  if (cursor === null) return '—'
+  if (cursor === null) return strings.format.none
   if (cursor.kind === 'outside') return strings.panel.cursorOutside
   if (cursor.kind === 'no-data') return strings.panel.cursorNoData
   return formatMeters(cursor.meters)

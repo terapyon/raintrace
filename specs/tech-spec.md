@@ -1189,8 +1189,8 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 |---|---:|---:|
 | `map` | 246.6 KB | 260 KB |
 | `ui` | 160.0 KB | 150 KB（超過） |
-| `index` | 18.1 KB（別に rolldown のランタイム 0.4 KB） | 20 KB |
-| 初期ロードの合計 | 425.0 KB | 500 KB |
+| `index` | 18.2 KB（別に rolldown のランタイム 0.4 KB） | 20 KB |
+| 初期ロードの合計 | 425.1 KB | 500 KB |
 | `maplibre-gl-worker` | 131.8 KB | — |
 | `simulation.worker` | 8.7 KB | — |
 | 総量 | 565.5 KB | 1.2 MB |
