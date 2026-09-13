@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 import { type Shot, writeContactSheet } from './support/contactSheet'
 import { openSpike, setView } from './support/views'
 
-const SEAM_CANDIDATES = ['b'] as const
+const SEAM_CANDIDATES = ['b', 'braw'] as const
 const results = new URL('../results/', import.meta.url)
 
 for (const candidate of SEAM_CANDIDATES) {

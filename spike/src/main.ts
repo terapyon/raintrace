@@ -23,6 +23,7 @@ const candidates: Partial<Record<CandidateId, () => Promise<{ mount: MountCandid
   a: () => import('./candidates/a'),
   a2: () => import('./candidates/a'),
   b: () => import('./candidates/b'),
+  braw: () => import('./candidates/braw'),
 }
 
 const status = document.getElementById('status')
