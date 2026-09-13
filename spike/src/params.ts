@@ -33,7 +33,7 @@ export function parseParams(search: string): SpikeParams {
   return {
     candidate: candidates.find((id) => id === query.get('candidate')) ?? null,
     scene: pick(query.get('scene'), ['synthetic', 'real'], 'synthetic'),
-    water: pick(query.get('water'), ['fixed', 'film', 'bowlFilm', 'dynamic'], 'fixed'),
+    water: pick(query.get('water'), ['fixed', 'film', 'bowlFilm', 'dynamic', 'none'], 'fixed'),
     exaggeration: numberIn(query.get('exaggeration'), 0.1, 20, 1),
     pitch: numberIn(query.get('pitch'), 0, 85, 60),
     zoom: numberIn(query.get('zoom'), 2, 18, 17),

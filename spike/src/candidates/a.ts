@@ -162,7 +162,8 @@ export const mount: MountCandidate = async (map, scene, params) => {
     zfix: params.zfix,
     renderTimes,
   })
-  map.addLayer(water.layer)
+  // water=none: 地形のみの基準（Task 8 fix round 1、レビュー Important 2）。水面の Custom Layer を追加しない
+  if (params.water !== 'none') map.addLayer(water.layer)
 
   const cells = probeCells(scene)
   const metersToMercator = MercatorCoordinate.fromLngLat([

@@ -6,8 +6,11 @@ import type { SpikeParams } from './params'
 export type ElevationSampler = (gx: number, gy: number) => number | null
 
 export type SceneName = 'synthetic' | 'real'
-/** bowlFilm: すり鉢の面（曲面）だけに 1cm の膜（中間の判定の反映 M1） */
-export type WaterMode = 'fixed' | 'film' | 'bowlFilm' | 'dynamic'
+/**
+ * bowlFilm: すり鉢の面（曲面）だけに 1cm の膜（中間の判定の反映 M1）。
+ * none: 水面のレイヤーを追加しない（A の地形のみの基準。Task 8 fix round 1、レビュー Important 2）
+ */
+export type WaterMode = 'fixed' | 'film' | 'bowlFilm' | 'dynamic' | 'none'
 export type CandidateId = 'a' | 'a2' | 'b' | 'braw'
 /** z-fighting の対策（spec S §3）。offset は水面に polygonOffset(−1, −4)、offset2 は (−2, −8) を付ける */
 export type ZFix = 'none' | 'offset' | 'offset2'
@@ -103,23 +106,47 @@ export interface WaterMeasure {
   flickerRatio: number // 内側のうち、視点をわずかに動かした 3 枚で見え方が変わった画素の割合
 }
 
-/** fps の計測(Task 8)。frame の間隔は requestAnimationFrame の時刻の差 */
+/**
+ * 中央値を基準にした間隔のヒストグラム（再採点用。Task 8 fix round 1、レビュー Important 3）。
+ * `Math.round(d / medianMs)` を 1〜5 に丸めた粒度別の生の回数（5 は 5 フレーム分以上をまとめる）
+ */
+export interface GapHistogram {
+  g1: number
+  g2: number
+  g3: number
+  g4: number
+  g5plus: number
+}
+
+/**
+ * fps の計測(Task 8)。frame の間隔は requestAnimationFrame の時刻の差。
+ * 先頭 `warmupMs` は統計から除く（fix round 1、レビュー Minor 2: 最初の動き出しの stall を避ける）
+ */
 export interface FpsResult {
   renderer: string // WEBGL_debug_renderer_info の UNMASKED_RENDERER（SwiftShader か実 GPU か）
   durationMs: number
+  warmupMs: number // 統計から除いた先頭の時間（既定 1000ms。fix round 1）
   frames: number
   meanFps: number
-  p50Ms: number
+  p50Ms: number // 中央値（frame 間隔）。longFrameThresholdMs の基準にも使う
   p95Ms: number
   maxMs: number
-  longFrameRatio: number // 33.4ms（2 フレーム分）を超えた間隔の割合
-  renderCpuMeanMs: number // 候補の Custom Layer の render の CPU 時間（アップロードを含む）
+  // 長いフレーム = p50Ms（このランの中央値）× 2.5 を超えた間隔（fix round 1、D15 の裁定）。
+  // 33.4ms 固定だと float の丸めで正確に 2 フレーム分（33.3〜33.5ms）の間隔が閾値の内外で揺れ、
+  // 同じ条件の実行で pass/fail が入れ替わっていた（task-8-review.md Important 3）
+  longFrameThresholdMs: number
+  longFrameRatio: number // 上の閾値を超えた間隔の割合
+  gapHistogram: GapHistogram // 閾値を後から変えて再採点できるよう、粒度別の生の回数も残す
+  // Custom Layer の render の CPU 時間（メインスレッドでのテクスチャアップロードの発行を含むが、
+  // GPU 側のアップロードや setDepth 内の 1MB コピー〈Worker の onmessage、計測窓の外〉は含まない）
+  renderCpuMeanMs: number
   renderCpuP95Ms: number
-  waterFrames: number // 計測中に届いた水深の数
+  renderFrames: number // 計測中に呼ばれた候補の render() の回数（renderTimes の増分）
+  depthUpdates: number // 計測中に届いた水深の数（旧 waterFrames）。renderFrames との比が水深の更新率
   roundTripMeanMs: number // 水深の要求から受け取りまで（Worker の計算と転送 2 回）
   devicePixelRatio: number
   canvas: [number, number] // drawingBuffer の画素数
-  pass: boolean // 平均 57fps 以上かつ長いフレーム 1% 以下（計画 D15）
+  pass: boolean // 平均 57fps 以上かつ長いフレーム 1% 以下（計画 D15、fix round 1 で長いフレームの定義を改定）
 }
 
 /** ページが Playwright と手動の計測に見せる窓口（window.spike） */
