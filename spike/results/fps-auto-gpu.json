@@ -1,0 +1,202 @@
+[
+  {
+    "candidate": "a",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.400000000001,
+      "frames": 279,
+      "meanFps": 55.617574356111945,
+      "p50Ms": 16.699999999999818,
+      "p95Ms": 16.800000000000182,
+      "maxMs": 116.59999999999991,
+      "longFrameRatio": 0.021505376344086023,
+      "renderCpuMeanMs": 0.25395683472533875,
+      "renderCpuP95Ms": 0.4000000059604645,
+      "waterFrames": 254,
+      "roundTripMeanMs": 8.940157480948553,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "a",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.400000000001,
+      "frames": 281,
+      "meanFps": 56.01626664540307,
+      "p50Ms": 16.69999999999891,
+      "p95Ms": 33.29999999999927,
+      "maxMs": 50,
+      "longFrameRatio": 0.021352313167259787,
+      "renderCpuMeanMs": 0.20357142803924425,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 245,
+      "roundTripMeanMs": 7.7302040817786235,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "a2",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.5,
+      "frames": 287,
+      "meanFps": 57.211203030001,
+      "p50Ms": 16.69999999999709,
+      "p95Ms": 16.80000000000291,
+      "maxMs": 99.90000000000873,
+      "longFrameRatio": 0.010452961672473868,
+      "renderCpuMeanMs": 0.17167832155327697,
+      "renderCpuP95Ms": 0.29999998211860657,
+      "waterFrames": 264,
+      "roundTripMeanMs": 7.507954547012394,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "a2",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.400000000009,
+      "frames": 282,
+      "meanFps": 56.21561279004854,
+      "p50Ms": 16.69999999999709,
+      "p95Ms": 16.80000000000291,
+      "maxMs": 50.10000000000582,
+      "longFrameRatio": 0.01773049645390071,
+      "renderCpuMeanMs": 0.16548042725837953,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 250,
+      "roundTripMeanMs": 6.580399999499321,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "b",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.4,
+      "frames": 301,
+      "meanFps": 60.00318953831433,
+      "p50Ms": 16.699999999999818,
+      "p95Ms": 16.700000000000728,
+      "maxMs": 16.800000000000182,
+      "longFrameRatio": 0,
+      "renderCpuMeanMs": 0.18033333182334899,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 300,
+      "roundTripMeanMs": 7.906000000834465,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": true
+    }
+  },
+  {
+    "candidate": "b",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.5,
+      "frames": 301,
+      "meanFps": 60.00199342170836,
+      "p50Ms": 16.69999999999891,
+      "p95Ms": 16.700000000000728,
+      "maxMs": 16.80000000000109,
+      "longFrameRatio": 0,
+      "renderCpuMeanMs": 0.18333333402872085,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 300,
+      "roundTripMeanMs": 5.859666667580605,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": true
+    }
+  },
+  {
+    "candidate": "braw",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.5,
+      "frames": 301,
+      "meanFps": 60.00199342170836,
+      "p50Ms": 16.699999999999818,
+      "p95Ms": 16.700000000000728,
+      "maxMs": 16.800000000000182,
+      "longFrameRatio": 0,
+      "renderCpuMeanMs": 0.10900000095367432,
+      "renderCpuP95Ms": 0.20000001788139343,
+      "waterFrames": 300,
+      "roundTripMeanMs": 9.109000001152356,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": true
+    }
+  },
+  {
+    "candidate": "braw",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce GTX 1080 Ti/PCIe/SSE2, OpenGL ES 3.2)",
+      "durationMs": 5016.500000000001,
+      "frames": 301,
+      "meanFps": 60.001993421708356,
+      "p50Ms": 16.69999999999891,
+      "p95Ms": 16.700000000000728,
+      "maxMs": 16.80000000000109,
+      "longFrameRatio": 0,
+      "renderCpuMeanMs": 0.11600000083446503,
+      "renderCpuP95Ms": 0.20000001788139343,
+      "waterFrames": 300,
+      "roundTripMeanMs": 6.093999999463558,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": true
+    }
+  }
+]

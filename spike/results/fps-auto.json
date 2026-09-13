@@ -1,0 +1,202 @@
+[
+  {
+    "candidate": "a",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5016.400000000001,
+      "frames": 16,
+      "meanFps": 3.1895383143290004,
+      "p50Ms": 300,
+      "p95Ms": 683.2999999999997,
+      "maxMs": 683.2999999999997,
+      "longFrameRatio": 0.875,
+      "renderCpuMeanMs": 0.29333333373069764,
+      "renderCpuP95Ms": 0.5999999940395355,
+      "waterFrames": 15,
+      "roundTripMeanMs": 293.5466666698456,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "a",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5099.800000000001,
+      "frames": 14,
+      "meanFps": 2.745205694340954,
+      "p50Ms": 333.3000000000011,
+      "p95Ms": 883.2999999999993,
+      "maxMs": 883.2999999999993,
+      "longFrameRatio": 0.8571428571428571,
+      "renderCpuMeanMs": 0.23846153571055487,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 12,
+      "roundTripMeanMs": 402.5833333308498,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "a2",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5333.099999999991,
+      "frames": 17,
+      "meanFps": 3.1876394592263466,
+      "p50Ms": 316.6999999999971,
+      "p95Ms": 666.6999999999971,
+      "maxMs": 666.6999999999971,
+      "longFrameRatio": 0.8823529411764706,
+      "renderCpuMeanMs": 0.25624999590218067,
+      "renderCpuP95Ms": 0.699999988079071,
+      "waterFrames": 16,
+      "roundTripMeanMs": 295.2500000037253,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "a2",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5116.5,
+      "frames": 13,
+      "meanFps": 2.5407993745724613,
+      "p50Ms": 399.8999999999942,
+      "p95Ms": 866.6000000000058,
+      "maxMs": 866.6000000000058,
+      "longFrameRatio": 0.8461538461538461,
+      "renderCpuMeanMs": 0.24999999751647314,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 12,
+      "roundTripMeanMs": 397.2583333328366,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "b",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5183.099999999999,
+      "frames": 26,
+      "meanFps": 5.0163029847002765,
+      "p50Ms": 216.5999999999999,
+      "p95Ms": 233.39999999999964,
+      "maxMs": 233.40000000000055,
+      "longFrameRatio": 0.9230769230769231,
+      "renderCpuMeanMs": 0.2599999940395355,
+      "renderCpuP95Ms": 0.30000001192092896,
+      "waterFrames": 25,
+      "roundTripMeanMs": 204.57200000286102,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "b",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5066.5,
+      "frames": 25,
+      "meanFps": 4.934372841211882,
+      "p50Ms": 216.70000000000073,
+      "p95Ms": 233.39999999999964,
+      "maxMs": 233.39999999999964,
+      "longFrameRatio": 0.92,
+      "renderCpuMeanMs": 0.24999999875823656,
+      "renderCpuP95Ms": 0.4000000059604645,
+      "waterFrames": 24,
+      "roundTripMeanMs": 208.92083333184323,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "braw",
+    "view": {
+      "zoom": 17,
+      "exaggeration": 5,
+      "pitch": 60
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5133.099999999999,
+      "frames": 26,
+      "meanFps": 5.065165299721416,
+      "p50Ms": 200.09999999999945,
+      "p95Ms": 233.39999999999964,
+      "maxMs": 233.40000000000055,
+      "longFrameRatio": 0.9230769230769231,
+      "renderCpuMeanMs": 0.10799999952316285,
+      "renderCpuP95Ms": 0.20000001788139343,
+      "waterFrames": 25,
+      "roundTripMeanMs": 202.8760000002384,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  },
+  {
+    "candidate": "braw",
+    "view": {
+      "zoom": 16,
+      "exaggeration": 10,
+      "pitch": 85
+    },
+    "result": {
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "durationMs": 5216.5,
+      "frames": 26,
+      "meanFps": 4.984184798236366,
+      "p50Ms": 216.60000000000036,
+      "p95Ms": 233.3000000000011,
+      "maxMs": 233.40000000000146,
+      "longFrameRatio": 0.9230769230769231,
+      "renderCpuMeanMs": 0.12000000476837158,
+      "renderCpuP95Ms": 0.20000001788139343,
+      "waterFrames": 25,
+      "roundTripMeanMs": 206.41600000143052,
+      "devicePixelRatio": 1,
+      "canvas": [960, 600],
+      "pass": false
+    }
+  }
+]

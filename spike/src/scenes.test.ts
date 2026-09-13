@@ -193,7 +193,7 @@ describe('実データの場面（計画 D4・D5）', () => {
 
   it('fillInvalid のときは A の地形のサンプラーだけが無効画素を埋め、グリッドは変えない', () => {
     const filledScene = buildRealScene(shibuyaRange(), tiles, true)
-    const i = scene.validMask.findIndex((v) => v === 0)
+    const i = scene.validMask.indexOf(0)
     const col = i % n
     const row = Math.floor(i / n)
     expect(scene.sample(range.originX + col, range.originY + row)).toBeNull()

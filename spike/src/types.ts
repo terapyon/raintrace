@@ -103,6 +103,25 @@ export interface WaterMeasure {
   flickerRatio: number // 内側のうち、視点をわずかに動かした 3 枚で見え方が変わった画素の割合
 }
 
+/** fps の計測(Task 8)。frame の間隔は requestAnimationFrame の時刻の差 */
+export interface FpsResult {
+  renderer: string // WEBGL_debug_renderer_info の UNMASKED_RENDERER（SwiftShader か実 GPU か）
+  durationMs: number
+  frames: number
+  meanFps: number
+  p50Ms: number
+  p95Ms: number
+  maxMs: number
+  longFrameRatio: number // 33.4ms（2 フレーム分）を超えた間隔の割合
+  renderCpuMeanMs: number // 候補の Custom Layer の render の CPU 時間（アップロードを含む）
+  renderCpuP95Ms: number
+  waterFrames: number // 計測中に届いた水深の数
+  roundTripMeanMs: number // 水深の要求から受け取りまで（Worker の計算と転送 2 回）
+  devicePixelRatio: number
+  canvas: [number, number] // drawingBuffer の画素数
+  pass: boolean // 平均 57fps 以上かつ長いフレーム 1% 以下（計画 D15）
+}
+
 /** ページが Playwright と手動の計測に見せる窓口（window.spike） */
 export interface SpikeGlobal {
   map: MapLibreMap
@@ -115,6 +134,8 @@ export interface SpikeGlobal {
   measure(): Promise<WaterMeasure>
   /** 範囲の外周の段差（m、倍率 1）。継ぎ目の記録に使う（Task 6） */
   boundaryStep(): { max: number; mean: number }
+  /** 地図を動かし、water=dynamic なら水深を毎フレーム更新しながら fps を測る */
+  runFps(durationMs: number): Promise<FpsResult>
 }
 
 declare global {

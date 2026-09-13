@@ -31,5 +31,20 @@ export default defineConfig({
         launchOptions: { args: ['--enable-unsafe-swiftshader'] },
       },
     },
+    {
+      // Task 8: fps の第 2 の自動計測（参考）。この機械の実 GPU を headless Chrome から使う
+      // （04 の 1000m 検査と同じ起動設定。controller dispatch notes §1）。fps.spec.ts だけに絞る
+      name: 'fps-gpu',
+      testMatch: /fps\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 960, height: 600 },
+        deviceScaleFactor: 1,
+        channel: 'chrome',
+        launchOptions: {
+          args: ['--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl-egl'],
+        },
+      },
+    },
   ],
 })
