@@ -17,13 +17,22 @@ export function compileProgram(
   fragment: string,
 ): WebGLProgram {
   const program = gl.createProgram()
-  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, vertex))
-  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment))
+  const vertexShader = compile(gl, gl.VERTEX_SHADER, vertex)
+  const fragmentShader = compile(gl, gl.FRAGMENT_SHADER, fragment)
+  gl.attachShader(program, vertexShader)
+  gl.attachShader(program, fragmentShader)
   gl.bindAttribLocation(program, 0, 'a_cell')
   gl.linkProgram(program)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     throw new Error(`プログラムのリンクに失敗: ${gl.getProgramInfoLog(program) ?? ''}`)
   }
+  // リンクした後のシェーダは不要（three の WebGLProgram.js も同様に detach + delete する。
+  // タスクレビュー Minor 2）。detachShader を先に呼び、プログラムを消す前でもシェーダの
+  // リソースをすぐに解放できるようにする
+  gl.detachShader(program, vertexShader)
+  gl.detachShader(program, fragmentShader)
+  gl.deleteShader(vertexShader)
+  gl.deleteShader(fragmentShader)
   return program
 }
 

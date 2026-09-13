@@ -35,6 +35,7 @@ interface GlState {
   terrainU: Record<(typeof TERRAIN_UNIFORMS)[number], WebGLUniformLocation | null>
   waterU: Record<(typeof WATER_UNIFORMS)[number], WebGLUniformLocation | null>
   vao: WebGLVertexArrayObject
+  cells: WebGLBuffer
   terrainIndex: WebGLBuffer
   terrainCount: number
   waterIndex: WebGLBuffer
@@ -104,6 +105,11 @@ export const mount: MountCandidate = async (map, scene, params) => {
       gl.bindTexture(gl.TEXTURE_2D, basemap)
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+      // three（WebGLTextures.js）は NoColorSpace のテクスチャに NONE を設定する。既定は
+      // ブラウザ依存の BROWSER_DEFAULT_WEBGL なので、b と同じ変換（無変換）に揃える
+      // （タスクレビュー Minor 3。単色の fixture では見え方に出ないが、実データの basemap では
+      // ブラウザによって色が変わりうる）
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, basemapCanvas)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
@@ -115,6 +121,7 @@ export const mount: MountCandidate = async (map, scene, params) => {
         terrainU: uniformLocations(gl, terrain, TERRAIN_UNIFORMS),
         waterU: uniformLocations(gl, water, WATER_UNIFORMS),
         vao,
+        cells,
         terrainIndex: indexBuffer(terrainIndices),
         terrainCount: terrainIndices.length,
         waterIndex: indexBuffer(waterIndices),
@@ -131,6 +138,11 @@ export const mount: MountCandidate = async (map, scene, params) => {
       if (depthDirty) {
         gl.bindTexture(gl.TEXTURE_2D, s.depth)
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+        // onAdd と同じ unpack の状態を明示する（MapLibre の setCustomLayerDefaults が false にして
+        // いることに暗黙に頼らない。タスクレビュー Minor 5。R32F の texSubImage2D 自体には無関係だが、
+        // このテクスチャ・ユニットの unpack 状態を他のコードが変えていないことを保証する）
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, n, n, gl.RED, gl.FLOAT, depthData)
         depthDirty = false
       }
@@ -207,6 +219,9 @@ export const mount: MountCandidate = async (map, scene, params) => {
       gl.deleteProgram(s.terrain)
       gl.deleteProgram(s.water)
       gl.deleteVertexArray(s.vao)
+      // deleteVertexArray は VAO が参照するバッファを削除しない。頂点バッファは地形・水面で共有する
+      // ので、GlState に持たせて別途削除する（タスクレビュー Minor 2）
+      gl.deleteBuffer(s.cells)
       gl.deleteBuffer(s.terrainIndex)
       gl.deleteBuffer(s.waterIndex)
       for (const texture of [s.elevation, s.depth, s.basemap]) gl.deleteTexture(texture)
