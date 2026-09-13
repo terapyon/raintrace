@@ -102,3 +102,21 @@ test('応答に CSP が付き、読み込み中に CSP 違反が起きない', a
   )
   expect(violations).toEqual([])
 })
+
+test('Button・ToggleButton の文字が大文字にならない（単位の m・x が M・X に見えていた不具合の回帰）', async ({
+  page,
+}) => {
+  await page.goto('/')
+  // getByRole の name は大文字小文字を区別しないので、text-transform が誤って uppercase に
+  // 戻っていても要素は見つかる。実際に見える文字は innerText で確かめる（toHaveText・textContent は
+  // CSS の text-transform を反映しないため使えない）
+  const rangeButton = page.getByRole('button', { name: strings.rainfall.rangeSizeValue(250) })
+  const speedButton = page.getByRole('button', { name: strings.playback.speedValue(0.25) })
+  const stepButton = page.getByRole('button', { name: strings.playback.step })
+  await expect(rangeButton).toBeVisible()
+  await expect(speedButton).toBeVisible()
+  await expect(stepButton).toBeVisible()
+  expect(await rangeButton.innerText()).toBe(strings.rainfall.rangeSizeValue(250))
+  expect(await speedButton.innerText()).toBe(strings.playback.speedValue(0.25))
+  expect(await stepButton.innerText()).toBe(strings.playback.step)
+})
