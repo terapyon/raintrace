@@ -1164,7 +1164,7 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 
 以下を動的 import により初期ロードから除外する。
 
-- Three.js および `src/renderer/`（地点選択後に必要になる）
+- Three.js および `src/renderer/`（3D に切り替えたときに必要になる）
 - Worker（`src/workers/`・`src/simulation/`・`src/dem/`。地点のクリック時に DEM の取得で必要になる）
 
 上限超過を CI の `build` ジョブで失敗として扱う。
