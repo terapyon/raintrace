@@ -7,7 +7,7 @@ export const SIGNIFICANT_DEPRESSION = { minDepthM: 0.1, minAreaM2: 10 } as const
 
 /**
  * 標高は Float32 で持つので、F − Z に絶対標高に応じた丸めの誤差が乗る
- *（3.05 − 3.00 は 0.04999995、1000.05 − 1000.00 は 0.04998779）。
+ *（3.10 − 3.00 は 0.09999990、1000.10 − 1000.00 は 0.09997559）。
  * DEM は 1cm 刻みなので、1mm の余裕なら隣の値と取り違えない
  */
 export const DEPTH_TOLERANCE_M = 1e-3
