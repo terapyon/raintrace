@@ -3,7 +3,7 @@ import { NEIGHBOR_DX, NEIGHBOR_DY } from './neighbors.ts'
 import type { Depression, DepressionAnalysis, TerrainGrid } from './types.ts'
 
 /** 表示と越流イベントの対象にする窪地の閾値（R02-3） */
-export const SIGNIFICANT_DEPRESSION = { minDepthM: 0.05, minAreaM2: 10 } as const
+export const SIGNIFICANT_DEPRESSION = { minDepthM: 0.1, minAreaM2: 10 } as const
 
 /**
  * 標高は Float32 で持つので、F − Z に絶対標高に応じた丸めの誤差が乗る

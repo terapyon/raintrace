@@ -94,27 +94,40 @@ describe('analyzeDepressions', () => {
 })
 
 describe('窪地の significant（R02-3。Float32 の丸め）', () => {
-  it('縁 3.05m・底 3.00m の窪地は、Float32 の丸めで深さが 0.05 未満になっても significant', () => {
-    // 5×5、縁 3.05m、中の 3×3 が底 3.00m。セル 1.2m なので面積は 9 × 1.44 = 12.96m²
-    const rows: number[][] = Array.from({ length: 5 }, () => Array(5).fill(3.05))
+  it('縁 3.10m・底 3.00m の窪地は、Float32 の丸めで深さが 0.10 未満になっても significant', () => {
+    // 5×5、縁 3.10m、中の 3×3 が底 3.00m。セル 1.2m なので面積は 9 × 1.44 = 12.96m²
+    const rows: number[][] = Array.from({ length: 5 }, () => Array(5).fill(3.1))
     for (let y = 1; y <= 3; y++) {
       for (let x = 1; x <= 3; x++) (rows[y] as number[])[x] = 3.0
     }
     const grid = gridFromRows(rows, 1.2)
-    const depth = Math.fround(3.05) - Math.fround(3.0)
-    expect(depth).toBeLessThan(0.05) // Float32 の丸めで 0.04999995 になる
+    const depth = Math.fround(3.1) - Math.fround(3.0)
+    expect(depth).toBeLessThan(0.1) // Float32 の丸めで 0.09999990 になる
     const { depressions } = analyzeDepressions(grid)
     expect(depressions).toHaveLength(1)
     expect(depressions[0]?.areaM2).toBeCloseTo(12.96)
     expect(depressions[0]?.significant).toBe(true)
   })
+
+  it('縁 3.08m・底 3.00m の窪地（深さ約 0.08m）は面積が足りていても significant でない', () => {
+    // 閾値 0.10m を明確に下回るので、丸めの余裕（1mm）があっても significant にならない
+    const rows: number[][] = Array.from({ length: 5 }, () => Array(5).fill(3.08))
+    for (let y = 1; y <= 3; y++) {
+      for (let x = 1; x <= 3; x++) (rows[y] as number[])[x] = 3.0
+    }
+    const grid = gridFromRows(rows, 1.2)
+    const { depressions } = analyzeDepressions(grid)
+    expect(depressions).toHaveLength(1)
+    expect(depressions[0]?.areaM2).toBeCloseTo(12.96)
+    expect(depressions[0]?.significant).toBe(false)
+  })
 })
 
 describe('isSignificant（R02-3）', () => {
-  // 既定の閾値は最大深さ 0.05m。DEPTH_TOLERANCE_M（1mm）だけ下まで significant にする
+  // 既定の閾値は最大深さ 0.10m。DEPTH_TOLERANCE_M（1mm）だけ下まで significant にする
   it('最大深さが 閾値 − 1mm ちょうどなら significant、それを下回れば significant でない', () => {
-    expect(isSignificant({ maxDepthM: 0.049, areaM2: 100 })).toBe(true)
-    expect(isSignificant({ maxDepthM: 0.0489, areaM2: 100 })).toBe(false)
+    expect(isSignificant({ maxDepthM: 0.099, areaM2: 100 })).toBe(true)
+    expect(isSignificant({ maxDepthM: 0.0989, areaM2: 100 })).toBe(false)
   })
 
   it('面積が 10m² 未満なら significant でない', () => {
