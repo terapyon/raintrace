@@ -116,6 +116,15 @@ export const strings = {
     stepped: '5 cm 刻み',
     continuous: '連続',
   },
+  view3d: {
+    mode: '表示の方式',
+    view2d: '2D',
+    view3d: '3D',
+    exaggeration: '垂直強調',
+    exaggerationValue: (value: number) => `${value}x`,
+    loading: '3D の表示を準備しています',
+    error: '3D の表示を始められませんでした。2D の表示は使えます',
+  },
   legend: {
     /** 見出し。palette は waterStepped・waterContinuous */
     waterTitle: (palette: string) => `水深（${palette}）`,

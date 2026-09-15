@@ -49,3 +49,18 @@ export function collectErrors(page: Page): string[] {
   })
   return errors
 }
+
+/**
+ * console の warning を集める（spec 05 の 3D の E2E）。SwiftShader の GL の性能のヒント（`GPU stall due to
+ * ReadPixels` など。着手前の確かめ P9 で 04 のアプリでも出た）は描画の誤りではないので除く
+ */
+export function collectWarnings(page: Page): string[] {
+  const warnings: string[] = []
+  page.on('console', (message) => {
+    if (message.type() !== 'warning') return
+    const text = message.text()
+    if (/GL Driver Message|GPU stall due to ReadPixels/.test(text)) return
+    warnings.push(text)
+  })
+  return warnings
+}

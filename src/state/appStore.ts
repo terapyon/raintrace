@@ -34,6 +34,14 @@ export interface TerrainSummary {
   largestDepression: { maxDepthM: number; capacityM3: number; spillElevation: number } | null
 }
 
+/** 2D と 3D（spec 05 §3.6、R05-1）。保存しない（計画で決めたこと 13） */
+export type ViewMode = '2d' | '3d'
+/**
+ * 3D の状態（View3dSession が入れる）。loading: 3D のコードを読み込み中。fallback-2d: 3D を選んでいるが、
+ * 境界より粗いので 2D で描いている（spec 05 §4.3）。error: 3D のコードを読めなかった
+ */
+export type View3dStatus = 'off' | 'loading' | '3d' | 'fallback-2d' | 'error'
+
 export interface AppState {
   selected: { lon: number; lat: number } | null
   load: LoadState
@@ -41,6 +49,8 @@ export interface AppState {
   display: DisplaySettings
   cursor: CursorElevation | null
   popover: Popover
+  viewMode: ViewMode
+  view3dStatus: View3dStatus
 }
 
 export interface AppActions {
@@ -51,6 +61,8 @@ export interface AppActions {
   setDisplay(patch: Partial<DisplaySettings>): void
   setCursor(cursor: CursorElevation | null): void
   setPopover(popover: Popover): void
+  setViewMode(mode: ViewMode): void
+  setView3dStatus(status: View3dStatus): void
 }
 
 export type AppStore = StoreApi<AppState & AppActions>
@@ -71,6 +83,8 @@ export function createAppStore(): AppStore {
     display: { elevation: true, depressions: true, flow: true },
     cursor: null,
     popover: CLOSED,
+    viewMode: '2d',
+    view3dStatus: 'off',
     selectPoint: (lon, lat) =>
       set({
         selected: { lon, lat },
@@ -86,6 +100,8 @@ export function createAppStore(): AppStore {
     // マウスの移動のたびに呼ばれる。同じ値なら同じ state を返し、購読者（パネル）に知らせない
     setCursor: (cursor) => set((state) => (sameCursor(state.cursor, cursor) ? state : { cursor })),
     setPopover: (popover) => set({ popover }),
+    setViewMode: (viewMode) => set({ viewMode }),
+    setView3dStatus: (view3dStatus) => set({ view3dStatus }),
   }))
 }
 

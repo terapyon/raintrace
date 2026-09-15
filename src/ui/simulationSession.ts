@@ -48,6 +48,10 @@ export class SimulationSession {
     spacingM: 10,
   }
   private palette: WaterPalette = 'stepped'
+  /** 地形の読み込み・消去の購読者（3D。spec 05 §3.6） */
+  private readonly terrainListeners = new Set<(terrain: TerrainPayload | null) => void>()
+  /** 2D の水深の canvas を出すか（3D の間は隠す。計画で決めたこと 16） */
+  private depthCanvasVisible = true
 
   constructor(client: SimulationClient, store: SimulationStore, settings: SettingsStore) {
     this.client = client
@@ -92,6 +96,7 @@ export class SimulationSession {
     this.arrowsThrottle.cancel()
     this.overlay?.clear()
     this.store.getState().reset()
+    for (const listener of this.terrainListeners) listener(null)
   }
 
   /** 地形を読み込んだ。center は降雨中心（範囲の中心。R04-2） */
@@ -107,6 +112,7 @@ export class SimulationSession {
     this.client.setSpeed(this.store.getState().speed)
     this.overlay?.show(terrain.geo)
     this.client.setArrows(this.arrowSettings.visible, this.arrowSettings.spacingM)
+    for (const listener of this.terrainListeners) listener(terrain)
   }
 
   /** 地図ができたら水深と矢印のレイヤーを置く。戻り値で外す */
@@ -120,6 +126,7 @@ export class SimulationSession {
     const overlay = createOverlay(controller.map, (run) => controller.whenLoaded(run))
     overlay.setPalette(this.palette)
     overlay.setArrowsVisible(this.arrowSettings.visible)
+    overlay.setDepthVisible(this.depthCanvasVisible)
     if (this.terrain !== null) overlay.show(this.terrain.geo)
     this.overlay = overlay
     return () => {
@@ -144,6 +151,19 @@ export class SimulationSession {
   /** ベースマップの切り替えで消えた水深と矢印のレイヤーを足し直す */
   restoreOverlay(): void {
     this.overlay?.restore()
+  }
+
+  /** 地形を読み込んだ（地形）・新しい地点の読み込みを始めた（null）を知らせる。戻り値で外す */
+  onTerrain(listener: (terrain: TerrainPayload | null) => void): () => void {
+    this.terrainListeners.add(listener)
+    return () => {
+      this.terrainListeners.delete(listener)
+    }
+  }
+
+  setDepthCanvasVisible(visible: boolean): void {
+    this.depthCanvasVisible = visible
+    this.overlay?.setDepthVisible(visible)
   }
 
   start(amountMm: number, radiusM: number): void {

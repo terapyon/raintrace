@@ -17,6 +17,7 @@ import type { SettingsStore } from '../../state/settingsStore'
 import { strings } from '../strings'
 import { DepressionLegend } from './DepressionLegend'
 import { Row } from './TerrainInfo'
+import { View3dSettings } from './View3dSettings'
 import { WaterLegend } from './WaterLegend'
 
 type Display = PersistedSettings['display']
@@ -34,6 +35,7 @@ export function DisplaySettings({ app, settings }: { app: AppStore; settings: Se
   return (
     <>
       <Typography variant="subtitle2">{strings.panel.display}</Typography>
+      <View3dSettings app={app} settings={settings} />
       <Row label={strings.display.waterPalette}>
         <ToggleButtonGroup
           size="small"

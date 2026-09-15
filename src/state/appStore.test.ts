@@ -79,6 +79,17 @@ describe('createAppStore', () => {
     expect(store.getState().display).toEqual({ elevation: true, depressions: true, flow: false })
   })
 
+  it('表示の方式は既定で 2D、3D の状態は off。地点を選んでも変わらない（計画で決めたこと 13）', () => {
+    const store = createAppStore()
+    expect(store.getState()).toMatchObject({ viewMode: '2d', view3dStatus: 'off' })
+    store.getState().setViewMode('3d')
+    store.getState().setView3dStatus('loading')
+    store.getState().selectPoint(139.7, 35.6)
+    expect(store.getState()).toMatchObject({ viewMode: '3d', view3dStatus: 'loading' })
+    store.getState().setView3dStatus('fallback-2d')
+    expect(store.getState().view3dStatus).toBe('fallback-2d')
+  })
+
   describe('setCursor は同じ値なら購読者に知らせない', () => {
     const countNotifications = (cursors: (CursorElevation | null)[]): number => {
       const store = createAppStore()

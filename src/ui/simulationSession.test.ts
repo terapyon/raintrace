@@ -41,6 +41,7 @@ function fakeOverlay(): WaterOverlay & {
   clearArrows: ReturnType<typeof vi.fn>
   clear: ReturnType<typeof vi.fn>
   restore: ReturnType<typeof vi.fn>
+  setDepthVisible: ReturnType<typeof vi.fn>
 } {
   return {
     show: vi.fn(),
@@ -51,6 +52,7 @@ function fakeOverlay(): WaterOverlay & {
     clearArrows: vi.fn(),
     clear: vi.fn(),
     restore: vi.fn(),
+    setDepthVisible: vi.fn(),
   } as unknown as WaterOverlay & {
     show: ReturnType<typeof vi.fn>
     setWater: ReturnType<typeof vi.fn>
@@ -60,6 +62,7 @@ function fakeOverlay(): WaterOverlay & {
     clearArrows: ReturnType<typeof vi.fn>
     clear: ReturnType<typeof vi.fn>
     restore: ReturnType<typeof vi.fn>
+    setDepthVisible: ReturnType<typeof vi.fn>
   }
 }
 
@@ -530,5 +533,30 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     session.attach(fakeController(), () => overlay)
     session.restoreOverlay()
     expect(overlay.restore).toHaveBeenCalled()
+  })
+})
+
+describe('SimulationSession: 地形の購読（spec 05。3D が地形を受け取る）', () => {
+  it('terrainReady で地形を、terrainCleared で null を知らせる。外した後は知らせない', () => {
+    const { session } = setup()
+    const seen: (TerrainPayload | null)[] = []
+    const off = session.onTerrain((t) => seen.push(t))
+    session.terrainCleared()
+    session.terrainReady(terrain, CENTER)
+    off()
+    session.terrainCleared()
+    expect(seen).toEqual([null, terrain])
+  })
+})
+
+describe('SimulationSession: 2D の水深の canvas の表示（3D の間は隠す。spec 05 §3.6）', () => {
+  it('表示を覚え、後から付けた overlay にも反映する', () => {
+    const { session } = setup()
+    session.setDepthCanvasVisible(false)
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    expect(overlay.setDepthVisible).toHaveBeenLastCalledWith(false)
+    session.setDepthCanvasVisible(true)
+    expect(overlay.setDepthVisible).toHaveBeenLastCalledWith(true)
   })
 })

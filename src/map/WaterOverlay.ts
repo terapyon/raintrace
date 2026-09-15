@@ -32,6 +32,8 @@ export class WaterOverlay {
   private palette: WaterPalette = 'stepped'
   private arrows: PointCollection<{ bearing: number }> = EMPTY
   private arrowsVisible = true
+  /** 2D の水深の canvas を出すか（3D の間は隠す。spec 05 §3.6） */
+  private depthVisible = true
   private frame = 0
   private generation = 0
 
@@ -93,6 +95,15 @@ export class WaterOverlay {
     }
   }
 
+  /** 2D の水深の canvas を出すか。3D の間は水面の Custom Layer と二重になるので隠し、着色も止める（spec 05 §3.6） */
+  setDepthVisible(visible: boolean): void {
+    this.depthVisible = visible
+    if (this.map.getLayer(WATER_LAYER_IDS.water) !== undefined) {
+      this.map.setLayoutProperty(WATER_LAYER_IDS.water, 'visibility', visible ? 'visible' : 'none')
+    }
+    if (visible) this.requestDraw()
+  }
+
   /** レイヤー・ソースと、待っている描画を消す（新しい地点の読み込み） */
   clear(): void {
     this.generation++
@@ -110,7 +121,7 @@ export class WaterOverlay {
   }
 
   private requestDraw(): void {
-    if (this.frame !== 0 || this.target === null) return
+    if (this.frame !== 0 || this.target === null || !this.depthVisible) return
     this.frame = requestAnimationFrame(this.draw)
   }
 
@@ -142,6 +153,7 @@ export class WaterOverlay {
         id: WATER_LAYER_IDS.water,
         type: 'raster',
         source: WATER_LAYER_IDS.water,
+        layout: { visibility: this.depthVisible ? 'visible' : 'none' },
         paint: { 'raster-opacity': 0.9, 'raster-resampling': 'nearest' },
       },
       before(TERRAIN_LAYER_IDS.outline),

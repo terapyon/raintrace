@@ -10,6 +10,7 @@ import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
 import type { SimulationSession } from './simulationSession'
+import { View3dSession } from './view3dSession'
 
 /**
  * 地図のクリック → Worker での読み込み → 地図とパネルへの反映をつなぐ（spec 02）。React の外に置く。
@@ -20,6 +21,8 @@ export class TerrainSession {
   private readonly client: SimulationClient
   readonly simulation: SimulationSession
   private readonly settings: SettingsStore
+  /** 2D と 3D の切り替えと 3D の表示（spec 05 §3.6） */
+  readonly view3d: View3dSession
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
   // URL の書き込みは、変更（地点の選択・地図の移動・雨量や範囲の変更）から 300ms 置いてまとめて行う（spec 04 §7）
@@ -37,6 +40,7 @@ export class TerrainSession {
     this.store = store
     this.simulation = simulation
     this.settings = settings
+    this.view3d = new View3dSession(simulation, store, settings)
   }
 
   /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通。計画で決めたこと 10） */
@@ -63,6 +67,8 @@ export class TerrainSession {
       this.overlay?.restore()
       this.simulation.restoreOverlay()
     })
+    // 3D の足し直しは 04 の重ね描きの足し直しの後に行う（onRestyle は登録した順に呼ばれる）
+    const detach3d = this.view3d.attach(controller)
 
     const onClick = (event: MapMouseEvent): void => {
       const { lng, lat } = event.lngLat
@@ -116,6 +122,7 @@ export class TerrainSession {
     } else if (view.zoom !== null) map.setZoom(view.zoom)
 
     return () => {
+      detach3d()
       map.off('click', onClick)
       map.off('mousemove', onMove)
       map.off('moveend', this.urlDebounce.schedule)

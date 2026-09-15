@@ -3,6 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { type Attribution, type Basemap, createGsiStyle } from './basemapStyle'
 import { TERRAIN_LAYER_IDS } from './TerrainOverlay'
+import { VIEW3D_LAYER_IDS } from './view3d/layerIds'
 import { WATER_LAYER_IDS } from './WaterOverlay'
 
 // MapLibre 6 は内部の Worker の URL を import.meta.url から組み立てるが、バンドル後はその場所に
@@ -20,7 +21,11 @@ export const INITIAL_VIEW = { center: [138.0, 36.0] as [number, number], zoom: 5
 // idle ではなく render を使う: 水深の canvas ソースは animate: true（毎フレーム内容が変わる前提）なので、
 // 地形を表示した地図はほぼ常に再描画し続け、idle が二度と来ない（実ブラウザで確認済み）。render は
 // その animate: true のせいでどのみち高頻度に来るので、そこに相乗りする（変化が無ければ書かない）
-const OVERLAY_LAYER_IDS = [...Object.values(TERRAIN_LAYER_IDS), ...Object.values(WATER_LAYER_IDS)]
+const OVERLAY_LAYER_IDS = [
+  ...Object.values(TERRAIN_LAYER_IDS),
+  ...Object.values(WATER_LAYER_IDS),
+  ...Object.values(VIEW3D_LAYER_IDS),
+]
 
 /** MapLibre を React の外で生成・破棄する（tech-spec §5.3） */
 export class MapController {
@@ -32,7 +37,7 @@ export class MapController {
   private switching = false
   private readonly waiting: (() => void)[] = []
   private readonly restyleListeners = new Set<() => void>()
-  /** 直前に data-overlay-layers へ書いた値。render のたびの再計算で、変わらなければ書き直さない */
+  /** 直前に書いた値（present と visible を | でつないだ値）。変わらなければ書き直さない */
   private lastOverlayLayers = ''
 
   constructor(container: HTMLElement, attribution: Attribution, basemap: Basemap = 'pale') {
@@ -44,6 +49,8 @@ export class MapController {
       center: INITIAL_VIEW.center,
       zoom: INITIAL_VIEW.zoom,
       maxZoom: 18,
+      // S の合格基準の視点（pitch 85）を実アプリで見る（計画で決めたこと 22）
+      maxPitch: 85,
       // 出典は常に表示する（tech-spec §16.1）。compact だと狭い画面で折りたたまれる
       attributionControl: { compact: false },
       keyboard: true,
@@ -103,11 +110,18 @@ export class MapController {
     for (const run of this.waiting.splice(0)) run()
   }
 
-  /** 今のスタイルに実在する重ね描きのレイヤー ID を、コンマ区切りで data-overlay-layers に書く（E2E 用のフック） */
+  /**
+   * 今のスタイルに実在する重ね描きのレイヤー ID を data-overlay-layers に、そのうち visibility が none でない
+   * ものを data-visible-overlay-layers に、コンマ区切りで書く（E2E 用のフック。計画で決めたこと 21）
+   */
   private writeOverlayLayers(): void {
-    const present = OVERLAY_LAYER_IDS.filter((id) => this.map.getLayer(id) !== undefined).join(',')
-    if (present === this.lastOverlayLayers) return
-    this.lastOverlayLayers = present
-    this.map.getContainer().dataset.overlayLayers = present
+    const present = OVERLAY_LAYER_IDS.filter((id) => this.map.getLayer(id) !== undefined)
+    const visible = present.filter((id) => this.map.getLayoutProperty(id, 'visibility') !== 'none')
+    const text = `${present.join(',')}|${visible.join(',')}`
+    if (text === this.lastOverlayLayers) return
+    this.lastOverlayLayers = text
+    const { dataset } = this.map.getContainer()
+    dataset.overlayLayers = present.join(',')
+    dataset.visibleOverlayLayers = visible.join(',')
   }
 }

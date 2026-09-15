@@ -1,0 +1,218 @@
+/**
+ * 3D の表示の取りまとめ（spec 05 §3・§4）。3D に切り替えたときに動的 import で読む（ui/view3dSession.ts）。
+ * 地形（Terrain3d）、3D の視点、E2E・計測用の印を持つ。地図の操作は whenLoaded の中で行う
+ * （ベースマップの切り替え・コンテキスト喪失の間はスタイルが無い）
+ */
+import { MercatorCoordinate } from 'maplibre-gl'
+import type { RangeElevation } from '../../dem/terrainTiles'
+import { fillInvalidNearest } from '../../dem/terrarium'
+import type { DrawnTileZoom } from '../../dem/tileZoom'
+import type { TerrainPayload } from '../../shared/protocol'
+import type { Basemap } from '../basemapStyle'
+import type { MapController } from '../MapController'
+import { TERRAIN_LAYER_IDS } from '../TerrainOverlay'
+import { drawnTileZoomAt, PITCH_3D_DEG, zoomFor3dView } from './drawnZoom'
+import { createMainTileGenerator } from './mainTileGenerator'
+import { hillshadeEnabled, type View3dOptions } from './options'
+import { Terrain3d } from './Terrain3d'
+
+/** off: 2D を選んでいる。3d: 3D で描いている。fallback-2d: 3D を選んでいるが境界より粗いので 2D（spec 05 §4.3） */
+export type View3dRendering = 'off' | '3d' | 'fallback-2d'
+
+export interface View3dInit {
+  options: View3dOptions
+  basemap: Basemap
+  exaggeration: number
+  onRendering: (rendering: View3dRendering) => void
+}
+
+/** 視点の移動の時間（ms） */
+const CAMERA_MS = 500
+
+export class View3d {
+  private readonly controller: MapController
+  private readonly options: View3dOptions
+  private readonly onRendering: (rendering: View3dRendering) => void
+  private readonly terrain3d: Terrain3d
+  private basemap: Basemap
+  private terrain: TerrainPayload | null = null
+  /** terrain の無効セルを埋めた標高。3D で描くときに初めて作る（2D の間は作らない） */
+  private range: RangeElevation | null = null
+  private enabled = false
+  private rendering: View3dRendering = 'off'
+  /** 3D の視点へ動かしている間。動き終えたら data-view3d-framed を立てる */
+  private framing = false
+  /** 直前に書いた印（変わらなければ書き直さない） */
+  private readonly marks = { mapZoom: '', mapPitch: '', drawnTileZoom: '' }
+  private readonly onRender = (): void => this.afterRender()
+  private readonly onMoveEnd = (): void => this.afterMove()
+
+  constructor(controller: MapController, init: View3dInit) {
+    this.controller = controller
+    this.options = init.options
+    this.onRendering = init.onRendering
+    this.basemap = init.basemap
+    this.terrain3d = new Terrain3d(
+      controller.map,
+      createMainTileGenerator(),
+      init.exaggeration,
+      init.options.onTileTime,
+    )
+    controller.map.on('render', this.onRender)
+    controller.map.on('moveend', this.onMoveEnd)
+  }
+
+  /**
+   * 地形（範囲）が変わった。3D を選んでいれば、新しい範囲のタイルに読み直し、視点を合わせ直す。境界より粗くて
+   * 2D に落ちている間（fallback-2d）なら 3D に戻す（3D の視点の見込みは戻す閾値以上。Task 3 のテスト）。
+   * 新しい地点の読み込みの間（null）は、前の範囲のタイルのまま置く（null と新しい範囲で 2 回作り直さない）
+   */
+  setTerrain(terrain: TerrainPayload | null): void {
+    this.terrain = terrain
+    this.range = null
+    this.controller.whenLoaded(() => {
+      if (this.rendering === 'off' || this.terrain === null) return
+      if (this.rendering === 'fallback-2d') {
+        this.show3d()
+      } else {
+        this.terrain3d.setRange(this.ensureRange())
+      }
+      this.frame()
+    })
+  }
+
+  setEnabled(enabled: boolean): void {
+    if (enabled === this.enabled) return
+    this.enabled = enabled
+    this.controller.whenLoaded(() => {
+      if (this.enabled) {
+        this.show3d()
+        this.frame()
+      } else {
+        this.hide3d('off')
+        this.controller.map.easeTo({ pitch: 0, duration: CAMERA_MS })
+      }
+    })
+  }
+
+  setExaggeration(value: number): void {
+    this.controller.whenLoaded(() => this.terrain3d.setExaggeration(value))
+  }
+
+  /** ベースマップ（hillshade の要否）。切り替えの後の onRestyle で restore が反映する */
+  setBasemap(basemap: Basemap): void {
+    this.basemap = basemap
+  }
+
+  /** ベースマップの切り替え・コンテキストの復帰の後（onRestyle）。3D で描いていれば足し直す（冪等） */
+  restore(): void {
+    if (this.rendering === '3d') this.show3d()
+  }
+
+  dispose(): void {
+    const { map } = this.controller
+    map.off('render', this.onRender)
+    map.off('moveend', this.onMoveEnd)
+    if (this.rendering !== 'off') this.terrain3d.hide()
+    this.terrain3d.dispose()
+  }
+
+  private ensureRange(): RangeElevation | null {
+    const terrain = this.terrain
+    if (terrain === null) return null
+    if (this.range === null) {
+      const start = performance.now()
+      const { geo } = terrain
+      const elevation = fillInvalidNearest(terrain.elevation, terrain.validMask, geo.size, geo.size)
+      this.options.onPrepareTime?.(performance.now() - start)
+      this.range = {
+        z: geo.z,
+        originX: geo.originX,
+        originY: geo.originY,
+        size: geo.size,
+        elevation,
+      }
+    }
+    return this.range
+  }
+
+  private show3d(): void {
+    if (this.terrain !== null) this.terrain3d.setRange(this.ensureRange())
+    this.terrain3d.show({
+      hillshade: hillshadeEnabled(this.options.hillshade, this.basemap),
+      beforeId: this.hillshadeBeforeId(),
+    })
+    this.setRendering('3d')
+  }
+
+  private hide3d(rendering: 'off' | 'fallback-2d'): void {
+    this.terrain3d.hide()
+    this.setRendering(rendering)
+  }
+
+  private setRendering(rendering: View3dRendering): void {
+    if (rendering === this.rendering) return
+    this.rendering = rendering
+    this.controller.map.getContainer().dataset.view3d = rendering
+    this.onRendering(rendering)
+  }
+
+  /** hillshade は 04 の重ね描き（標高の色分け）の下、ベースマップの上に置く */
+  private hillshadeBeforeId(): string | undefined {
+    const { map } = this.controller
+    return map.getLayer(TERRAIN_LAYER_IDS.elevation) !== undefined
+      ? TERRAIN_LAYER_IDS.elevation
+      : undefined
+  }
+
+  /** 3D の視点（spec 05 §3.4、計画で決めたこと 4）: 範囲を中心に pitch 60、ズームは zoomFor3dView */
+  private frame(): void {
+    const { map } = this.controller
+    map.getContainer().dataset.view3dFramed = 'false'
+    this.framing = true
+    const terrain = this.terrain
+    if (terrain === null) {
+      map.easeTo({ pitch: PITCH_3D_DEG, duration: CAMERA_MS })
+      return
+    }
+    const { corners } = terrain.geo
+    const camera = map.cameraForBounds([corners[3], corners[1]], { padding: 40 })
+    map.easeTo({
+      center: camera?.center ?? map.getCenter(),
+      zoom: zoomFor3dView(camera?.zoom ?? map.getZoom()),
+      pitch: PITCH_3D_DEG,
+      duration: CAMERA_MS,
+    })
+  }
+
+  /** 3D で描いているときの、画面の中心で描かれている地形タイルのズーム（実測）。描いていなければ null */
+  private measuredCentreZoom(): DrawnTileZoom | null {
+    const { map } = this.controller
+    if (this.rendering !== '3d' || map.getTerrain() === null) return null
+    const tiles = map.terrain.tileManager.getRenderableTiles().map((tile) => tile.tileID.canonical)
+    return drawnTileZoomAt(tiles, MercatorCoordinate.fromLngLat(map.getCenter()))
+  }
+
+  private afterRender(): void {
+    this.writeMarks(this.measuredCentreZoom())
+  }
+
+  private afterMove(): void {
+    if (!this.framing) return
+    this.framing = false
+    this.controller.map.getContainer().dataset.view3dFramed = 'true'
+  }
+
+  /** E2E・計測用の印（計画で決めたこと 21）。地図のズームは URL（小数 2 桁）より細かく、小数 3 桁で書く */
+  private writeMarks(drawn: DrawnTileZoom | null): void {
+    const { map } = this.controller
+    const { dataset } = map.getContainer()
+    const mapZoom = map.getZoom().toFixed(3)
+    const mapPitch = map.getPitch().toFixed(1)
+    const drawnTileZoom = drawn === null ? '' : String(drawn)
+    if (mapZoom !== this.marks.mapZoom) dataset.mapZoom = mapZoom
+    if (mapPitch !== this.marks.mapPitch) dataset.mapPitch = mapPitch
+    if (drawnTileZoom !== this.marks.drawnTileZoom) dataset.drawnTileZoom = drawnTileZoom
+    Object.assign(this.marks, { mapZoom, mapPitch, drawnTileZoom })
+  }
+}
