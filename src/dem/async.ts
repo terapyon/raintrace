@@ -36,3 +36,41 @@ export function createLimiter(max: number): <T>(task: () => Promise<T>) => Promi
     }
   }
 }
+
+/**
+ * キーごとに 1 つの Promise を覚える cache。容量を超えたら古いものから捨て、使ったものを新しい側へ移す。
+ * 失敗（reject）は覚えない（次の要求で作り直す）
+ */
+export class PromiseCache<T> {
+  private readonly capacity: number
+  private readonly entries = new Map<string, Promise<T>>()
+
+  constructor(capacity: number) {
+    this.capacity = capacity
+  }
+
+  get size(): number {
+    return this.entries.size
+  }
+
+  load(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.entries.get(key)
+    if (hit !== undefined) {
+      // 使ったものを新しい側へ移す
+      this.entries.delete(key)
+      this.entries.set(key, hit)
+      return hit
+    }
+    const created = load()
+    this.entries.set(key, created)
+    created.catch(() => {
+      if (this.entries.get(key) === created) this.entries.delete(key)
+    })
+    while (this.entries.size > this.capacity) {
+      const oldest = this.entries.keys().next().value
+      if (oldest === undefined) break
+      this.entries.delete(oldest)
+    }
+    return created
+  }
+}
