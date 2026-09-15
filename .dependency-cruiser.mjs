@@ -74,6 +74,9 @@ export default {
           '\\.d\\.ts$',
           '^src/main\\.tsx$',
           '^src/workers/[^/]+\\.worker\\.ts$',
+          // 05 の Task 1〜3 の間だけ（Task 4 で View3d から到達する）
+          '^src/dem/(tileZoom|terrarium|terrainTiles)\\.ts$',
+          '^src/map/view3d/drawnZoom\\.ts$',
         ],
         reachable: false,
       },
