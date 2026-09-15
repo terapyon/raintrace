@@ -142,6 +142,50 @@ describe('範囲の中と外の境目（計画で決めたこと 8）', () => {
   })
 })
 
+describe('外のタイルの標本化は隣のタイルを取らず、タイルの中に丸める（計画で決めたこと 9）', () => {
+  it('列・行で値が違う外のタイルを西隣にずらして組み立てると、画素 0 と 255 はどちらもそのタイルの東の端（列 255）に丸めた値になる', () => {
+    const westTile: OutsideTile = {
+      tile: { z: 17, x: 999, y: 500 }, // 対象タイル (1000, 500) の西隣
+      elevation: (() => {
+        const e = new Float32Array(SIZE * SIZE)
+        for (let row = 0; row < SIZE; row++) {
+          for (let col = 0; col < SIZE; col++) {
+            e[row * SIZE + col] = 100 + col * 0.5 + row * 0.25
+          }
+        }
+        return e
+      })(),
+    }
+    const rgba = composeTerrariumTile(tileId(17, 1000, 500), null, westTile)
+    // 東の端（列 255）の値を行方向にだけ双線形する（列は 0 でも 255 でも西隣の列 255 に丸まる）
+    const expected = 100 + 255 * 0.5 + (0.25 * (99 + 100)) / 2
+    expect(heightAt(rgba, 0, 100)).toBeCloseTo(expected, 2)
+    expect(heightAt(rgba, 255, 100)).toBeCloseTo(expected, 2)
+  })
+})
+
+describe('外の粗いタイルから細かいタイルを組み立てる（親の x0 とスケール < 1 の経路）', () => {
+  it('平面の z15 の外のタイルから、その子の z16 のタイルを組み立てると、角の値は平面と一致する', () => {
+    const outsideTileCoord = ancestorTile(tileId(16, 501, 251), 15) // { z: 15, x: 250, y: 125 }
+    const outsidePlane = (x: number, y: number): number => 30 + 0.15 * x - 0.05 * y
+    const elevation = new Float32Array(SIZE * SIZE)
+    for (let row = 0; row < SIZE; row++) {
+      for (let col = 0; col < SIZE; col++) {
+        elevation[row * SIZE + col] = outsidePlane(
+          outsideTileCoord.x * SIZE + col + 0.5,
+          outsideTileCoord.y * SIZE + row + 0.5,
+        )
+      }
+    }
+    const outside: OutsideTile = { tile: outsideTileCoord, elevation }
+    const rgba = composeTerrariumTile(tileId(16, 501, 251), null, outside)
+    // z16 の画素 (80, 80) の角は、z15 の連続座標の半分（スケール 2^(15 − 16) = 0.5）
+    const x = (501 * SIZE + 80) / 2
+    const y = (251 * SIZE + 80) / 2
+    expect(Math.abs(heightAt(rgba, 80, 80) - outsidePlane(x, y))).toBeLessThan(1 / 256)
+  })
+})
+
 describe('rangeCoverage（外のタイルを取らずに済むか）', () => {
   it('すべて・一部・無し', () => {
     // タイル (1000, 500) の画素の角 256000〜256255 は、セル 255999〜256255 があれば すべて中
@@ -152,6 +196,14 @@ describe('rangeCoverage（外のタイルを取らずに済むか）', () => {
     expect(rangeCoverage(tileId(17, 1002, 500), part)).toBe('none')
     // 粗いズームのタイルは範囲を含むので一部
     expect(rangeCoverage(tileId(15, 250, 125), part)).toBe('some')
+  })
+
+  it('上端はちょうどの size で all、1 小さいと some（hi の off-by-one を検出）', () => {
+    // タイル (1000, 500) の画素の角 256000〜256255 を覆うのに必要なセルは 255999〜256255 の 257 個
+    const exact = planeRange(17, 1000 * SIZE - 1, 500 * SIZE - 1, 257)
+    expect(rangeCoverage(tileId(17, 1000, 500), exact)).toBe('all')
+    const oneLess = planeRange(17, 1000 * SIZE - 1, 500 * SIZE - 1, 256)
+    expect(rangeCoverage(tileId(17, 1000, 500), oneLess)).toBe('some')
   })
 })
 
@@ -221,6 +273,22 @@ describe('loadOutsideTile（GSI に無いズーム・404・無効画素）', () 
     expect(cache.size).toBe(2)
     await cache.load('a', load)
     expect(load).toHaveBeenCalledTimes(4)
+  })
+
+  it('load で使ったキーは新しい側へ移る（LRU の昇格）。a を読み直してから c を足すと、捨てられるのは b', async () => {
+    const cache = new OutsideTileCache(2)
+    const load = vi.fn(async () => new Float32Array(1))
+    await cache.load('a', load)
+    await cache.load('b', load)
+    await cache.load('a', load) // 再読み込みで a を新しい側へ移す
+    await cache.load('c', load) // 容量超え。最も古い b が捨てられる
+    expect(cache.size).toBe(2)
+    const reloadA = vi.fn(async () => new Float32Array(1))
+    await cache.load('a', reloadA)
+    expect(reloadA).not.toHaveBeenCalled() // a はまだ cache にある
+    const reloadB = vi.fn(async () => new Float32Array(1))
+    await cache.load('b', reloadB)
+    expect(reloadB).toHaveBeenCalledTimes(1) // b は捨てられていたので取り直す
   })
 
   it('取得の失敗（例外）は cache に残さない', async () => {

@@ -2,7 +2,7 @@
  * ズームの取り違えを型で防ぐ（spec 05 §4.3、S の報告 §10.1 の 5。S では地図・タイル・DEM のズームの
  * 取り違えで 3 回の直しが入った）。
  * - DrawnTileZoom: MapLibre が描く地形タイル（地形のメッシュ）のズーム。raster-dem が tileSize: 256 のとき、
- *   画面の中心では floor(地図のズーム)（MapLibre 6.6.0 の TerrainTileManager。計画の Global Constraints）
+ *   pitch 0 の画面の中心では floor(地図のズーム)。pitch がつくと粗くなる（計画の Global Constraints、Task 3 の見込み）
  * - DemZoom: raster-dem のタイルの要求（addProtocol の URL の {z}）と、GSI の標高タイルのズーム
  * 変換は demZoomForDrawnTile だけで行う
  */

@@ -67,7 +67,7 @@ describe('fillInvalidNearest（無効セルを 0 m にしない。spec 05 §4.2�
     expect(Array.from(elevation)).toEqual([1, 0, 0, 4])
   })
 
-  it('2 次元でも 4 近傍の歩数が近い方の値になる', () => {
+  it('2 次元でも 4 近傍の歩数が近い方の値になる（中央は 5 と 7 のどちらからも歩数 1 の同点。同点は行優先で先に入った有効セルが勝つ（決定的）ので 5 になる）', () => {
     // 3 × 3。中央と右下が無効
     const elevation = Float32Array.from([5, 5, 5, 5, 0, 7, 5, 7, 0])
     const valid = Uint8Array.from([1, 1, 1, 1, 0, 1, 1, 1, 0])
