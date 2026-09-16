@@ -123,31 +123,32 @@ export class View3dSession {
     if (controller === null) return Promise.resolve(null)
     this.app.getState().setView3dStatus('loading')
     const loading = this.load()
-      .then(
-        (create): View3dLike | null => {
-          // 読み込みの間に外された
-          if (this.controller !== controller) return null
-          // 外して付け直した（StrictMode）後の別の読み込みが、先に作った
-          if (this.view !== null) return this.view
-          const { display, map } = this.settings.getState()
-          const view = create(controller, {
-            options: this.options,
-            basemap: map.basemap,
-            exaggeration: display.verticalExaggeration,
-            palette: display.waterDepthPalette,
-            onRendering: (rendering) => this.onRendering(rendering),
-          })
-          view.setTerrain(this.terrain)
-          view.setWater(this.water)
-          this.view = view
-          return view
-        },
-        (error: unknown): null => {
-          console.error(error)
-          this.app.getState().setView3dStatus('error')
-          return null
-        },
-      )
+      .then((create): View3dLike | null => {
+        // 読み込みの間に外された
+        if (this.controller !== controller) return null
+        // 外して付け直した（StrictMode）後の別の読み込みが、先に作った
+        if (this.view !== null) return this.view
+        const { display, map } = this.settings.getState()
+        const view = create(controller, {
+          options: this.options,
+          basemap: map.basemap,
+          exaggeration: display.verticalExaggeration,
+          palette: display.waterDepthPalette,
+          onRendering: (rendering) => this.onRendering(rendering),
+        })
+        view.setTerrain(this.terrain)
+        view.setWater(this.water)
+        this.view = view
+        return view
+      })
+      // .then の第 2 引数は load() 自体の rejection しか拾わず、上の onFulfilled（create・View3d の
+      // コンストラクタ・setTerrain・setWater）が投げた例外は拾わない（R2）。.catch を続けて、
+      // 生成の失敗でも状態が 'loading' のまま固まらず、rejection も unhandled にならないようにする
+      .catch((error: unknown): null => {
+        console.error(error)
+        this.app.getState().setView3dStatus('error')
+        return null
+      })
       .finally(() => {
         if (this.loading === loading) this.loading = null
       })

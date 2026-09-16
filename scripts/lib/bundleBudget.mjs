@@ -86,8 +86,16 @@ export function sharedModules(mainChunks, workerChunks) {
   return result
 }
 
-/** 初期ロードに入れてはいけない（動的 import でだけ読む）モジュール（spec 05 §3.8、tech-spec §14.2） */
-export const LAZY_ONLY_MODULES = [/node_modules\/three\//, /^src\/renderer\//]
+/**
+ * 初期ロードに入れてはいけない（動的 import でだけ読む）モジュール（spec 05 §3.8、tech-spec §14.2）。
+ * 3D の地図側のモジュール（View3d・Terrain3d・mainTileGenerator・gsiDemTile）も対象に含む。options・layerIds は
+ * 含めない（計画で決めたこと 21。3D を選んでいなくても値・ID の参照だけで済むよう、初期ロード側に置く判断）
+ */
+export const LAZY_ONLY_MODULES = [
+  /node_modules\/three\//,
+  /^src\/renderer\//,
+  /^src\/map\/view3d\/(View3d|Terrain3d|mainTileGenerator|gsiDemTile)\.ts$/,
+]
 
 /**
  * 初期ロードのチャンクに、遅延でだけ読むべきモジュールが入っていれば、チャンクごとに違反の文を返す

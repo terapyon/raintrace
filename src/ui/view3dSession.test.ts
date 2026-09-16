@@ -147,6 +147,25 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
     await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
   })
 
+  it(
+    '読み込み自体は済んでも、作る途中（create・View3d のコンストラクタ・setTerrain・setWater）が例外を投げたら' +
+      '状態は error になる（.then の第 2 引数は onFulfilled 自身の例外を拾わない。R2）',
+    async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const load = vi.fn(
+        async (): Promise<View3dFactory> => () => {
+          throw new Error('construct failed')
+        },
+      )
+      const { app } = setup(load)
+      app.getState().setViewMode('3d')
+      await vi.waitFor(() => expect(app.getState().view3dStatus).toBe('error'))
+      expect(error).toHaveBeenCalled()
+      // 状態が 'loading' のまま固まらないことも合わせて確かめる
+      expect(app.getState().view3dStatus).not.toBe('loading')
+    },
+  )
+
   it('onRestyle（ベースマップの切り替え・コンテキストの復帰）で restore を呼ぶ', async () => {
     const { app, view, restyle } = setup()
     app.getState().setViewMode('3d')

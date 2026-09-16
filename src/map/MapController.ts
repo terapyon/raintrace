@@ -95,6 +95,16 @@ export class MapController {
   }
 
   /**
+   * 地図の読み込みが済んでいるか（ベースマップの切り替え・コンテキスト喪失の間は false）。setTerrain・addSource
+   * などスタイルに触れる操作は whenLoaded の外から呼ぶと、MapLibre が Style is not done loading. で例外を
+   * 投げる（Map.setTerrain は style._checkLoaded() から始まる）。render イベントは読み込み中も届くので、
+   * View3d.afterRender はここを見てから境界の判定（checkBoundary）に進む（R1）
+   */
+  isLoaded(): boolean {
+    return this.loaded
+  }
+
+  /**
    * ベースマップを切り替える（spec 04 §2）。スタイルの入れ替えで、重ね描きのソース・レイヤー・画像が消える
    * （02 の申し送り P2）。style.load で onRestyle の購読者が足し直す。diff: false で必ず入れ替えて
    * style.load を起こす（差分の適用で済むと style.load が来ず、足し直しの契機が無い）

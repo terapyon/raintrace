@@ -44,9 +44,15 @@ test.describe('3D の表示（spec 05 §5）', () => {
   }) => {
     const errors = collectErrors(page)
     const warnings = collectWarnings(page)
+    const requested: string[] = []
+    page.on('request', (request) => requested.push(request.url()))
     await page.goto(SHIBUYA)
     await waitTerrain(page)
+    // 3D の地図側のモジュール（View3d・Terrain3d ほか）は 3D に切り替えたときに動的 import で読む
+    // （spec 05 §3.8、R3。バンドル予算の LAZY_ONLY_MODULES と対）
+    expect(requested.some((url) => /\/assets\/View3d-/.test(url))).toBe(false)
     await switchTo3d(page)
+    expect(requested.some((url) => /\/assets\/View3d-/.test(url))).toBe(true)
     const mapEl = mapElement(page)
     await expect(mapEl).toHaveAttribute(
       'data-overlay-layers',
@@ -235,6 +241,48 @@ test.describe('3D の表示（spec 05 §5）', () => {
     await expect(mapEl).toHaveAttribute('data-drawn-tile-zoom', /^\d+$/, { timeout: 30_000 })
     expect(Number(await mapEl.getAttribute('data-drawn-tile-zoom'))).toBeGreaterThanOrEqual(
       MIN_3D_DRAWN_TILE_ZOOM,
+    )
+    expect(errors).toEqual([])
+    expect(warnings).toEqual([])
+  })
+
+  test('3D の表示中にベースマップを切り替えると（onRestyle → View3d.restore）、写真では hillshade が消えて水面は作り直され、淡色に戻すと hillshade も戻る（R4）', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page)
+    const warnings = collectWarnings(page)
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    await switchTo3d(page)
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    const mapEl = mapElement(page)
+    await expect(mapEl).toHaveAttribute(
+      'data-visible-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.water),
+      { timeout: 30_000 },
+    )
+    const builds = Number(await mapEl.getAttribute('data-water-builds'))
+    await page.getByRole('button', { name: strings.map.basemaps.photo }).click()
+    await expect(mapEl).toHaveAttribute('data-basemap', 'photo')
+    // hillshade は写真では付けない（hillshadeEnabled の auto）が、3D 自体と水面は戻る
+    await expect(mapEl).not.toHaveAttribute(
+      'data-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.hillshade),
+    )
+    await expect(mapEl).toHaveAttribute('data-view3d', '3d')
+    await expect
+      .poll(async () => Number(await mapEl.getAttribute('data-water-builds')))
+      .toBeGreaterThan(builds)
+    await expect(mapEl).toHaveAttribute(
+      'data-visible-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.water),
+      { timeout: 30_000 },
+    )
+    await page.getByRole('button', { name: strings.map.basemaps.pale }).click()
+    await expect(mapEl).toHaveAttribute('data-basemap', 'pale')
+    await expect(mapEl).toHaveAttribute(
+      'data-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.hillshade),
     )
     expect(errors).toEqual([])
     expect(warnings).toEqual([])

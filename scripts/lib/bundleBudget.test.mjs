@@ -108,4 +108,30 @@ describe('lazyOnlyViolations（three と src/renderer は初期ロードに入�
     expect(violations[0]).toContain('src/renderer/waterLayer.ts')
     expect(violations[1]).toContain('three')
   })
+
+  it('初期ロードのチャンクに View3d・Terrain3d・mainTileGenerator・gsiDemTile があれば違反（spec 05 §3.8。R3）', () => {
+    const chunks = {
+      'assets/index-a.js': [
+        'src/main.tsx',
+        'src/map/view3d/View3d.ts',
+        'src/map/view3d/Terrain3d.ts',
+        'src/map/view3d/mainTileGenerator.ts',
+        'src/map/view3d/gsiDemTile.ts',
+      ],
+    }
+    const violations = lazyOnlyViolations(chunks, initial, LAZY_ONLY_MODULES)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('src/map/view3d/View3d.ts')
+  })
+
+  it('options・layerIds は初期ロードに入っていても違反でない（計画で決めたこと 21）', () => {
+    const chunks = {
+      'assets/index-a.js': [
+        'src/main.tsx',
+        'src/map/view3d/options.ts',
+        'src/map/view3d/layerIds.ts',
+      ],
+    }
+    expect(lazyOnlyViolations(chunks, initial, LAZY_ONLY_MODULES)).toEqual([])
+  })
 })

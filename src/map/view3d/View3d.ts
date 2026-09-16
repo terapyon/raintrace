@@ -320,6 +320,10 @@ export class View3d {
   }
 
   private afterRender(): void {
+    // ベースマップの切り替え・コンテキスト喪失の間はスタイルが読み込み中で、checkBoundary が呼ぶ
+    // setTerrain・addSource（Terrain3d.show/hide）は Style is not done loading. で例外を投げる。ここで待ち、
+    // boundaryCheckPending はそのまま残す（消さない）ので、判定は次の render で取り上げる（R1）
+    if (!this.controller.isLoaded()) return
     const measured = this.measuredCentreZoom()
     this.writeMarks(measured)
     if (!this.boundaryCheckPending || this.controller.map.isMoving()) return
