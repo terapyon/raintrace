@@ -1,3 +1,4 @@
+import type { WaterLut } from '../renderer/waterTextures'
 import { interpolateStops, type Rgb } from './colormap'
 
 export type WaterPalette = 'stepped' | 'continuous'
@@ -10,7 +11,9 @@ export const WATER_BANDS = 20
 const CONTINUOUS_STEPS = 100
 /** 帯の境目の余裕。Float32 の 0.35 などは真の値より僅かに小さい */
 const BAND_EPSILON_M = 1e-6
-const WATER_ALPHA = 210
+export const WATER_ALPHA = 210
+/** 2D の水深のレイヤーの raster-opacity（WaterOverlay）。3D の水面の不透明度にも掛ける（計画で決めたこと 17） */
+export const WATER_LAYER_OPACITY = 0.9
 
 // 単一色相の青の明度の変化(色覚特性によらず順序が読める。tech-spec §9.5)。浅いほど明るい
 const WATER_STOPS: readonly Rgb[] = [
@@ -42,6 +45,24 @@ function buildLut(size: number): Uint8Array {
 const PALETTES: Record<WaterPalette, { lut: Uint8Array; index: (depthM: number) => number }> = {
   stepped: { lut: buildLut(WATER_BANDS + 1), index: steppedIndex },
   continuous: { lut: buildLut(CONTINUOUS_STEPS + 1), index: continuousIndex },
+}
+
+/**
+ * 3D の水面（シェーダ）の LUT と帯の求め方。2D の steppedIndex・continuousIndex と同じ帯、同じ色、同じ見え方の
+ * 不透明度にする（spec 05 §3.1「配色は 04 の 2D 表示と同じ」）
+ */
+export function waterLutSpec(palette: WaterPalette): WaterLut {
+  const { lut } = PALETTES[palette]
+  const common = {
+    rgb: lut,
+    epsilonM: BAND_EPSILON_M,
+    alpha: (WATER_ALPHA / 255) * WATER_LAYER_OPACITY,
+    minDepthM: WATER_VISIBLE_M,
+  }
+  // 5 cm 刻みは 20 帯 × 5 cm = 1 m なので、1 m あたり WATER_BANDS 帯（1 / WATER_BAND_M と書くと浮動小数点で境目がずれうる）
+  return palette === 'stepped'
+    ? { ...common, bandsPerM: WATER_BANDS, maxIndex: WATER_BANDS }
+    : { ...common, bandsPerM: CONTINUOUS_STEPS, maxIndex: CONTINUOUS_STEPS }
 }
 
 /** 水深の色。描画閾値の未満と NaN は null（透明） */

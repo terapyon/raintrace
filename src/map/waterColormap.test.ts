@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   continuousIndex,
   steppedIndex,
+  WATER_ALPHA,
   WATER_BANDS,
+  WATER_LAYER_OPACITY,
+  WATER_VISIBLE_M,
   waterColorAt,
   waterLegendCss,
+  waterLutSpec,
   waterRgba,
 } from './waterColormap'
 
@@ -72,5 +76,30 @@ describe('waterLegendCss', () => {
     const css = waterLegendCss('stepped')
     expect(css.startsWith('linear-gradient(to right, ')).toBe(true)
     expect(css.split('rgb(').length - 1).toBe(WATER_BANDS + 1)
+  })
+})
+
+describe('waterLutSpec（3D の水面の LUT。計画で決めたこと 17）', () => {
+  it.each(['stepped', 'continuous'] as const)(
+    '%s: シェーダの帯の求め方は 2D と同じ帯になり（帯の境目ちょうどの値を除く）、色も 2D と同じ',
+    (palette) => {
+      const spec = waterLutSpec(palette)
+      const index2d = palette === 'stepped' ? steppedIndex : continuousIndex
+      expect(spec.rgb.length).toBe((spec.maxIndex + 1) * 3)
+      for (let k = 0; k < 300; k++) {
+        const d = 0.0123 + k * 0.0071
+        const index = Math.min(spec.maxIndex, Math.floor((d + spec.epsilonM) * spec.bandsPerM))
+        expect(index).toBe(index2d(d))
+        expect(Array.from(spec.rgb.slice(index * 3, index * 3 + 3))).toEqual(
+          waterColorAt(palette, d),
+        )
+      }
+    },
+  )
+
+  it('不透明度は 2D の見え方（1 画素 210/255 × レイヤー 0.9）。1 cm 未満は描かない', () => {
+    const spec = waterLutSpec('stepped')
+    expect(spec.alpha).toBeCloseTo((WATER_ALPHA / 255) * WATER_LAYER_OPACITY, 12)
+    expect(spec.minDepthM).toBe(WATER_VISIBLE_M)
   })
 })

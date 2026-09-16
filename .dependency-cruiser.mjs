@@ -74,6 +74,8 @@ export default {
           '\\.d\\.ts$',
           '^src/main\\.tsx$',
           '^src/workers/[^/]+\\.worker\\.ts$',
+          // 05 の Task 7 の間だけ（Task 8 で waterLayer から到達する）
+          '^src/renderer/(waterMesh|matrix|waterShaders)\\.ts$',
         ],
         reachable: false,
       },

@@ -3,7 +3,7 @@ import type { Corners } from '../dem/gridRange'
 import { ensureArrowImage } from './arrowImage'
 import { TERRAIN_LAYER_IDS } from './TerrainOverlay'
 import type { PointCollection } from './terrainFeatures'
-import { type WaterPalette, waterRgba } from './waterColormap'
+import { WATER_LAYER_OPACITY, type WaterPalette, waterRgba } from './waterColormap'
 
 export const WATER_LAYER_IDS = { water: 'water-depth', arrows: 'water-arrows' } as const
 const ARROW_IMAGE = 'water-flow-arrow'
@@ -154,7 +154,7 @@ export class WaterOverlay {
         type: 'raster',
         source: WATER_LAYER_IDS.water,
         layout: { visibility: this.depthVisible ? 'visible' : 'none' },
-        paint: { 'raster-opacity': 0.9, 'raster-resampling': 'nearest' },
+        paint: { 'raster-opacity': WATER_LAYER_OPACITY, 'raster-resampling': 'nearest' },
       },
       before(TERRAIN_LAYER_IDS.outline),
     )
