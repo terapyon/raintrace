@@ -1,22 +1,46 @@
 /**
+ * fps の測り直し（spec 05 §4.4、spec 06 §4.1・§5・§5.1）と、クリックから表示まで（spec 06 §3・§5）。
+ *
  * fallback=0: (c) の 2D への切り替えを止めて測る。z16 ×10 p85 は、pitch つきの見込みでは画面の中心のタイルが
- * 14 だが、実測は 16（Task 6・9: pitch 78.6037°・zoom 15.9768 に落ち着く）。3D の間の (c) の判定は実測で
+ * 14 だが、実測は 16（05 の Task 6・9: pitch 78.6037°・zoom 15.9768 に落ち着く）。3D の間の (c) の判定は実測で
  * 行うので、この視点は 2D に落ちない。fallback=0 は、計測の途中で実測が境界を割って 2D に落ちることが
  * 絶対に起きないようにする保険である
+ *
+ * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate）・RAINTRACE_FPS_REPEAT（既定 3）・
+ * RAINTRACE_FPS_SITES（既定 shibuya。06 の M2 は ayase,shibuya,minatomirai。RAINTRACE_LOAD=1 のときだけ
+ * nemuro〈段 2。ユーザーの裁定 R5〉も選べる）・RAINTRACE_FPS_OUT_DIR
+ * （既定 .handoff/05-fps）・RAINTRACE_LOAD=1（クリックから表示まで）・RAINTRACE_DRAWN_ZOOM=1
+ *
+ * 水面ありの条件は、平衡に届かない雨（WATER_RAIN）で測る。既定の雨（100 mm・半径 10 m）はみなとみらいで約 3 秒で
+ * 平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを比べられなくなる（R-b。05 の shots.perf の水面の撮影と同じ雨）
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { type Browser, expect, type Page, test } from '@playwright/test'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { expect, test } from '@playwright/test'
 import type { FpsResult } from '../../src/map/fpsProbe'
-import { percentile } from '../../src/map/fpsStats'
 import { drawnTileZoomForView } from '../../src/map/view3d/drawnZoom'
-import { acknowledgeDisclaimer, collectErrors } from '../e2e/support/app'
+import type { LongTaskSummary, StepTimeSummary } from '../../src/ui/perfCollectors'
+import type { LoadReport } from '../../src/ui/perfReports'
+import {
+  assertPerfBuild,
+  LOAD_SITES,
+  type LoadSiteName,
+  loadSitesFromEnv,
+  median,
+  outDirFromEnv,
+  query,
+  readReport,
+  SITES,
+  type SiteName,
+  sitesFromEnv,
+  withFreshPage,
+} from './support'
 
 interface Variant {
   label: string
   hillshade?: string
   water: '0' | '1'
+  /** URL に足す項目（depthEvery・pause・arrows。spec 06 §5.1） */
+  extra?: Record<string, string>
 }
 
 /** 実際に置けた視点（要求どおりとは限らない。地形がカメラを持ち上げる） */
@@ -38,9 +62,14 @@ interface Report {
   waterBuildMs: number[]
   tiles: { loaded: boolean; waitMs: number }
   result: FpsResult
+  /** 計測の窓の長いタスク（spec 06 §3） */
+  longTasks: LongTaskSummary
+  /** 計測の窓の 1 step の所要時間（水面ありのときだけ値がある） */
+  stepTimes: StepTimeSummary
 }
 
 interface Row extends Report {
+  site: SiteName
   variant: string
   size: string
   view: string
@@ -50,142 +79,130 @@ interface Row extends Report {
   run: number
 }
 
-// S と同じ 2 つの視点と画面（spec 05 §4.4）
+// S と同じ 2 つの視点（spec 05 §4.4）
 const VIEWS = [
   { name: 'z17 ×5 p60', z: '17', ex: '5', pitch: '60' },
   { name: 'z16 ×10 p85', z: '16', ex: '10', pitch: '85' },
 ] as const
+type ViewName = (typeof VIEWS)[number]['name']
 const SIZES = ['500', '1000'] as const
-const SHIBUYA = { lat: '35.658000', lon: '139.701600' }
-const VIEWPORT = { width: 960, height: 600 }
+type Size = (typeof SIZES)[number]
 
-/** 地形のみの 2 変種（Task 5）。地形の生成場所は main のみ（Task 6 で Worker を採らなかった） */
+interface SetDef {
+  variants: readonly Variant[]
+  /** 省けば SIZES と VIEWS のすべて */
+  sizes?: readonly Size[]
+  views?: readonly ViewName[]
+}
+
+/** 地形のみの 2 変種（05 の Task 5）。地形の生成場所は main のみ（05 の Task 6 で Worker を採らなかった） */
 const TERRAIN_MAIN_ONLY: readonly Variant[] = [
   { label: 'main・hillshade あり・地形のみ', hillshade: 'on', water: '0' },
   { label: 'main・hillshade なし・地形のみ', hillshade: 'off', water: '0' },
 ]
 
 /**
- * 計測の組（RAINTRACE_FPS_SET で選ぶ）。water の組は Task 9 で足した。
- * terrain-main（Task 5）・terrain-tiles（Task 6）は今は同じ中身（Worker の 2 行を消したため）。
- * 別の名を残すのは、既存の記録（.handoff/05-fps/terrain-{main,tiles}.{json,md} や計画書）が
- * どちらの名も使っているため。同じ配列を指させて、直し忘れの二重管理を避ける
+ * 計測の組（RAINTRACE_FPS_SET で選ぶ）。water の組は 05 の Task 9、isolate は 06 の §5.1。
+ * terrain-main（05 の Task 5）・terrain-tiles（05 の Task 6）は同じ中身（既存の記録が両方の名を使うため）
  */
-const SETS: Record<string, readonly Variant[]> = {
-  'terrain-main': TERRAIN_MAIN_ONLY,
-  'terrain-tiles': TERRAIN_MAIN_ONLY,
-  water: [
-    { label: '既定・地形のみ', water: '0' },
-    { label: '既定・水面あり（最速で降雨、水深を毎フレーム更新）', water: '1' },
-  ],
+const SETS: Record<string, SetDef> = {
+  'terrain-main': { variants: TERRAIN_MAIN_ONLY },
+  'terrain-tiles': { variants: TERRAIN_MAIN_ONLY },
+  water: {
+    variants: [
+      { label: '既定・地形のみ', water: '0' },
+      {
+        label: '既定・水面あり（500 mm・半径 50 m を最速で降雨、水深を毎フレーム更新）',
+        water: '1',
+      },
+    ],
+  },
+  // 51 fps の切り分け（spec 06 §5.1）。05 と同じ 1000 m・z16 ×10 p85 だけ（7 条件。既定の 3 回で 21 回）
+  isolate: {
+    sizes: ['1000'],
+    views: ['z16 ×10 p85'],
+    variants: [
+      { label: '地形のみ（water=0）', water: '0' },
+      // 1000 m の既定は後の Task で 2 になりうるので、1 も URL で明示する（URL が既定に勝つ）
+      { label: '水面あり・depthEvery=1', water: '1', extra: { depthEvery: '1' } },
+      { label: '水面あり・depthEvery=2', water: '1', extra: { depthEvery: '2' } },
+      { label: '水面あり・depthEvery=4', water: '1', extra: { depthEvery: '4' } },
+      { label: '水面あり・止めた水面（pause=1）', water: '1', extra: { pause: '1' } },
+      { label: '水面あり・矢印なし（arrows=0）', water: '1', extra: { arrows: '0' } },
+      // 受け取り側の CPU の切り分け（転送を減らし、矢印も止める）
+      {
+        label: '水面あり・depthEvery=4・矢印なし（arrows=0）',
+        water: '1',
+        extra: { depthEvery: '4', arrows: '0' },
+      },
+    ],
+  },
 }
 
 const DEFAULT_SET = 'terrain-main'
 const setName = process.env.RAINTRACE_FPS_SET ?? DEFAULT_SET
-/** 同じ条件を測る回数。判定（Task 6・9）はセルごとの中央値で行う。Task 5 は 1 でよい */
+/** 同じ条件を測る回数。判定はセルごとの中央値で行う */
 const repeat = Number(process.env.RAINTRACE_FPS_REPEAT ?? '3')
-/** 1 回の計測を待つ上限（readReport） */
+/** 1 回の計測を待つ上限 */
 const RUN_TIMEOUT_MS = 240_000
-/**
- * 結果（JSON と表）の書き先。RAINTRACE_FPS_OUT_DIR にリポジトリの根からの相対（または絶対）のパスを渡すと
- * そこへ書く（06 の計測用。spec 06 §4.2）。省くと 05 の記録の場所 .handoff/05-fps/ のまま
- */
-const repoRoot = new URL('../../', import.meta.url)
-const outDir = pathToFileURL(
-  `${resolve(fileURLToPath(repoRoot), process.env.RAINTRACE_FPS_OUT_DIR ?? '.handoff/05-fps')}/`,
-)
-
-/**
- * 計測用のビルド（pnpm build:perf）でなければフックが入らず、印は一生付かない。そのまま回すと 240 秒の
- * timeout まで待たされ、「固まった」のか「ビルドし忘れた」のか分からない。先にビルドの情報（build-info/）を見て区別する
- */
-function assertPerfBuild(): void {
-  const manifest = new URL('../../build-info/manifest.json', import.meta.url)
-  if (!existsSync(manifest)) {
-    throw new Error(
-      'build-info/manifest.json がありません。先に pnpm build:perf を実行してください',
-    )
-  }
-  if (!readFileSync(manifest, 'utf8').includes('perfHook')) {
-    throw new Error(
-      'dist が計測用のビルドではありません（manifest に perfHook が無い）。先に pnpm build:perf を実行してください',
-    )
-  }
-}
-
-function query(params: Record<string, string | undefined>): string {
-  const entries = Object.entries(params).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined,
-  )
-  return `/?${new URLSearchParams(entries).toString()}`
-}
-
-/**
- * 1 回ずつ新しい context（HTTP の cache が空）で開く。同じページで続けると、後の条件ほど地理院のタイルが
- * cache から来て有利になる（計画で決めたこと 20）
- */
-async function withFreshPage<T>(
-  browser: Browser,
-  baseURL: string,
-  run: (page: Page) => Promise<T>,
-): Promise<T> {
-  const context = await browser.newContext({ baseURL, viewport: VIEWPORT, deviceScaleFactor: 1 })
-  let closed = false
-  try {
-    await acknowledgeDisclaimer(context)
-    const page = await context.newPage()
-    const errors = collectErrors(page)
-    const value = await run(page)
-    expect(errors).toEqual([])
-    // 報告を読んだ後（閉じるまでの間）に出たコンソールのエラーも見る。1 回目の確認だけだと取り逃す
-    await context.close()
-    closed = true
-    expect(errors).toEqual([])
-    return value
-  } finally {
-    if (!closed) await context.close()
-  }
-}
-
-/** 結果か失敗の印が付くまで待ち、結果を読む */
-async function readReport(page: Page): Promise<Report> {
-  await expect(page.locator('html[data-fps-result], html[data-perf-error]')).toBeAttached({
-    timeout: RUN_TIMEOUT_MS,
-  })
-  const failure = await page.locator('html').getAttribute('data-perf-error')
-  if (failure !== null) throw new Error(`計測の失敗: ${failure}`)
-  return JSON.parse((await page.locator('html').getAttribute('data-fps-result')) ?? 'null')
-}
+const outDir = outDirFromEnv(process.env.RAINTRACE_FPS_OUT_DIR, '.handoff/05-fps')
+/** 水面ありの条件の雨（平衡に届かない。R-b） */
+const WATER_RAIN = { mm: '500', r: '50' } as const
 
 const tileCell = (t: FpsResult['tileGen']['terrain']): string =>
   `${t.count}・${t.cached}・${t.meanMs.toFixed(1)}・${t.maxMs.toFixed(1)}`
 
+/** 05 の表の注意（置き換える前の formatTable の文字列のまま。Task 6 は 1 文字も変えない） */
+const NOTES: readonly string[] = [
+  '',
+  '注意 1（「実測 pitch」「実測 zoom」の読み方）: この 2 列は、計測の窓を閉じた後に 1 回だけ読んだ値である。',
+  'runFpsProbe は rAF の loop を抜けて map.jumpTo({ center, bearing }) で中心と bearing を戻し、その後に',
+  'perfHook が getZoom()・getPitch() を読む。10 秒の計測の間ずっとこの角度だった、という意味ではない。',
+  '',
+  '注意 2（垂直強調 ×10 では pitch 85° に届かない）: MapLibre の _elevateCameraIfInsideTerrain',
+  '（maplibre-gl-dev.mjs の 22431〜22443 行）が、カメラが持ち上がった地形の中に入るときカメラをその地形の',
+  '高さまで持ち上げ、calculateCameraOptionsFromTo で pitch とズームを作り直す（transform の更新ごとの修飾。',
+  '同 22454 行あたり）。渋谷の 8.8〜33 m は ×10 で 88〜330 m になり、z16・p85 でのカメラの高さを超える。',
+  'つまり要求どおりの 85° には届かず、実測は 78.6° 付近に落ち着く。要求どおりの 85° になるのは垂直強調 ×1 の',
+  'とき、pitch 0 は常に要求どおりになる（いずれも実測で確認）。加えて（Task 6 で入れた直しにより）タイルが',
+  '揃った後に同じ jumpTo をもう一度発行してから計測しているので、到達する視点は条件・ラン共通で同一になる',
+  '（下の表の z16 ×10 p85 の 12 行はすべて 78.6037°・幅 0.0000）。Task 5 の 1 回目の jumpTo（タイルが読める',
+  '前）では、同じ「z16 ×10 p85」を要求した 4 セルで実測が 78.60° と 82.96° に割れたが、それはこの直しの',
+  '前の挙動であり、今のデータには当てはまらない。',
+  '',
+  '注意 3（render CPU の列）: onRenderTime を呼ぶのは水面の Custom Layer で、呼び出し元は Task 8 で入った',
+  '（Task 9 の実測は条件ごとの中央値で 0.149〜0.416 ms。ランごとの値は 0.137〜0.463 ms）。水面を描いていない条件ではこの列は「未計測」であって、0 ms という意味ではない。',
+  '',
+  '注意 4（タイルの待ちが短い理由）: 視点を置く前に data-view3d-framed（3D の視点へ動き終えたこと）を',
+  '待っているので、areTilesLoaded() は 0.12〜0.51 秒で真になる。実際に落ち着かせている時間は、その後の',
+  '3 秒と合わせて約 3.1〜3.5 秒で、S の固定 3 秒とほぼ同じ。areTilesLoaded() だけを根拠にしない。',
+  '',
+  '推定（未検証。事実としては扱わない）: S も同じ渋谷の地形に対し、同じ MapLibre 6.6.0 で同じ',
+  'map.jumpTo({ zoom, pitch }) を使っており、実測の pitch・zoom を記録していなかった。したがって S の',
+  '「z16 ×10 p85」も、おそらく 85° 未満で測られている。そうであれば比較は実質的に同じ条件どうしで、',
+  'S の側でそれが記録されていなかっただけ、ということになる。',
+  '',
+  '合否（平均 57 fps 以上・長いフレーム 1% 以下）は、要求した視点を MapLibre が落ち着かせた先に対して',
+  '判定する。それが利用者が実際に到達できる、いちばん厳しい視点だからである。',
+]
+
 function formatTable(rows: readonly Row[]): string {
   const lines = [
-    `描画: ${rows[0]?.result.renderer ?? '不明'}（実 GPU・headless。rAF は 60Hz に刻まれるので 60 fps が上限）`,
+    `描画: ${rows[0]?.result.renderer ?? '不明'}（実 GPU・headless。rAF は 60Hz に刻まれるので 60 fps が上限。RAINTRACE_UNCAPPED=1 のときは外した起動）`,
+    `GPU のタイマー（EXT_disjoint_timer_query_webgl2）: ${rows[0]?.result.gpuTimerQuery === true ? '使える' : '使えない'}`,
     '',
     'タイルの列は「組み立てた数・使い回した数・組み立ての平均・最大（ms）」。',
     '',
-    '| 条件 | 範囲 | 視点 | 要求 pitch | 実測 pitch | 要求 zoom | 実測 zoom | 平均 fps | 中央値 (ms) | 長いフレーム | ヒストグラム g1/g2/g3/g4/g5+ | render CPU 平均 (ms) | 地形のタイル | hillshade のタイル | 描かれるタイル | タイルの待ち (s) | 準備 (ms) | 水面の作成 (ms) | pass |',
-    '|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|---|---|---:|---|---|---|---|',
+    '| 地点 | 条件 | 範囲 | 視点 | 要求 pitch | 実測 pitch | 要求 zoom | 実測 zoom | 平均 fps | 中央値 (ms) | 長いフレーム | ヒストグラム g1/g2/g3/g4/g5+ | render CPU 平均 (ms) | 地形のタイル | hillshade のタイル | 描かれるタイル | タイルの待ち (s) | 準備 (ms) | 水面の作成 (ms) | 長いタスク（数・最大 ms） | 1 step 中央値 (ms) | pass |',
+    '|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|---|---|---:|---|---|---|---|---:|---|',
   ]
-  for (const {
-    variant,
-    run,
-    size,
-    view,
-    requested,
-    mapPitch,
-    mapZoom,
-    prepareMs,
-    waterBuildMs,
-    tiles,
-    result: r,
-  } of rows) {
+  for (const row of rows) {
+    const { site, variant, run, size, view, requested, mapPitch, mapZoom, prepareMs } = row
+    const { waterBuildMs, tiles, longTasks, stepTimes, result: r } = row
     const h = r.gapHistogram
     const wait = `${(tiles.waitMs / 1000).toFixed(1)}${tiles.loaded ? '' : '（揃わず）'}`
     lines.push(
-      `| ${variant} #${run} | ${size} m | ${view} | ${requested.pitch} | ${mapPitch.toFixed(1)} | ${requested.z} | ${mapZoom.toFixed(3)} | ${r.meanFps.toFixed(1)} | ${r.p50Ms.toFixed(1)} | ${r.longFrames}/${r.frames}（${(r.longFrameRatio * 100).toFixed(1)}%） | ${h.g1}/${h.g2}/${h.g3}/${h.g4}/${h.g5plus} | ${r.renderFrames === 0 || r.renderCpuMeanMs === null ? '未計測' : r.renderCpuMeanMs.toFixed(2)} | ${tileCell(r.tileGen.terrain)} | ${tileCell(r.tileGen.hillshade)} | ${r.drawnTileZoom} | ${wait} | ${prepareMs.map((ms) => ms.toFixed(0)).join('・')} | ${waterBuildMs.map((ms) => ms.toFixed(0)).join('・')} | ${r.pass} |`,
+      `| ${SITES[site].label} | ${variant} #${run} | ${size} m | ${view} | ${requested.pitch} | ${mapPitch.toFixed(1)} | ${requested.z} | ${mapZoom.toFixed(3)} | ${r.meanFps.toFixed(1)} | ${r.p50Ms.toFixed(1)} | ${r.longFrames}/${r.frames}（${(r.longFrameRatio * 100).toFixed(1)}%） | ${h.g1}/${h.g2}/${h.g3}/${h.g4}/${h.g5plus} | ${r.renderFrames === 0 || r.renderCpuMeanMs === null ? '未計測' : r.renderCpuMeanMs.toFixed(2)} | ${tileCell(r.tileGen.terrain)} | ${tileCell(r.tileGen.hillshade)} | ${r.drawnTileZoom} | ${wait} | ${prepareMs.map((ms) => ms.toFixed(0)).join('・')} | ${waterBuildMs.map((ms) => ms.toFixed(0)).join('・')} | ${longTasks.supported ? `${longTasks.count}・${longTasks.maxMs.toFixed(0)}` : '未対応'} | ${stepTimes.medianMs === null ? '—' : stepTimes.medianMs.toFixed(2)} | ${r.pass} |`,
     )
   }
   const warnings = comparabilityWarnings(rows)
@@ -193,50 +210,19 @@ function formatTable(rows: readonly Row[]): string {
     lines.push('', '**条件の比較に使えない組**（同じセルなのに実測の視点がそろっていない）:')
     for (const warning of warnings) lines.push(`- ${warning}`)
   }
-  lines.push(
-    '',
-    '注意 1（「実測 pitch」「実測 zoom」の読み方）: この 2 列は、計測の窓を閉じた後に 1 回だけ読んだ値である。',
-    'runFpsProbe は rAF の loop を抜けて map.jumpTo({ center, bearing }) で中心と bearing を戻し、その後に',
-    'perfHook が getZoom()・getPitch() を読む。10 秒の計測の間ずっとこの角度だった、という意味ではない。',
-    '',
-    '注意 2（垂直強調 ×10 では pitch 85° に届かない）: MapLibre の _elevateCameraIfInsideTerrain',
-    '（maplibre-gl-dev.mjs の 22431〜22443 行）が、カメラが持ち上がった地形の中に入るときカメラをその地形の',
-    '高さまで持ち上げ、calculateCameraOptionsFromTo で pitch とズームを作り直す（transform の更新ごとの修飾。',
-    '同 22454 行あたり）。渋谷の 8.8〜33 m は ×10 で 88〜330 m になり、z16・p85 でのカメラの高さを超える。',
-    'つまり要求どおりの 85° には届かず、実測は 78.6° 付近に落ち着く。要求どおりの 85° になるのは垂直強調 ×1 の',
-    'とき、pitch 0 は常に要求どおりになる（いずれも実測で確認）。加えて（Task 6 で入れた直しにより）タイルが',
-    '揃った後に同じ jumpTo をもう一度発行してから計測しているので、到達する視点は条件・ラン共通で同一になる',
-    '（下の表の z16 ×10 p85 の 12 行はすべて 78.6037°・幅 0.0000）。Task 5 の 1 回目の jumpTo（タイルが読める',
-    '前）では、同じ「z16 ×10 p85」を要求した 4 セルで実測が 78.60° と 82.96° に割れたが、それはこの直しの',
-    '前の挙動であり、今のデータには当てはまらない。',
-    '',
-    '注意 3（render CPU の列）: onRenderTime を呼ぶのは水面の Custom Layer で、呼び出し元は Task 8 で入った',
-    '（Task 9 の実測は条件ごとの中央値で 0.149〜0.416 ms。ランごとの値は 0.137〜0.463 ms）。水面を描いていない条件ではこの列は「未計測」であって、0 ms という意味ではない。',
-    '',
-    '注意 4（タイルの待ちが短い理由）: 視点を置く前に data-view3d-framed（3D の視点へ動き終えたこと）を',
-    '待っているので、areTilesLoaded() は 0.12〜0.51 秒で真になる。実際に落ち着かせている時間は、その後の',
-    '3 秒と合わせて約 3.1〜3.5 秒で、S の固定 3 秒とほぼ同じ。areTilesLoaded() だけを根拠にしない。',
-    '',
-    '推定（未検証。事実としては扱わない）: S も同じ渋谷の地形に対し、同じ MapLibre 6.6.0 で同じ',
-    'map.jumpTo({ zoom, pitch }) を使っており、実測の pitch・zoom を記録していなかった。したがって S の',
-    '「z16 ×10 p85」も、おそらく 85° 未満で測られている。そうであれば比較は実質的に同じ条件どうしで、',
-    'S の側でそれが記録されていなかっただけ、ということになる。',
-    '',
-    '合否（平均 57 fps 以上・長いフレーム 1% 以下）は、要求した視点を MapLibre が落ち着かせた先に対して',
-    '判定する。それが利用者が実際に到達できる、いちばん厳しい視点だからである。',
-  )
+  lines.push(...NOTES)
   return `${lines.join('\n')}\n`
 }
 
 /**
- * 同じセル（範囲・視点）の中で、実測の視点がそろっていない組を探す。地形があると要求どおりの pitch にならず、
- * しかもその角度は固定でない（注意 2）。実測の視点が違う行どうしを「hillshade の有無の差」として読むと
- * 結論を取り違えるので、表の中で名指しする
+ * 同じセル（地点・範囲・視点）の中で、実測の視点がそろっていない組を探す。地形があると要求どおりの pitch に
+ * ならず、しかもその角度は固定でない。実測の視点が違う行どうしを「条件の差」として読むと結論を取り違えるので、
+ * 表の中で名指しする
  */
 function comparabilityWarnings(rows: readonly Row[]): string[] {
   const cells = new Map<string, Row[]>()
   for (const row of rows) {
-    const key = `${row.size} m・${row.view}`
+    const key = `${SITES[row.site].label}・${row.size} m・${row.view}`
     cells.set(key, [...(cells.get(key) ?? []), row])
   }
   const warnings: string[] = []
@@ -246,35 +232,26 @@ function comparabilityWarnings(rows: readonly Row[]): string[] {
     if (Math.max(...pitches) - Math.min(...pitches) <= 0.5 && drawn.length <= 1) continue
     warnings.push(
       `${key}: 実測 pitch が ${pitches.map((p) => p.toFixed(2)).join(' / ')}、描かれるタイルが ${drawn.join(' / ')} とそろっていない。` +
-        'この組は条件（hillshade の有無など）の比較には使えない。視点そのものが違う',
+        'この組は条件の比較には使えない。視点そのものが違う',
     )
   }
   return warnings
 }
 
-/** 中央値（回数が偶数なら上側。percentile と同じ） */
-const median = (values: readonly number[]): number => {
-  const sorted = [...values].sort((a, b) => a - b)
-  return percentile(sorted, 0.5)
-}
-
-/**
- * セル（条件・範囲・視点）ごとの、ランの中央値と幅。Task 6・9 の判定はこの表で行う（1 回のランでは、GC 1 回で
- * 長いフレームが 2 間隔ほど動く。計画で決めたこと 20）
- */
+/** セル（地点・条件・範囲・視点）ごとの、ランの中央値と幅。判定はこの表で行う */
 function formatSummary(rows: readonly Row[]): string {
   const cells = new Map<string, Row[]>()
   for (const row of rows) {
-    const key = `${row.variant}|${row.size}|${row.view}`
+    const key = `${row.site}|${row.variant}|${row.size}|${row.view}`
     cells.set(key, [...(cells.get(key) ?? []), row])
   }
   const spread = (values: number[], digits: number): string =>
     `${median(values).toFixed(digits)}（${Math.min(...values).toFixed(digits)}〜${Math.max(...values).toFixed(digits)}）`
   const lines = [
-    `セルごとの ${repeat} 回の中央値（括弧は最小〜最大）。組み立ての最大は地形と hillshade の大きい方`,
+    `セルごとの ${repeat} 回の中央値（括弧は最小〜最大）。組み立ての最大は地形と hillshade の大きい方。D15 = 平均 57 fps 以上かつ長いフレーム 1% 以下`,
     '',
-    '| 条件 | 範囲 | 視点 | 平均 fps | 長いフレーム | 組み立ての最大 (ms) | 組み立てた数（地形・hillshade） |',
-    '|---|---|---|---|---|---|---|',
+    '| 地点 | 条件 | 範囲 | 視点 | 平均 fps | 長いフレーム | g2 | 長いタスクの最大 (ms) | 組み立ての最大 (ms) | 組み立てた数（地形・hillshade） |',
+    '|---|---|---|---|---|---|---|---|---|---|',
   ]
   for (const runs of cells.values()) {
     const first = runs[0]
@@ -282,71 +259,83 @@ function formatSummary(rows: readonly Row[]): string {
     const results = runs.map((r) => r.result)
     const fps = results.map((r) => r.meanFps)
     const long = results.map((r) => r.longFrames)
+    const g2 = results.map((r) => r.gapHistogram.g2)
+    const tasks = runs.map((r) => r.longTasks.maxMs)
     const build = results.map((r) => Math.max(r.tileGen.terrain.maxMs, r.tileGen.hillshade.maxMs))
     const terrainCount = median(results.map((r) => r.tileGen.terrain.count))
     const hillshadeCount = median(results.map((r) => r.tileGen.hillshade.count))
     lines.push(
-      `| ${first.variant} | ${first.size} m | ${first.view} | ${spread(fps, 1)} | ${spread(long, 0)} | ${spread(build, 1)} | ${terrainCount}・${hillshadeCount} |`,
+      `| ${SITES[first.site].label} | ${first.variant} | ${first.size} m | ${first.view} | ${spread(fps, 1)} | ${spread(long, 0)} | ${spread(g2, 0)} | ${spread(tasks, 0)} | ${spread(build, 1)} | ${terrainCount}・${hillshadeCount} |`,
     )
   }
   return `${lines.join('\n')}\n`
 }
 
 test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
+  test.skip(
+    process.env.RAINTRACE_LOAD === '1' || process.env.RAINTRACE_DRAWN_ZOOM === '1',
+    '別のテストを回すとき',
+  )
   assertPerfBuild()
-  const variants = SETS[setName]
-  if (variants === undefined) throw new Error(`計測の組がありません: ${setName}`)
+  const sites = sitesFromEnv(process.env.RAINTRACE_FPS_SITES, ['shibuya'])
+  const set = SETS[setName]
+  if (set === undefined) throw new Error(`計測の組がありません: ${setName}`)
   if (!Number.isInteger(repeat) || repeat < 1) {
     throw new Error(`RAINTRACE_FPS_REPEAT は 1 以上の整数: ${process.env.RAINTRACE_FPS_REPEAT}`)
   }
-  // 1 回の上限 × 回数（config の 90 分は、Task 6 の 48 回の最悪に足りない）
-  test.setTimeout(variants.length * SIZES.length * VIEWS.length * repeat * RUN_TIMEOUT_MS)
+  const sizes = set.sizes ?? SIZES
+  const views = VIEWS.filter((v) => set.views === undefined || set.views.includes(v.name))
+  // 1 回の上限 × 回数（config の 90 分は、多い組の最悪に足りない）
+  test.setTimeout(
+    sites.length * set.variants.length * sizes.length * views.length * repeat * RUN_TIMEOUT_MS,
+  )
   const baseURL = testInfo.project.use.baseURL ?? 'http://localhost:4175'
   const rows: Row[] = []
   let turn = 0
   for (let run = 1; run <= repeat; run++) {
-    for (const size of SIZES) {
-      for (const view of VIEWS) {
-        // 条件の順を 1 回ごと・ランごとに入れ替える（時間とともに変わる条件の偏りを減らす）
-        const order = (turn++ + run) % 2 === 0 ? variants : [...variants].reverse()
-        for (const variant of order) {
-          const url = query({
-            ...SHIBUYA,
-            size,
-            probe: 'fps',
-            z: view.z,
-            ex: view.ex,
-            pitch: view.pitch,
-            water: variant.water,
-            hillshade: variant.hillshade,
-            fallback: '0',
-          })
-          const report = await withFreshPage(browser, baseURL, async (page) => {
-            await page.goto(url)
-            return readReport(page)
-          })
-          // 3D のまま（(c) で 2D に落ちていない。フックも data-perf-error にする）
-          expect(report.view3d).toBe('3d')
-          // 視点は厳密な一致ではなく「幅」で照合する（コントローラーの裁定による、ブリーフからの意図的な変更）。
-          // 地形があると MapLibre はカメラを（垂直強調で持ち上がった）地形の上に保つので、pitch は要求より下がる
-          // （渋谷 500 m・×10 では 85 → 約 83）。また地図のズームは地形があると保存量ではなく、画面の中心の
-          // 地形の標高から決まり直すので（Transform.recalculateZoomAndCenter）、計測で地図を動かすと少し動く。
-          // pitch の下側の幅を広く取るのは、カメラの持ち上がりが「カメラの下の標高 × 垂直強調」に比例し、
-          // 範囲によって変わる量だからである（1000 m ではカメラが中心より数百 m 南の、より高い地面の上に来うる）。
-          // この照合は「フックが pitch を無視した」ような取り違えを捕まえるためのもので、角度そのものの検証では
-          // ない。実際に測れた角度は「実測 pitch」の列が示す
-          const requestedPitch = Number(view.pitch)
-          expect(report.mapPitch).toBeLessThanOrEqual(requestedPitch + 0.05)
-          expect(report.mapPitch).toBeGreaterThanOrEqual(requestedPitch - 10.0)
-          expect(Math.abs(report.mapZoom - Number(view.z))).toBeLessThanOrEqual(0.05)
-          rows.push({
-            variant: variant.label,
-            size,
-            view: view.name,
-            run,
-            requested: { z: Number(view.z), pitch: requestedPitch },
-            ...report,
-          })
+    for (const site of sites) {
+      for (const size of sizes) {
+        for (const view of views) {
+          // 条件の順を 1 回ごと・ランごとに入れ替える（時間とともに変わる条件の偏りを減らす）
+          const order = (turn++ + run) % 2 === 0 ? set.variants : [...set.variants].reverse()
+          for (const variant of order) {
+            const url = query({
+              lat: SITES[site].lat,
+              lon: SITES[site].lon,
+              size,
+              probe: 'fps',
+              z: view.z,
+              ex: view.ex,
+              pitch: view.pitch,
+              water: variant.water,
+              ...(variant.water === '1' ? WATER_RAIN : {}),
+              hillshade: variant.hillshade,
+              fallback: '0',
+              ...variant.extra,
+            })
+            const report = await withFreshPage(browser, baseURL, async (page) => {
+              await page.goto(url)
+              return readReport<Report>(page, 'data-fps-result', RUN_TIMEOUT_MS)
+            })
+            // 3D のまま（(c) で 2D に落ちていない。フックも data-perf-error にする）
+            expect(report.view3d).toBe('3d')
+            // 視点は厳密な一致ではなく「幅」で照合する（05 のコントローラーの裁定）。地形があると MapLibre は
+            // カメラを地形の上に保つので、pitch は要求より下がる。この照合は「フックが pitch を無視した」ような
+            // 取り違えを捕まえるためのもので、角度そのものの検証ではない
+            const requestedPitch = Number(view.pitch)
+            expect(report.mapPitch).toBeLessThanOrEqual(requestedPitch + 0.05)
+            expect(report.mapPitch).toBeGreaterThanOrEqual(requestedPitch - 10.0)
+            expect(Math.abs(report.mapZoom - Number(view.z))).toBeLessThanOrEqual(0.05)
+            rows.push({
+              site,
+              variant: variant.label,
+              size,
+              view: view.name,
+              run,
+              requested: { z: Number(view.z), pitch: requestedPitch },
+              ...report,
+            })
+          }
         }
       }
     }
@@ -359,7 +348,60 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
   console.log(table)
 })
 
-test('描かれる地形タイルのズームの実測と、pitch つきの見込み（計画で決めたこと 3）', async ({
+test('クリックから 2D の地形の表示まで・3D を押してから最初の 3D のフレームまで（spec 06 §3・§5）', async ({
+  browser,
+}, testInfo) => {
+  test.skip(process.env.RAINTRACE_LOAD !== '1', 'RAINTRACE_LOAD=1 のときだけ回す')
+  assertPerfBuild()
+  if (!Number.isInteger(repeat) || repeat < 1)
+    throw new Error('RAINTRACE_FPS_REPEAT は 1 以上の整数')
+  const sites = loadSitesFromEnv(process.env.RAINTRACE_FPS_SITES, ['shibuya'])
+  test.setTimeout(sites.length * SIZES.length * repeat * RUN_TIMEOUT_MS)
+  const baseURL = testInfo.project.use.baseURL ?? 'http://localhost:4175'
+  const rows: { site: LoadSiteName; size: Size; run: number; report: LoadReport }[] = []
+  for (let run = 1; run <= repeat; run++) {
+    for (const site of sites) {
+      for (const size of SIZES) {
+        // lat・lon を付けない（起動時に地点を選ばせない）。at= の地点をフックが選ぶ（計画で決めたこと 9）
+        const url = query({
+          size,
+          probe: 'load',
+          at: `${LOAD_SITES[site].lat},${LOAD_SITES[site].lon}`,
+          mode: '3d',
+          fallback: '0',
+        })
+        const report = await withFreshPage(browser, baseURL, async (page) => {
+          await page.goto(url)
+          return readReport<LoadReport>(page, 'data-load-result', RUN_TIMEOUT_MS)
+        })
+        expect(report.to3d).not.toBeNull()
+        rows.push({ site, size, run, report })
+      }
+    }
+  }
+  const seconds = (ms: number | null | undefined): string =>
+    ms === null || ms === undefined ? '—' : (ms / 1000).toFixed(2)
+  const lines = [
+    '地理院に実際に接続し、毎回新しい context（HTTP の cache が空）。「最初の 3D のフレーム」はタイルが揃って 2 フレーム描いた時刻',
+    '',
+    '| 地点 | 範囲 | # | 選んでから ready (s) | 2D の表示 (s) | 3D の状態 (s) | 水面 (s) | 最初の 3D のフレーム (s) | タイル | 長いタスク 読み込み（数・最大 ms） | 長いタスク 3D（数・最大 ms） | 準備 (ms) | 水面の作成 (ms) |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|',
+  ]
+  for (const { site, size, run, report: r } of rows) {
+    const t = r.to3d
+    const load = r.longTasks.load
+    const to3d = r.longTasks.to3d
+    lines.push(
+      `| ${LOAD_SITES[site].label} | ${size} m | ${run} | ${seconds(r.selectToReadyMs)} | ${seconds(r.selectTo2dMs)} | ${seconds(t?.statusMs)} | ${seconds(t?.waterBuiltMs)} | ${seconds(t?.firstFrameMs)} | ${t?.tilesLoaded === false ? '揃わず' : '揃った'} | ${load.count}・${load.maxMs.toFixed(0)} | ${to3d === null ? '—' : `${to3d.count}・${to3d.maxMs.toFixed(0)}`} | ${r.prepareMs.map((ms) => ms.toFixed(0)).join('・')} | ${r.waterBuildMs.map((ms) => ms.toFixed(0)).join('・')} |`,
+    )
+  }
+  mkdirSync(outDir, { recursive: true })
+  writeFileSync(new URL('load.json', outDir), `${JSON.stringify(rows, null, 2)}\n`)
+  writeFileSync(new URL('load.md', outDir), `${lines.join('\n')}\n`)
+  console.log(lines.join('\n'))
+})
+
+test('描かれる地形タイルのズームの実測と、pitch つきの見込み（05 の計画で決めたこと 3）', async ({
   browser,
 }, testInfo) => {
   test.skip(process.env.RAINTRACE_DRAWN_ZOOM !== '1', 'RAINTRACE_DRAWN_ZOOM=1 のときだけ回す')
@@ -369,7 +411,8 @@ test('描かれる地形タイルのズームの実測と、pitch つきの見�
   for (const z of [15.5, 16, 16.5, 17]) {
     for (const pitch of [0, 60, 85]) {
       const url = query({
-        ...SHIBUYA,
+        lat: SITES.shibuya.lat,
+        lon: SITES.shibuya.lon,
         size: '500',
         probe: 'view',
         z: String(z),

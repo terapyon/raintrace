@@ -2,6 +2,12 @@ import { defineConfig, devices } from '@playwright/test'
 
 // fps の測り直し（spec 05 §4.4）と撮影（Task 13）。E2E（4173）とは別に回す。ビルドは pnpm build:perf が先に行う
 const port = 4175
+// RAINTRACE_UNCAPPED=1: vsync と rAF の 60Hz の上限を外す起動の引数を足す（spec 06 §4.2・§5.1。ANGLE の gl-egl で
+// 効くか〈60.0 fps を超えるか〉は M3 で確かめる。計画で決めたこと 12）
+const uncapped =
+  process.env.RAINTRACE_UNCAPPED === '1'
+    ? ['--disable-gpu-vsync', '--disable-frame-rate-limit']
+    : []
 
 export default defineConfig({
   testDir: 'tests/perf',
@@ -25,7 +31,7 @@ export default defineConfig({
         // （本番のタイルの経路）。画面の大きさは各テストが新しい context に渡す（S と同じ 960 × 600）
         channel: 'chrome',
         launchOptions: {
-          args: ['--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl-egl'],
+          args: ['--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl-egl', ...uncapped],
         },
       },
     },

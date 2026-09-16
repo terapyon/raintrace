@@ -8,6 +8,8 @@ test-results/
 playwright-report/
 .dev.vars*
 .handoff/
+# 計測の固定の DEM の本体（tests/perf/fixtures/dem-manifest.json の SHA-256 で固定する。spec 06 §4.1）
+.cache/
 # Claude Code のサブエージェントが作る git worktree（リポジトリの中に置かれる）
 .claude/worktrees/
 *.log
