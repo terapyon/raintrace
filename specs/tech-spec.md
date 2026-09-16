@@ -127,6 +127,8 @@ Cloudflare API トークンは GitHub Actions Secrets に保持する。トー�
 
 単一 package.json 構成とする。pnpm workspace による分割は行わない。
 
+下の図は**主なもの**を載せる（すべてのファイルは載せない。テストと `*.test-support.ts` も省く）。
+
 ```
 raintrace/
   specs/
@@ -147,6 +149,9 @@ raintrace/
       DemGrid.ts          複数タイルの結合と範囲の切り出し
       tileMath.ts         緯度経度・タイル座標・地上解像度の変換（§7.6）
       demSources.ts       DEM 種別・エンドポイント・最大ズーム（§7.4）
+      tileZoom.ts         描かれる地形タイルと DEM のズームの型と変換（実装 spec 05 §4.3）
+      terrarium.ts        Terrarium の符号化、角の規約の標本化、無効セルの埋め方（実装 spec 05 §4.2）
+      terrainTiles.ts     3D の地形のタイルの組み立て（範囲の中・外・境目。実装 spec 05 §4.2）
     shared/
       protocol.ts         Worker とメインスレッド間の型付きメッセージ定義
     workers/              Worker 内でのみ動くコード
@@ -164,19 +169,29 @@ raintrace/
       MapController.ts
       GsiTileSource.ts
       view3d/             方式 A の地形（addProtocol・setTerrain・hillshade）、3D の視点、2D への切り替え。
-                          3D に切り替えたときに動的 import で読む
+                          3D に切り替えたときに動的 import で読む（options.ts・layerIds.ts は初期ロード側からも読む）
+        View3d.ts         3D の取りまとめ（地形・視点・水面・(c) の 2D への切り替え・復帰・E2E の印）
+        Terrain3d.ts      addProtocol の登録、DEM のソースと hillshade、setTerrain
+        drawnZoom.ts      描かれる地形タイルのズームの実測と見込み、境界の定数（15）
+        tileGenerator.ts・mainTileGenerator.ts・gsiDemTile.ts  タイルの生成（メインスレッド）と地理院の取得
+        demSource.ts・layerIds.ts・options.ts  タイルの URL とソース、3D のレイヤー ID、3D の選択肢
+      fpsProbe.ts・fpsStats.ts  fps の計測と集計（実装 spec 05 §4.4。計測用のフックから使う）
     state/                Zustand ストア
       settingsStore.ts
       simulationStore.ts
+      arrowSpacing.ts     矢印の間隔を範囲に比例させる換算（実装 spec 05 §3.3）
     ui/                   React + MUI
       App.tsx
       theme.ts
       strings.ts
+      view3dSession.ts    2D と 3D の切り替えと、3D のコードの遅延読み込み（実装 spec 05 §3.6・§3.8）
+      perfHook.ts・perfParams.ts  計測用のフック（`pnpm build:perf` のときだけビルドに入る）
       components/
     main.tsx
   worker/                 Cloudflare Worker（初期は静的配信のみ。src/workers/ の Web Worker とは別物）
   tests/
     e2e/                  Playwright
+    perf/                 実 GPU の headless の fps の計測と撮影（`pnpm perf:fps`。実装 spec 05 §4.4）
   .npmrc                レジストリの指定のみ（§13.2）
   pnpm-workspace.yaml   pnpm の設定（§13.2。workspace としては使わない）
   .nvmrc
@@ -189,6 +204,8 @@ raintrace/
   tsconfig.app.json
   tsconfig.node.json
   vite.config.ts
+  playwright.config.ts
+  playwright.perf.config.ts  計測用（ポート 4175。E2E とは別に回す）
   wrangler.jsonc
 ```
 
@@ -203,7 +220,7 @@ ui ────────→ state ─────→ simulation（型のみ�
 ui ────────→ bridge
 ui ────────→ map ───────→ renderer
 ui, map ───→ dem（座標の計算などの純粋な関数。実装 spec 02 で追加）
-bridge ────→ state, renderer
+bridge ────→ state, renderer（05 の時点で renderer への import は無い。水面は map/view3d が動的 import で読む）
 bridge ────→ shared（protocol）
 renderer ──→ simulation, dem（型のみ）
 workers ───→ simulation, dem, shared
@@ -222,7 +239,7 @@ dem ───────→ （何にも依存しない）
 | `core-is-pure` | `src/simulation/` と `src/dem/` から、自ディレクトリの外（src 内の他ディレクトリ、外部パッケージ）への import を禁止 |
 | `types-only-from-core` | `state`・`renderer`・`shared` から `simulation`・`dem` への import は型のみに限る（dependency-cruiser の type-only 判定を用いる） |
 | `map-types-only` | `src/map/`（テストは除く）から `simulation`・`shared` への import は型のみに限る |
-| `no-react-outside-ui` | `src/renderer/` と `src/bridge/` から `react`, `@mui/*` への import を禁止 |
+| `no-react-outside-ui` | `src/renderer/` と `src/bridge/` から `react`・`react-dom`・`@mui/*`・`@emotion/*` への import を禁止 |
 | `workers-not-imported` | `src/workers/` を他のディレクトリから静的に import することを禁止。Worker は `new Worker(new URL(...), { type: 'module' })` でのみ起動する |
 | `workers-isolated` | `src/workers/` から `simulation`・`dem`・`shared` 以外の自作モジュールへの import を禁止（Worker にメインスレッド側のコードを持ち込まない） |
 | `no-circular` | 循環依存を禁止 |
@@ -313,6 +330,7 @@ map.addLayer(new MapCustomLayer(renderer))   // Three.js をこの中で使う
 - 地図の状態（中心・ズーム・pitch）を React state に同期しない。同期が必要なのは URL 更新（§3.3）のみで、これは `moveend` を debounce して行う
 - React の再レンダリングが地図の再生成を引き起こさないよう、生成は依存配列を空にした `useEffect` に限定する
 - `MapController` は地図の生成・破棄とベースマップの切り替え（`setStyle` の後に重ね描きを足し直す購読 `onRestyle`）を受け持つ。実装 spec 04 では、E2E のため、重ね描きのレイヤー ID を知っていて、今のスタイルに実在するものをコンテナの `data-overlay-layers` に、今のベースマップを `data-basemap` に書く（重ね描きの中身は各 Overlay が持つ。この 2 つの印のために役割を少し広げた）
+- 実装 spec 05 で、E2E と計測のための印を地図のコンテナに足した。`MapController` が `data-visible-overlay-layers`（今のスタイルにあり、`visibility` が `none` でないレイヤー）を、`View3d` が `data-view3d`（`off`・`3d`・`fallback-2d`）・`data-view3d-framed`（3D の視点へ動き終えた）・`data-water-builds`（水面を作った回数）・`data-map-zoom`（小数 3 桁）・`data-map-pitch`・`data-drawn-tile-zoom`（画面の中心で描かれている地形タイルのズームの実測）を書く。使うのは `tests/e2e/view3d.spec.ts`（§11.4）と `tests/perf/`
 
 ## 5.4 データフロー全体
 
@@ -348,9 +366,9 @@ DEM の取得とデコードを Worker 内で行うことで、`OffscreenCanvas`
 
 | 項目 | 決定 | 根拠（`docs/superpowers/spikes/2026-09-12-3d-rendering.md`） |
 |---|---|---|
-| 地形 | A 系: MapLibre の 3D terrain。`addProtocol` で GSI の標高 PNG を Terrarium に変換する。raster-dem は `tileSize: 256` を明示する | §4、§10 |
+| 地形 | A 系: MapLibre の 3D terrain。`addProtocol` で GSI の標高 PNG を Terrarium に変換する。raster-dem は `tileSize: 256` を明示する。hillshade は地形と**別の raster-dem のソース**（`tileSize: 512`。同じソースだと MapLibre が警告を出す）で、既定の `auto` は**淡色・標準の地図で付け、写真の地図では付けない** | §4、§10 |
 | 水面 | Custom Layer。標高と水深を R32F のテクスチャで渡し、頂点シェーダで高さを付ける | spec 05 §3.1、§4 の fps |
-| 水面の高さの基準 | シミュレーションの標高（A）。曲面では、描かれる地形タイルのメッシュが弦の高さぶん水面より上に出うる（描かれるタイル z15 で最大約 2.5cm）。**対策は (c)**: 画面の中心で描かれる地形タイルのズーム（**実測**）が **15** より粗いときは 2D にする。地形が有効な間は描かれるタイルが pitch で粗くなる（pitch 60 で 1 段、pitch 85 で 1〜2 段）ので、3D の最初の視点は地図のズーム **16.5 以上**にする（実装 spec 05 §4.3、R05-4） | §5、§4 の曲面、A' の差、§10 |
+| 水面の高さの基準 | シミュレーションの標高（A）。曲面では、描かれる地形タイルのメッシュが弦の高さぶん水面より上に出うる（描かれるタイル z15 で最大約 2.5cm）。**対策は (c)**: 画面の中心で描かれる地形タイルのズーム（**実測**）が **15** より粗いときは 2D にする。地形が有効な間は描かれるタイルが pitch で粗くなる（pitch 60 で 1 段、pitch 85 で 1〜2 段）ので、3D の最初の視点は地図のズーム **16.5 以上**にする。2D に落ちた後は地形が無く実測できないので、pitch つきの**見込み**が **15 + 0.5 以上**になったら 3D に戻す（実装 spec 05 §4.3、R05-4） | §5、§4 の曲面、A' の差、§10 |
 | 垂直強調 | `setTerrain({ exaggeration })` とシェーダに同じ値 | §4 の合格基準 2 |
 | z-fighting の対策 | 水面を後に描く＋`polygonOffset(−1, −4)` | §4、`water-a.md` |
 | 範囲の境界 | なし（A 系） | §4 の継ぎ目、`seam.md` |
@@ -360,7 +378,7 @@ DEM の取得とデコードを Worker 内で行うことで、`OffscreenCanvas`
 
 GSI の標高 PNG は符号付き 24bit で無効値を持つため、MapLibre の `raster-dem` が前提とする Terrarium・Mapbox 形式とも、線形のカスタムエンコーディングとも一致しない（base-spec §27）。そのため変換が必須になる。範囲の中は、02 のグリッドから全ズームのタイルを作る（実装 spec 05 §4.2）。
 
-垂直強調 ×10 では、地図の pitch は 85° に届かない（渋谷の実測で 78.60〜82.96°）。タイルが読める前に視点を置くと一定にならない（Task 5 の実測）。タイルが揃ってから置き直す運用にした（Task 6 以降で確認する）。MapLibre はカメラが持ち上がった地形の中に入るとき、カメラをその地形の高さまで持ち上げて pitch とズームを作り直すためで、持ち上がりは「カメラの下の標高 × 垂直強調」に比例する。`MapController` の `maxPitch: 85` が文字どおり効くのは垂直強調 ×1 のとき（実装 spec 05 Task 5 の実測）。
+垂直強調 ×10 では、地図の pitch は 85° に届かない。計測ではタイルが揃ってから同じ視点を置き直しており、渋谷の z16 ×10 p85 は Task 6・9 の 36 ラン（範囲 500 m・1000 m、地形のみ・水面あり）のすべてで **78.60°** に収束している。直しの前の Task 5 では、タイルが読める前に視点を置いたため 78.60〜82.96° に割れた。MapLibre はカメラが持ち上がった地形の中に入るとき、カメラをその地形の高さまで持ち上げて pitch とズームを作り直すためで、持ち上がりは「カメラの下の標高 × 垂直強調」に比例する。`MapController` の `maxPitch: 85` が文字どおり効くのは垂直強調 ×1 のとき（実装 spec 05 Task 5 の実測）。
 
 これとは別に、**2D のラスタ表示（水深や標高を画像として地図に重ねる）を検証用ビューとして必ず作る。** 3D の描画方式に関係なく、base-spec §56 が最初に求める「窪地・流路が期待どおりに得られるか」の確認は、この 2D 表示で行える（実装 spec 04 で作り、05 でも常設のモードとして残す。R05-1）。
 
@@ -716,7 +734,7 @@ interface PersistedSettings {
     verticalExaggeration: 1 | 2 | 5 | 10   // 既定 2
     waterDepthPalette: 'stepped' | 'continuous'   // stepped は 5cm 刻み（§6.6）
     showFlowVectors: boolean
-    flowVectorSpacingM: 5 | 10 | 20
+    flowVectorSpacingM: 5 | 10 | 20   // 範囲 500 m での間隔。実際の間隔は 値 × 範囲 ÷ 500（実装 spec 05 §3.3）
   }
   map: {
     basemap: 'std' | 'pale' | 'photo'   // 既定 'pale'
@@ -726,7 +744,7 @@ interface PersistedSettings {
 }
 ```
 
-保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。
+保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。実装 spec 05 から、保存する値は**範囲 500 m での間隔**で、実際の間隔は範囲の一辺に比例させる（1000 m で 2 倍、250 m で半分。保存の形は変えていない）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。
 
 ### バージョニング方針（決定）
 
@@ -889,7 +907,7 @@ TypeScript は 6 系を使う（2026-09-10 時点で 6.0.3。実装 spec 01 で�
 | `src/simulation/` | Vitest（ユニット）+ fast-check（property-based） | **最重点**。base-spec §47/§48 |
 | `src/dem/` | Vitest（ユニット） | デコード式、タイル座標変換、無効値処理 |
 | `src/state/` | Vitest | localStorage スキーマ検証、不正値の破棄 |
-| `src/renderer/`, `src/map/` | Vitest（ユニット）+ Playwright（E2E）+ 手動 | 純粋な部分（格子・行列・LUT・シェーダの文字列・描かれるタイルのズーム・地形のタイルの組み立て・fps の集計）はユニット。描画は E2E（スモーク）と手動。描画結果の画素は比べない（§11.4） |
+| `src/renderer/`, `src/map/` | Vitest（ユニット）+ Playwright（E2E）+ 手動 | 純粋な部分（格子・行列・LUT・シェーダの文字列・描かれるタイルのズーム・地形のタイルの組み立て・fps の集計）はユニット。描画は E2E（スモーク。3D は `tests/e2e/view3d.spec.ts`）と手動。描画結果の画素は比べない（§11.4） |
 | `src/ui/` | Vitest + Testing Library（jsdom。ファイルの先頭の `// @vitest-environment jsdom` で選ぶ。限定的） | 入力値のバリデーションと状態反映のみ |
 | 全体 | Playwright（E2E） | スモークテスト（§11.4） |
 
@@ -933,6 +951,17 @@ WebGL の描画結果に対するスクリーンショット比較は環境差�
 7. `?mm=50&r=20` を付けて開くと入力欄にその値が入る
 8. 範囲内のクリックでセル情報が開き、『ここを降雨中心にする』で範囲を読み込み直す
 9. キーボードだけで雨量・半径の入力から Start・Pause・Reset まで操作できる（実装 spec 04 §11.2）
+
+実装 spec 05 の 3D は `tests/e2e/view3d.spec.ts` の 8 件で確かめる。3D の状態は §5.3 の印（`data-view3d`・`data-view3d-framed`・`data-water-builds`・`data-map-zoom`・`data-map-pitch`・`data-drawn-tile-zoom`・`data-visible-overlay-layers`）で待ち、判定する。
+
+1. 3D に切り替えると地形と hillshade が出て、2D の水深の canvas が隠れ、コンソールにエラーと警告が出ず、2D に戻せる。3D のチャンク（`View3d`）は 3D に切り替えてから読む
+2. 3D の視点の画面の中心で、描かれる地形タイルのズームの実測が pitch つきの見込みより粗くない
+3. 3D で範囲内をクリックするとセル情報が開く（`unproject`）
+4. 3D で降雨を始めると水面が出て、2D の水深の canvas は隠れる。three は 3D に切り替えてから読む。2D に戻すと元に戻る
+5. 3D で強い降雨をすると、範囲の中心付近の画素が水の配色に変わる（画素の比較ではなく、水の配色の画素があるかだけを見る）
+6. ズームアウトして画面の中心のタイルが境界より粗くなると 2D に落ちて知らせ、近づくと 3D に戻る
+7. 3D の表示中にベースマップを切り替えると、写真では hillshade が消えて水面が作り直され、淡色に戻すと hillshade も戻る
+8. 3D の表示中に WebGL のコンテキストを失って戻すと、水面が作り直され、hillshade と 04 の重ね描きが戻り、エラーが出ない（MapLibre 6.6.0 が出す復帰の警告だけは件数の上限つきで許す）
 
 外部（GSI）へのネットワーク依存を避けるため、E2E ではタイルリクエストを Playwright の `route()` で固定のフィクスチャに差し替える。DEM の取得は Worker 内で行われるため、`page.route()` ではなく `browserContext.route()` を使う。Worker から出るリクエストも差し替えられることを、E2E を作る最初に確かめる。
 
@@ -1158,7 +1187,7 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 | 地点クリックから 3D 地形表示まで | < 3秒 | キャッシュなし、一般的な回線 |
 | メインスレッドの最長ブロック時間 | < 50ms | 全操作を通じて |
 
-05 の地形のタイルの生成はメインスレッド、hillshade の既定は auto。本番のタイルの経路の測り直し（実装 spec 05 の計画 Task 6、実 GPU・headless）で決めた。
+05 の地形のタイルの生成はメインスレッド、hillshade の既定は auto（淡色・標準の地図で付け、写真の地図では付けない。hillshade は地形と別の raster-dem のソースで `tileSize: 512`。§5.5）。本番のタイルの経路の測り直し（実装 spec 05 の計画 Task 6、実 GPU・headless）で決めた。
 
 05 の測り直しの要約（実 GPU・headless の Chrome、ANGLE / NVIDIA GTX 1080 Ti、rAF が 60Hz に刻まれるので 60.0 fps が上限、地理院に実接続、毎回新しい context。指標は実装 spec 05 §4.4 の D15 = 平均 57 fps 以上かつ長いフレーム 1% 以下）:
 
@@ -1231,7 +1260,7 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 |---|---:|---:|
 | `map` | 246.6 KB | 260 KB |
 | `ui` | 160.0 KB | 150 KB（超過。04 からの持ち越し） |
-| `index` | 20.5 KB（別に rolldown のランタイム 0.4 KB） | 20 KB |
+| `index` | 20.5 KB（別に rolldown のランタイム 0.4 KB） | 20 KB（超過） |
 | 初期ロードの合計 | 427.5 KB | 500 KB |
 | `maplibre-gl-worker` | 131.8 KB | — |
 | `three` | 126.5 KB | — |
