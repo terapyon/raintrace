@@ -1,8 +1,4 @@
-import {
-  DEFAULT_VIEW3D_OPTIONS,
-  type HillshadeOption,
-  type TileGeneration,
-} from '../map/view3d/options'
+import { DEFAULT_VIEW3D_OPTIONS, type HillshadeOption } from '../map/view3d/options'
 import { VERTICAL_EXAGGERATIONS } from '../state/persistedSettings'
 
 export type PerfProbe = 'fps' | 'view'
@@ -19,7 +15,6 @@ export interface PerfParams {
   /** 水面あり（降雨を「最速」で回し、水深を毎フレーム更新する）か、地形のみか */
   water: boolean
   hillshade: HillshadeOption
-  tiles: TileGeneration
   durationMs: number
   /** false は (c) の 2D への切り替えを止める（S の視点を 3D のまま測る） */
   fallback: boolean
@@ -27,7 +22,6 @@ export interface PerfParams {
   settleMs: number
 }
 
-const TILE_GENERATIONS: readonly TileGeneration[] = ['main']
 const HILLSHADE_OPTIONS: readonly HillshadeOption[] = ['auto', 'on', 'off']
 
 export function parsePerfParams(search: string): PerfParams | null {
@@ -49,9 +43,8 @@ export function parsePerfParams(search: string): PerfParams | null {
     bearing: number('bearing', 0, -180, 180),
     exaggeration: oneOf(VERTICAL_EXAGGERATIONS, Number(params.get('ex')), 1),
     water: params.get('water') !== '0',
-    // 省いたときは 3D の既定（Task 6 で決める）に従う。Task 9 の組は既定のまま測る
+    // 省いたときは 3D の既定に従う。Task 9 の組は既定のまま測る
     hillshade: oneOf(HILLSHADE_OPTIONS, params.get('hillshade'), DEFAULT_VIEW3D_OPTIONS.hillshade),
-    tiles: oneOf(TILE_GENERATIONS, params.get('tiles'), DEFAULT_VIEW3D_OPTIONS.tileGeneration),
     durationMs: number('ms', 10_000, 1000, 60_000),
     fallback: params.get('fallback') !== '0',
     settleMs: number('settle', 3000, 0, 120_000),

@@ -21,7 +21,7 @@ class UnwantedTileError extends Error {}
  * isWanted は、取り消されていない要求がそのタイルを待っているか。枠を待った後と再試行の前に見て、待つ要求が
  * 無ければ取得しない。signal は受けない（1 つの取得を複数の DEM タイルが共有するので、1 つの要求の取り消しで止めない）。
  * OffscreenCanvas の扱いは demLoader.ts の getContext と同じ。層の規則で共有できない（map は workers を読めず、
- * dem・shared は DOM の型を持たない）ので写す。Task 6 で Worker を採れば、このファイルは消える
+ * dem・shared は DOM の型を持たない）ので写す。Task 6 はメインスレッドを選んだので、このファイルは消えない
  */
 export function createMainGsiFetcher(isWanted: (tile: TileCoord) => boolean): FetchDemTile {
   const limit = createLimiter(6)

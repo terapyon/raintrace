@@ -11,7 +11,8 @@ export type DemSourceKind = 'terrain' | 'hillshade'
 /**
  * hillshade のソースの tileSize。MapLibre の地形は floor(地図のズーム) − 1 の DEM を（deltaZoom 1）、hillshade だけの
  * ソースは round(地図のズーム + log2(512 / tileSize)) を要求する（roundZoom）。256 だと地形より 2〜3 段（16〜64 倍）
- * 細かい。512 でも 1〜2 段細かい（計画で決めたこと 12。Task 6 で重ければ 1024 を試す）
+ * 細かい。512 では Task 6 の実測で地形 32・hillshade 31（比 0.97）とほぼ 1:1 になったので、1024 は試さない
+ * （計画で決めたこと 12）
  */
 export const HILLSHADE_TILE_SIZE = 512
 

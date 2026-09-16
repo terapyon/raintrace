@@ -10,9 +10,8 @@ describe('3D の選択肢（計画で決めたこと 12）', () => {
     expect(hillshadeEnabled('off', 'pale')).toBe(false)
   })
 
-  it('既定は メインスレッドで生成・hillshade は auto・水面あり・計測の受け口なし', () => {
+  it('既定は hillshade は auto・水面あり・計測の受け口なし', () => {
     expect(DEFAULT_VIEW3D_OPTIONS).toEqual({
-      tileGeneration: 'main',
       hillshade: 'auto',
       water: true,
       boundaryFallback: true,

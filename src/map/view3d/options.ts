@@ -1,8 +1,6 @@
 import type { Basemap } from '../basemapStyle'
 import type { DemSourceKind } from './demSource'
 
-/** 地形のタイルを作る場所（計画で決めたこと 11。Task 6 の結果で決める） */
-export type TileGeneration = 'main'
 /** hillshade（計画で決めたこと 12）。auto は淡色・標準で付け、写真では付けない */
 export type HillshadeOption = 'auto' | 'on' | 'off'
 
@@ -14,7 +12,6 @@ export interface TileTimeSample {
 }
 
 export interface View3dOptions {
-  tileGeneration: TileGeneration
   hillshade: HillshadeOption
   /** 水面を描くか。false は計測の「地形のみ」の基準（spec 05 §4.4） */
   water: boolean
@@ -24,8 +21,8 @@ export interface View3dOptions {
    */
   boundaryFallback: boolean
   /**
-   * 計測用（perfHook）。水面の render の CPU の時間（ms）。これを呼ぶのは水面の Custom Layer なので、
-   * 呼び出し元が入るのは Task 8。それまで計測の表の render CPU の列は「未計測」になる
+   * 計測用（perfHook）。水面の render の CPU の時間（ms）。これを呼ぶのは水面の Custom Layer。
+   * 呼び出し元は Task 8 で入り、Task 9 の実測は 0.149〜0.416 ms だった
    */
   onRenderTime: ((ms: number) => void) | null
   /** 計測用。タイル 1 枚の組み立ての時間（ソースごと） */
@@ -37,7 +34,6 @@ export interface View3dOptions {
 }
 
 export const DEFAULT_VIEW3D_OPTIONS: View3dOptions = {
-  tileGeneration: 'main',
   hillshade: 'auto',
   water: true,
   boundaryFallback: true,

@@ -113,7 +113,6 @@ export async function installPerfHook(
   const prepareMs: number[] = []
   const waterBuildMs: number[] = []
   session.view3d.setOptions({
-    tileGeneration: params.tiles,
     hillshade: params.hillshade,
     water: params.water,
     boundaryFallback: params.fallback,

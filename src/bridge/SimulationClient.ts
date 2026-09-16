@@ -131,7 +131,9 @@ export class SimulationClient {
         if (message.terrainId === this.terrainId) {
           // 失敗した start はエンジンを reset 済みで、step 0 の frame を送ってこない。前の実行の水深を
           // 出し続けないよう手元のバッファを消し、Worker にも返す（大きさは同じ地形なので合う）
-          // （タスク 4 のレビューの裁定 1）
+          // （タスク 4 のレビューの裁定 1）。この返却は下の購読者への通知より先に起きる。安全なのは
+          // SimulationSession.clearWater()（simulationSession.ts）が同じタスクの中で同期的に自分の参照を
+          // 手放すからで、この経路を非同期にすると壊れる（不変条件は呼び出し順だけで保たれている）
           if (this.water !== null) {
             const buffer = this.water.buffer
             this.water = null

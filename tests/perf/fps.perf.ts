@@ -13,8 +13,6 @@ import { acknowledgeDisclaimer, collectErrors } from '../e2e/support/app'
 
 interface Variant {
   label: string
-  /** 省くと URL に載せず、フックの既定（3D の既定）を使う */
-  tiles?: string
   hillshade?: string
   water: '0' | '1'
 }
@@ -59,10 +57,10 @@ const SIZES = ['500', '1000'] as const
 const SHIBUYA = { lat: '35.658000', lon: '139.701600' }
 const VIEWPORT = { width: 960, height: 600 }
 
-/** main・地形のみの 2 変種（Task 5）。Worker を採らなかった（Task 6）ので、地形の生成場所は常に main */
+/** 地形のみの 2 変種（Task 5）。地形の生成場所は main のみ（Task 6 で Worker を採らなかった） */
 const TERRAIN_MAIN_ONLY: readonly Variant[] = [
-  { label: 'main・hillshade あり・地形のみ', tiles: 'main', hillshade: 'on', water: '0' },
-  { label: 'main・hillshade なし・地形のみ', tiles: 'main', hillshade: 'off', water: '0' },
+  { label: 'main・hillshade あり・地形のみ', hillshade: 'on', water: '0' },
+  { label: 'main・hillshade なし・地形のみ', hillshade: 'off', water: '0' },
 ]
 
 /**
@@ -310,7 +308,6 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
             pitch: view.pitch,
             water: variant.water,
             hillshade: variant.hillshade,
-            tiles: variant.tiles,
             fallback: '0',
           })
           const report = await withFreshPage(browser, baseURL, async (page) => {

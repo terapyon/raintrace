@@ -24,12 +24,12 @@ export interface FpsResult extends FrameStats {
   durationMs: number
   warmupMs: number
   /**
-   * 水面の render の CPU の時間。これを呼ぶのは水面の Custom Layer で、入るのは Task 8。
-   * それまでサンプルが 1 つも無いので null（0 ms ではなく「未計測」）
+   * 水面の render の CPU の時間。これを呼ぶのは水面の Custom Layer（呼び出し元は Task 8 で入った。
+   * Task 9 の実測は 0.149〜0.416 ms）。水面が無効などでサンプルが 1 つも無ければ null（0 ms ではなく「未計測」）
    */
   renderCpuMeanMs: number | null
   renderCpuP95Ms: number | null
-  /** 0 なら未計測（onRenderTime の呼び出し元がまだ無い） */
+  /** 0 なら未計測（onRenderTime が一度も呼ばれなかった。例: 水面を描いていない） */
   renderFrames: number
   /** 計測の間のタイルの作成（ソースごと） */
   tileGen: Record<DemSourceKind, TileGenStats>
