@@ -19,6 +19,11 @@ export interface View3dOptions {
   /** 水面を描くか。false は計測の「地形のみ」の基準（spec 05 §4.4） */
   water: boolean
   /**
+   * (c) 境界より粗いときに 2D に落とすか（spec 05 §4.3）。計測（perfHook の fallback=0）で S の視点
+   * （z16 ×10 p85 は画面の中心のタイルが 14）を 3D のまま測るときだけ false にする
+   */
+  boundaryFallback: boolean
+  /**
    * 計測用（perfHook）。水面の render の CPU の時間（ms）。これを呼ぶのは水面の Custom Layer なので、
    * 呼び出し元が入るのは Task 8。それまで計測の表の render CPU の列は「未計測」になる
    */
@@ -35,6 +40,7 @@ export const DEFAULT_VIEW3D_OPTIONS: View3dOptions = {
   tileGeneration: 'main',
   hillshade: 'auto',
   water: true,
+  boundaryFallback: true,
   onRenderTime: null,
   onTileTime: null,
   onPrepareTime: null,

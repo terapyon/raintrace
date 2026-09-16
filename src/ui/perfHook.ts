@@ -118,6 +118,7 @@ export async function installPerfHook(
     tileGeneration: params.tiles,
     hillshade: params.hillshade,
     water: params.water,
+    boundaryFallback: params.fallback,
     onRenderTime: (ms) => renderTimes.push(ms),
     onTileTime: (sample) => tileTimes.push(sample),
     onPrepareTime: (ms) => prepareMs.push(ms),

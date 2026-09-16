@@ -15,6 +15,7 @@ describe('3D の選択肢（計画で決めたこと 12）', () => {
       tileGeneration: 'main',
       hillshade: 'auto',
       water: true,
+      boundaryFallback: true,
       onRenderTime: null,
       onTileTime: null,
       onPrepareTime: null,

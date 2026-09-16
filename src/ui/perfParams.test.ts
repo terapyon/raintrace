@@ -10,7 +10,7 @@ describe('parsePerfParams（計測用のフックの URL。計画で決めたこ
   it('すべての項目を読む', () => {
     expect(
       parsePerfParams(
-        '?probe=fps&mode=3d&z=16&pitch=85&bearing=10&ex=10&water=0&hillshade=off&tiles=main&ms=5000',
+        '?probe=fps&mode=3d&z=16&pitch=85&bearing=10&ex=10&water=0&hillshade=off&tiles=main&ms=5000&fallback=0',
       ),
     ).toEqual({
       probe: 'fps',
@@ -23,6 +23,7 @@ describe('parsePerfParams（計測用のフックの URL。計画で決めたこ
       hillshade: 'off',
       tiles: 'main',
       durationMs: 5000,
+      fallback: false,
     })
   })
 
@@ -38,6 +39,7 @@ describe('parsePerfParams（計測用のフックの URL。計画で決めたこ
       hillshade: 'auto',
       tiles: 'main',
       durationMs: 10_000,
+      fallback: true,
     })
   })
 })

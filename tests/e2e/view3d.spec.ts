@@ -201,4 +201,39 @@ test.describe('3D の表示（spec 05 §5）', () => {
     expect(before).toBeLessThan(0.05)
     expect(after - before).toBeGreaterThan(0.3)
   })
+
+  test('3D でズームアウトして、画面の中心で描かれる地形タイルが境界より粗くなると 2D に落ちて知らせ、近づくと 3D に戻る（spec 05 §4.3）', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page)
+    const warnings = collectWarnings(page)
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    await switchTo3d(page)
+    const mapEl = mapElement(page)
+    // 3D の視点（16.5、pitch 60。中心のタイルは 16）から、Shift + − で 2 段ズームアウトする（MapLibre のキーボード
+    // 操作）。14.5 では中心のタイルが境界より粗くなる
+    await page.locator('canvas.maplibregl-canvas').focus()
+    await page.keyboard.press('Shift+Minus')
+    await expect(mapEl).toHaveAttribute('data-view3d', 'fallback-2d', { timeout: 10_000 })
+    await expect(page.getByTestId('view3d-fallback')).toBeVisible()
+    await expect(mapEl).not.toHaveAttribute(
+      'data-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.hillshade),
+    )
+    await expect
+      .poll(() => layersOf(mapEl, 'data-visible-overlay-layers'))
+      .toContain(WATER_LAYER_IDS.water)
+    // 16.5 に戻すと、見込み（約 16.08）が境界 + 0.5 以上なので 3D に戻る
+    await page.keyboard.press('Shift+Equal')
+    await expect(mapEl).toHaveAttribute('data-view3d', '3d', { timeout: 10_000 })
+    await expect(page.getByTestId('view3d-fallback')).toHaveCount(0)
+    // 3D に戻した直後は描かれたタイルが無く、印が空（Number('') は 0）。埋まるのを待ってから読む
+    await expect(mapEl).toHaveAttribute('data-drawn-tile-zoom', /^\d+$/, { timeout: 30_000 })
+    expect(Number(await mapEl.getAttribute('data-drawn-tile-zoom'))).toBeGreaterThanOrEqual(
+      MIN_3D_DRAWN_TILE_ZOOM,
+    )
+    expect(errors).toEqual([])
+    expect(warnings).toEqual([])
+  })
 })

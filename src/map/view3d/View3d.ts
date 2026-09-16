@@ -14,7 +14,13 @@ import type { Basemap } from '../basemapStyle'
 import type { MapController } from '../MapController'
 import { TERRAIN_LAYER_IDS } from '../TerrainOverlay'
 import { type WaterPalette, waterLutSpec } from '../waterColormap'
-import { drawnTileZoomAt, PITCH_3D_DEG, zoomFor3dView } from './drawnZoom'
+import {
+  boundaryDecision,
+  drawnTileZoomAt,
+  PITCH_3D_DEG,
+  predictedCentreTileZoom,
+  zoomFor3dView,
+} from './drawnZoom'
 import { VIEW3D_LAYER_IDS } from './layerIds'
 import { createMainTileGenerator } from './mainTileGenerator'
 import { hillshadeEnabled, type View3dOptions } from './options'
@@ -56,6 +62,8 @@ export class View3d {
   private rendering: View3dRendering = 'off'
   /** 3D の視点へ動かしている間。動き終えたら data-view3d-framed を立てる */
   private framing = false
+  /** 視点を動かし終えた（または 3D に戻した）。次の描画で境界を判定する */
+  private boundaryCheckPending = false
   /** 直前に書いた印（変わらなければ書き直さない） */
   private readonly marks = { mapZoom: '', mapPitch: '', drawnTileZoom: '' }
   private readonly onRender = (): void => this.afterRender()
@@ -290,13 +298,47 @@ export class View3d {
   }
 
   private afterRender(): void {
-    this.writeMarks(this.measuredCentreZoom())
+    const measured = this.measuredCentreZoom()
+    this.writeMarks(measured)
+    if (!this.boundaryCheckPending || this.controller.map.isMoving()) return
+    // 3D に戻した直後など、まだ描かれたタイルが無ければ、有るまで待つ
+    if (this.rendering === '3d' && measured === null) return
+    this.boundaryCheckPending = false
+    this.checkBoundary(measured)
   }
 
   private afterMove(): void {
-    if (!this.framing) return
-    this.framing = false
-    this.controller.map.getContainer().dataset.view3dFramed = 'true'
+    if (this.framing) {
+      this.framing = false
+      this.controller.map.getContainer().dataset.view3dFramed = 'true'
+    }
+    // タイルは動き終えた後の描画で決まるので、判定は次の描画で行う
+    this.requestBoundaryCheck()
+  }
+
+  private requestBoundaryCheck(): void {
+    if (!this.enabled || !this.options.boundaryFallback) return
+    this.boundaryCheckPending = true
+    this.controller.map.triggerRepaint()
+  }
+
+  /**
+   * (c): 3D の間は画面の中心で描かれている地形タイルのズーム（実測）が境界（MIN_3D_DRAWN_TILE_ZOOM）より粗ければ
+   * 2D に落とす。2D に落ちた後は地形が無く実測できないので、pitch つきの見込みが境界 + 0.5 に届いたら 3D に戻す
+   * （spec 05 §4.3、R05-4。§4.4 の「粗いズームを 2D」も同じ判定。計画で決めたこと 2・3）
+   */
+  private checkBoundary(measured: DrawnTileZoom | null): void {
+    if (this.rendering === 'off') return
+    const { map } = this.controller
+    const predicted = predictedCentreTileZoom(map.getZoom(), map.getPitch())
+    const decision = boundaryDecision(this.rendering, measured, predicted)
+    if (decision === 'to-2d') {
+      this.hide3d('fallback-2d')
+    } else if (decision === 'to-3d') {
+      this.show3d()
+      // 戻した後の最初の描画で実測を確かめる（見込みが外れていれば、また 2D に落ちる）
+      this.requestBoundaryCheck()
+    }
   }
 
   /** E2E・計測用の印（計画で決めたこと 21）。地図のズームは URL（小数 2 桁）より細かく、小数 3 桁で書く */

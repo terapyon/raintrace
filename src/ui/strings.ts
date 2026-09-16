@@ -124,6 +124,7 @@ export const strings = {
     exaggerationValue: (value: number) => `${value}x`,
     loading: '3D の表示を準備しています',
     error: '3D の表示を始められませんでした。2D の表示は使えます',
+    fallback: 'ズームが粗いため 2D で表示しています。近づくと 3D になります',
   },
   legend: {
     /** 見出し。palette は waterStepped・waterContinuous */

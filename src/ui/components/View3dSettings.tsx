@@ -55,6 +55,11 @@ export function View3dSettings({ app, settings }: { app: AppStore; settings: Set
           {strings.view3d.loading}
         </Typography>
       )}
+      {viewMode === '3d' && status === 'fallback-2d' && (
+        <Alert severity="info" data-testid="view3d-fallback" sx={{ my: 1 }}>
+          {strings.view3d.fallback}
+        </Alert>
+      )}
       {viewMode === '3d' && status === 'error' && (
         <Alert severity="error" data-testid="view3d-error" sx={{ my: 1 }}>
           {strings.view3d.error}

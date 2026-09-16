@@ -21,6 +21,8 @@ export interface PerfParams {
   hillshade: HillshadeOption
   tiles: TileGeneration
   durationMs: number
+  /** false は (c) の 2D への切り替えを止める（S の視点を 3D のまま測る） */
+  fallback: boolean
 }
 
 const TILE_GENERATIONS: readonly TileGeneration[] = ['main']
@@ -49,5 +51,6 @@ export function parsePerfParams(search: string): PerfParams | null {
     hillshade: oneOf(HILLSHADE_OPTIONS, params.get('hillshade'), DEFAULT_VIEW3D_OPTIONS.hillshade),
     tiles: oneOf(TILE_GENERATIONS, params.get('tiles'), DEFAULT_VIEW3D_OPTIONS.tileGeneration),
     durationMs: number('ms', 10_000, 1000, 60_000),
+    fallback: params.get('fallback') !== '0',
   }
 }

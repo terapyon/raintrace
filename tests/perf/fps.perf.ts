@@ -1,3 +1,6 @@
+/**
+ * fallback=0: (c) の 2D への切り替えを止めて測る（z16 ×10 p85 は画面の中心のタイルが 14 で、アプリでは 2D に落ちる視点）
+ */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { type Browser, expect, type Page, test } from '@playwright/test'
 import type { FpsResult } from '../../src/map/fpsProbe'
@@ -305,6 +308,7 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
             water: variant.water,
             hillshade: variant.hillshade,
             tiles: variant.tiles,
+            fallback: '0',
           })
           const report = await withFreshPage(browser, baseURL, async (page) => {
             await page.goto(url)
@@ -360,6 +364,7 @@ test('描かれる地形タイルのズームの実測と、pitch つきの見�
         z: String(z),
         pitch: String(pitch),
         water: '0',
+        fallback: '0',
       })
       const drawn = await withFreshPage(browser, baseURL, async (page) => {
         await page.goto(url)

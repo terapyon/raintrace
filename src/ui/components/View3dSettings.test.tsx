@@ -54,4 +54,15 @@ describe('View3dSettings（spec 05 §3.2・§3.6）', () => {
     act(() => app.getState().setView3dStatus('error'))
     expect(screen.getByTestId('view3d-error').textContent).toContain(strings.view3d.error)
   })
+
+  it('境界より粗くて 2D に落ちたら知らせ、3D に戻れば消す（spec 05 §4.3 の (iii)）', () => {
+    const { app } = setup()
+    act(() => {
+      app.getState().setViewMode('3d')
+      app.getState().setView3dStatus('fallback-2d')
+    })
+    expect(screen.getByTestId('view3d-fallback').textContent).toContain(strings.view3d.fallback)
+    act(() => app.getState().setView3dStatus('3d'))
+    expect(screen.queryByTestId('view3d-fallback')).toBeNull()
+  })
 })
