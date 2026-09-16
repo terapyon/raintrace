@@ -440,7 +440,10 @@ describe('SimulationRunner: onStepTime（計測用。spec 06 §3）', () => {
     runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     run(3)
     expect(frames().length).toBeGreaterThan(0)
-    // onStepTime を渡す・渡さないで now() の呼び出し回数が変わらない（渡さない経路が別の分岐を通っていない）
-    expect(countingNowCalls(false)).toBe(countingNowCalls(true))
+    // onStepTime を渡す・渡さないで now() の呼び出し回数が変わらない（渡さない経路が別の分岐を通っていない）。
+    // tick が 1 回も回らなければ両方とも 0 になって区別が付かないので、下限も確かめる
+    const calls = countingNowCalls(false)
+    expect(calls).toBeGreaterThan(3)
+    expect(countingNowCalls(true)).toBe(calls)
   })
 })
