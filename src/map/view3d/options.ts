@@ -22,6 +22,11 @@ export interface View3dOptions {
    */
   boundaryFallback: boolean
   /**
+   * 水深のテクスチャを何回の更新に 1 回転送するか。省略は 1（毎回）。計測の depthEvery=N（spec 06 §5.1）。
+   * 既定の値に入れないのは、初期ロードのチャンク（index）を変えないため
+   */
+  depthUploadEvery?: number
+  /**
    * 計測用（perfHook）。水面の render の CPU の時間（ms）。これを呼ぶのは水面の Custom Layer。
    * 呼び出し元は Task 8 で入り、Task 9 の実測は条件ごとの中央値で 0.149〜0.416 ms（ランごとの値は 0.137〜0.463 ms）だった
    */

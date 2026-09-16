@@ -279,6 +279,7 @@ export class View3d {
       elevation: range.elevation,
       lut: waterLutSpec(this.palette),
       exaggeration: this.exaggeration,
+      depthUploadEvery: this.options.depthUploadEvery ?? 1,
       onRenderTime: this.options.onRenderTime,
     })
     water.setWater(this.depth)

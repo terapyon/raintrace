@@ -49,6 +49,11 @@ export interface WaterLayerOptions {
   elevation: Float32Array
   lut: WaterLut
   exaggeration: number
+  /**
+   * 水深のテクスチャを setWater の何回に 1 回転送するか（1 は毎回）。計測の depthEvery=N（spec 06 §5.1）で、
+   * 転送（texSubImage2D。1000 m で 4.25 MB）が fps を落としているかを切り分ける
+   */
+  depthUploadEvery: number
   /** 計測用。render の CPU の時間（ms） */
   onRenderTime: ((ms: number) => void) | null
 }
@@ -114,6 +119,11 @@ export function resolveDepthData(
   return water !== null && water.length === n * n ? water : zeros
 }
 
+/** setWater の updates 回目（1 から）で水深を転送するか（depthEvery=N。1 以下は毎回） */
+export function shouldUploadDepth(updates: number, every: number): boolean {
+  return every <= 1 || updates % every === 0
+}
+
 export function buildUniforms(
   elevationTexture: DataTexture,
   depthTexture: DataTexture,
@@ -171,6 +181,7 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
   const camera = new Camera()
   let renderer: WebGLRenderer | null = null
   let disposed = false
+  let depthUpdates = 0
 
   const dispose = (): void => {
     if (disposed) return
@@ -218,9 +229,14 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
       // 破棄の後は終端（Task 8 の申し送りの反映）: ベースマップの切り替えの間の窓で呼ばれても、
       // 新しい DataTexture を確保して捨てられないまま残すことがない
       if (disposed) return
+      // 参照は毎回差し替える（返却済みのバッファを指したままにしない。転送しない回は GPU の内容が前のまま）
       depthTexture.image.data = resolveDepthData(water, n, zeros)
-      // 次の描画で 1 回だけ texSubImage2D で上げる（N = 512 で 1 MB、1031 で 4.25 MB。spec 05 §3.1）
-      depthTexture.needsUpdate = true
+      depthUpdates++
+      // 次の描画で 1 回だけ texSubImage2D で上げる（N = 512 で 1 MB、1031 で 4.25 MB。spec 05 §3.1）。
+      // 水を消す（null）ときは間引かない
+      if (water === null || shouldUploadDepth(depthUpdates, options.depthUploadEvery)) {
+        depthTexture.needsUpdate = true
+      }
       map.triggerRepaint()
     },
     setExaggeration(value) {

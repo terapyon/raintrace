@@ -9,6 +9,7 @@ import {
   buildUniforms,
   CELL_ATTRIBUTE,
   resolveDepthData,
+  shouldUploadDepth,
   type WaterLayerOptions,
 } from './waterLayer'
 import { WATER_FRAGMENT, WATER_VERTEX } from './waterShaders'
@@ -76,5 +77,23 @@ describe('uniform の名前がシェーダの宣言とマテリアルで一致�
 
   it('a_cell（頂点の格子座標の attribute）が頂点シェーダに宣言され、geometry に渡す名前（CELL_ATTRIBUTE）と一致する', () => {
     expect(declaredInNames(WATER_VERTEX)).toEqual([CELL_ATTRIBUTE])
+  })
+})
+
+describe('shouldUploadDepth（depthEvery=N。spec 06 §5.1）', () => {
+  it('N が 1 以下なら毎回転送する', () => {
+    expect([1, 2, 3].map((k) => shouldUploadDepth(k, 1))).toEqual([true, true, true])
+    expect(shouldUploadDepth(5, 0)).toBe(true)
+  })
+
+  it('N = 2 なら 2 回目・4 回目、N = 4 なら 4 回目だけ転送する', () => {
+    expect([1, 2, 3, 4].map((k) => shouldUploadDepth(k, 2))).toEqual([false, true, false, true])
+    expect([1, 2, 3, 4, 8].map((k) => shouldUploadDepth(k, 4))).toEqual([
+      false,
+      false,
+      false,
+      true,
+      true,
+    ])
   })
 })
