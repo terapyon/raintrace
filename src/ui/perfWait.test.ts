@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeViewOnLoadedTerrain } from './perfHook'
+import { placeViewOnLoadedTerrain } from './perfWait'
 
 describe('placeViewOnLoadedTerrain（タイルが揃ってから、同じ視点をもう一度置く）', () => {
   const view = { center: [139.7016, 35.658] as [number, number], zoom: 16, pitch: 85, bearing: 0 }

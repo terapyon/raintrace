@@ -1,105 +1,29 @@
 /**
- * 計測用のフック（spec 05 §4.4、R05-6、計画で決めたこと 20）。pnpm build:perf のときだけビルドに入る。
+ * 計測用のフック（spec 05 §4.4、spec 06 §3、R05-6・R06-5）。pnpm build:perf のときだけビルドに入る。
  * URL（例: ?lat=35.658&lon=139.7016&size=500&probe=fps&z=16&ex=10&pitch=85&water=0&hillshade=on）を読み、
  * 地形の読み込みの後に 3D の視点を置き、タイルが揃うのを待ち、水面ありなら「最速」で降雨を回して計測する。
  * 結果の JSON は <html data-fps-result> と画面の左上に出す（利用者の画面ではないので strings.ts を使わない）
  */
-import type { Map as MapLibreMap } from 'maplibre-gl'
 import { runFpsProbe } from '../map/fpsProbe'
 import type { TileTimeSample } from '../map/view3d/options'
 import type { SettingsStore } from '../state/settingsStore'
+import {
+  listenStepTimes,
+  observeLongTasks,
+  summarizeLongTasks,
+  summarizeStepSeries,
+} from './perfCollectors'
 import { parsePerfParams } from './perfParams'
+import {
+  nextFrame,
+  type ProbeView,
+  placeViewOnLoadedTerrain,
+  show,
+  sleep,
+  waitFor,
+  waitTilesLoaded,
+} from './perfWait'
 import type { TerrainSession } from './terrainSession'
-
-/** 地形の読み込み・3D の準備を待つ上限 */
-const WAIT_MS = 120_000
-/** 視点を置いた後、タイルが揃うのを待つ上限 */
-const TILE_WAIT_MS = 60_000
-
-function waitFor(
-  check: () => boolean,
-  subscribe: (listener: () => void) => () => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (check()) {
-      resolve()
-      return
-    }
-    let timer: ReturnType<typeof setTimeout>
-    const off = subscribe(() => {
-      if (!check()) return
-      clearTimeout(timer)
-      off()
-      resolve()
-    })
-    timer = setTimeout(() => {
-      off()
-      reject(new Error('計測の準備が時間内に終わりませんでした'))
-    }, WAIT_MS)
-  })
-}
-
-const nextFrame = (): Promise<void> =>
-  new Promise((resolve) => requestAnimationFrame(() => resolve()))
-
-/** 視点のタイル（地形・hillshade・背景）が揃うまで待つ。S は idle を待った（計画で決めたこと 20） */
-async function waitTilesLoaded(map: MapLibreMap): Promise<{ loaded: boolean; waitMs: number }> {
-  const start = performance.now()
-  // jumpTo の後の描画でタイルの要求が始まるので、2 フレーム待ってから見る
-  await nextFrame()
-  await nextFrame()
-  while (!map.areTilesLoaded()) {
-    if (performance.now() - start > TILE_WAIT_MS) {
-      return { loaded: false, waitMs: performance.now() - start }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  return { loaded: true, waitMs: performance.now() - start }
-}
-
-function show(value: unknown): void {
-  const pre = document.createElement('pre')
-  pre.style.cssText =
-    'position:fixed;left:8px;top:8px;z-index:10000;max-height:90vh;overflow:auto;' +
-    'background:#fff;color:#000;font-size:11px;padding:8px;margin:0'
-  pre.textContent = JSON.stringify(value, null, 2)
-  document.body.append(pre)
-}
-
-/** 視点を置くのに使う、地図の最小の面（テストでは偽物に差し替える） */
-export interface ProbeView {
-  center: [number, number]
-  zoom: number
-  pitch: number
-  bearing: number
-}
-
-export interface ProbeMap {
-  jumpTo(view: ProbeView): void
-}
-
-/**
- * 視点を置き、タイルが揃うのを待ってから、同じ視点をもう一度置く。
- *
- * 2 回置くのは、MapLibre の `_elevateCameraIfInsideTerrain` が
- * `terrain.getElevationForLngLatZoom(カメラの位置, ズーム)` で「そのとき読める」DEM からカメラの持ち上がりを
- * 決めるため。1 回目の jumpTo の時点ではタイルがまだ読めておらず、しかも要求するタイルの組は hillshade の
- * 有無で違うので、条件ごとに違う LOD の標高で持ち上がりが決まり、同じ視点を要求しても落ち着く先がずれる
- * （Task 5 の実測では、同じ「z16 ×10 p85」が 78.60° と 82.96° に分かれた）。タイルが揃ってから置き直せば、
- * 読める地形の上で計算されるので、条件どうしが同じ視点に収束する
- */
-export async function placeViewOnLoadedTerrain<T>(
-  map: ProbeMap,
-  view: ProbeView,
-  afterFirstJump: () => void,
-  waitTiles: () => Promise<T>,
-): Promise<T> {
-  map.jumpTo(view)
-  afterFirstJump()
-  const tiles = await waitTiles()
-  map.jumpTo(view)
-  return tiles
-}
 
 export async function installPerfHook(
   session: TerrainSession,
@@ -108,6 +32,9 @@ export async function installPerfHook(
   const params = parsePerfParams(window.location.search)
   if (params === null) return
   const root = document.documentElement
+  // 長いタスクと 1 step の所要時間は、どの probe でも最初から集める（spec 06 §3、計画で決めたこと 2・10）
+  const longTasks = observeLongTasks()
+  const stepTimes = listenStepTimes()
   const renderTimes: number[] = []
   const tileTimes: TileTimeSample[] = []
   const prepareMs: number[] = []
@@ -116,12 +43,18 @@ export async function installPerfHook(
     hillshade: params.hillshade,
     water: params.water,
     boundaryFallback: params.fallback,
+    // depthEvery=N の指定があるときだけ渡す（無ければ View3d の既定。spec 06 §5.1）
+    ...(params.depthEvery === null ? {} : { depthUploadEvery: params.depthEvery }),
     onRenderTime: (ms) => renderTimes.push(ms),
     onTileTime: (sample) => tileTimes.push(sample),
     onPrepareTime: (ms) => prepareMs.push(ms),
     onWaterBuildTime: (ms) => waterBuildMs.push(ms),
   })
-  settings.getState().setDisplay({ verticalExaggeration: params.exaggeration })
+  settings.getState().setDisplay({
+    verticalExaggeration: params.exaggeration,
+    // arrows=0: 水の流れの矢印を止める（spec 06 §5.1、計画で決めたこと 8）。Worker は flowVectors() を呼ばない
+    ...(params.arrows ? {} : { showFlowVectors: false }),
+  })
   const { store } = session
   try {
     await waitFor(
@@ -176,7 +109,15 @@ export async function installPerfHook(
       root.dataset.perfReady = 'true'
       return
     }
+    // pause=1: 止めた水面（転送 0・描画はそのまま）を測る（spec 06 §5.1、計画で決めたこと 7）
+    if (params.water && params.pauseBeforeRun) {
+      session.simulation.pause()
+      await nextFrame()
+      await nextFrame()
+    }
+    const runStart = performance.now()
     const result = await runFpsProbe(map, params.durationMs, { renderTimes, tileTimes })
+    const runEnd = performance.now()
     // 測った視点。mode=3d の fps で 3D で描いていなければ（(c) で 2D に落ちた。URL に fallback=0 が無い）、
     // 2D の fps を 3D として記録しないよう失敗にする
     const achievedAfterRun = { mapZoom: map.getZoom(), mapPitch: map.getPitch() }
@@ -184,6 +125,11 @@ export async function installPerfHook(
     if (params.mode === '3d' && view3d !== '3d') {
       throw new Error(`3D で描いていません（data-view3d=${view3d}）。URL に fallback=0 を付ける`)
     }
+    // 1 step の所要時間の要約は 1 秒遅れて届くので、窓の終わりの分が届くまで待ってから報告を作る
+    await sleep(1500)
+    // 計測の窓（fpsProbe のウォームアップの 1 秒を除く。D15 と同じ）の長いタスクと、
+    // Worker が送った 1 step の所要時間
+    const windowStart = runStart + result.warmupMs
     const report = {
       params,
       view3d,
@@ -195,6 +141,8 @@ export async function installPerfHook(
       waterBuildMs,
       tiles,
       result,
+      longTasks: summarizeLongTasks(longTasks.entries, longTasks.supported, windowStart, runEnd),
+      stepTimes: summarizeStepSeries(stepTimes.series, windowStart, runEnd + 1500),
     }
     root.dataset.fpsResult = JSON.stringify(report)
     show(report)
