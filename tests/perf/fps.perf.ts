@@ -59,6 +59,10 @@ const SETS: Record<string, readonly Variant[]> = {
     { label: 'main・hillshade あり・地形のみ', tiles: 'main', hillshade: 'on', water: '0' },
     { label: 'main・hillshade なし・地形のみ', tiles: 'main', hillshade: 'off', water: '0' },
   ],
+  'terrain-tiles': [
+    { label: 'main・hillshade あり・地形のみ', tiles: 'main', hillshade: 'on', water: '0' },
+    { label: 'main・hillshade なし・地形のみ', tiles: 'main', hillshade: 'off', water: '0' },
+  ],
 }
 
 const DEFAULT_SET = 'terrain-main'
