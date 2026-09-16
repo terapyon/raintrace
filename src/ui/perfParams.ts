@@ -23,6 +23,8 @@ export interface PerfParams {
   durationMs: number
   /** false は (c) の 2D への切り替えを止める（S の視点を 3D のまま測る） */
   fallback: boolean
+  /** タイルが揃ってから撮る・測るまで待つ時間（ms） */
+  settleMs: number
 }
 
 const TILE_GENERATIONS: readonly TileGeneration[] = ['main']
@@ -52,5 +54,6 @@ export function parsePerfParams(search: string): PerfParams | null {
     tiles: oneOf(TILE_GENERATIONS, params.get('tiles'), DEFAULT_VIEW3D_OPTIONS.tileGeneration),
     durationMs: number('ms', 10_000, 1000, 60_000),
     fallback: params.get('fallback') !== '0',
+    settleMs: number('settle', 3000, 0, 120_000),
   }
 }

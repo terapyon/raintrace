@@ -1,5 +1,8 @@
 /**
- * fallback=0: (c) の 2D への切り替えを止めて測る（z16 ×10 p85 は画面の中心のタイルが 14 で、アプリでは 2D に落ちる視点）
+ * fallback=0: (c) の 2D への切り替えを止めて測る。z16 ×10 p85 は、pitch つきの見込みでは画面の中心のタイルが
+ * 14 だが、実測は 16（Task 6・9: pitch 78.6037°・zoom 15.9768 に落ち着く）。3D の間の (c) の判定は実測で
+ * 行うので、この視点は 2D に落ちない。fallback=0 は、計測の途中で実測が境界を割って 2D に落ちることが
+ * 絶対に起きないようにする保険である
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { type Browser, expect, type Page, test } from '@playwright/test'

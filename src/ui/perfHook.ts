@@ -11,8 +11,6 @@ import type { SettingsStore } from '../state/settingsStore'
 import { parsePerfParams } from './perfParams'
 import type { TerrainSession } from './terrainSession'
 
-/** タイルが揃ってから、frame と描画が落ち着くまで待つ時間 */
-const SETTLE_MS = 3000
 /** 地形の読み込み・3D の準備を待つ上限 */
 const WAIT_MS = 120_000
 /** 視点を置いた後、タイルが揃うのを待つ上限 */
@@ -174,7 +172,7 @@ export async function installPerfHook(
     // 2 回目の jumpTo（読める地形の上で計算された視点）の直後の値。計測の後の値と一致すれば、
     // 計測の窓の間ずっとこの視点だったと言える（1 回の標本では、窓の間の視点を示せない）
     const achievedBeforeSettle = { mapZoom: map.getZoom(), mapPitch: map.getPitch() }
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+    await new Promise((resolve) => setTimeout(resolve, params.settleMs))
     if (params.probe === 'view') {
       root.dataset.perfReady = 'true'
       return
