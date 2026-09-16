@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+test-results/
+playwright-report/
+.dev.vars*
+.handoff/
+# Claude Code のサブエージェントが作る git worktree（リポジトリの中に置かれる）
+.claude/worktrees/
+*.log

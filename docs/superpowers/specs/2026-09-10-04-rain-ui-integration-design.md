@@ -68,19 +68,28 @@ base-spec §58 の「3 操作以内」は、初回の免責の了解を除いて
 
 ### 5.1 メッセージ（`shared/protocol.ts`）
 
+> 2026-09-12 に実装計画で改訂: メッセージの名前を 02 の実装（`loadTerrain` など）に合わせ、`setArrowSpacing` を `setArrows` に、`error` を `simFailed` にした。
+>
+> タスク 5 の実装（タスクレビューの重要な指摘・追加の裁定）で `start`・`reset` に `runId: number` を足した。`frame`・`simFailed` にも同じ `runId` を載せて返す（メインだけが振る通し番号。`terrainId` と同様にメインが「今の実行」の frame だけを扱うために使う）。
+
 | 方向 | メッセージ | 内容 |
 |---|---|---|
-| メイン → Worker | `loadArea` | 02 で定義済み |
-| | `start` | `{ rain: RainfallInput }`。雨を置いて再生 |
-| | `pause`・`resume`・`step`・`reset` | |
+| メイン → Worker | `loadTerrain` | 02 で定義済み（`{ requestId, lon, lat, sizeM }`） |
+| | `start` | `{ rain: RainfallInput, runId: number }`。雨を置いて再生 |
+| | `pause`・`resume`・`step` | |
+| | `reset` | `{ runId: number }` |
 | | `setSpeed` | `{ speed: 0.25 \| 0.5 \| 1 \| 2 \| 4 \| 'max' }`（`'max'` は「最速」） |
-| | `setArrowSpacing` | `{ spacingM: 5 \| 10 \| 20 }` |
+| | `setArrows` | `{ visible: boolean, spacingM: 5 \| 10 \| 20 }`。非表示なら Worker は `flowVectors()` を呼ばない |
 | | `returnBuffer` | `{ buffer: ArrayBuffer }`（Transferable） |
-| Worker → メイン | `areaLoaded`・`loadProgress`・`loadError` | 02 で定義済み |
-| | `frame` | `{ step, water: ArrayBuffer（Transferable、Float32 × N²）, arrows: Float32Array, stats: StepStats }` |
-| | `error` | `{ message }` |
+| Worker → メイン | `terrainLoaded`・`terrainProgress`・`terrainFailed` | 02 で定義済み |
+| | `frame` | `{ terrainId, step, water: ArrayBuffer（Transferable、Float32 × N²）, arrows: Float32Array \| null, stats: StepStats, stepsPerSecond, runId: number }` |
+| | `simFailed` | `{ terrainId, reason: 'no-elevation-at-rain-center' \| 'internal', message, runId: number }` |
 
-`arrows` は、`flowVectors()` を Worker 内で `spacingM` ごとに間引き、流れのある地点だけを `[x, y, 角度, 大きさ]` の並びにしたもの。水深全体ではなく間引いた結果だけを送るので、転送量は小さい。矢印が表示されていて、かつ frame を送る tick でだけ計算する（03 §3.9）。矢印が非表示なら空の配列を送る。
+`terrainId` は、その地形を読み込んだ `loadTerrain` の `requestId`。地点を変えた直後に届く前の地形の frame を、メインは表示せずにバッファだけ返す。
+
+`arrows` は、`flowVectors()` を Worker 内で `spacingM` ごとに間引き、流れのある地点だけを `[列, 行, 方位（度）, 大きさ]` の並びにしたもの。水深全体ではなく間引いた結果だけを送るので、転送量は小さい。矢印が表示されていて、かつ frame を送るときだけ計算する（03 §3.9）。再生中は最短 100ms ごと（表示は 10Hz）とし、その間の frame は `null`（前のまま）。一時停止・Step・Reset・平衡の frame では必ず計算する。非表示に切り替えたら長さ 0 の配列を 1 回送る。
+
+`stats.events` は、前に送った frame からの越流イベントの累計とする。1 tick に複数の step を回し、バッファが無ければ frame を見送るので、最後の step の分だけでは取りこぼす。
 
 ### 5.2 再生ループ（R04-5）
 
@@ -196,6 +205,7 @@ base-spec §33 のとおり、実時間との対応を示す表現（「10 秒�
 ## 13. 裁定が必要な論点
 
 > 裁定（2026-09-10）: すべて推奨どおり承認（R04-3 を含む）。
+> 追加の裁定（2026-09-11）: R04-8 を承認。
 
 | ID | 論点 | 推奨 | 理由 |
 |---|---|---|---|
@@ -206,6 +216,7 @@ base-spec §33 のとおり、実時間との対応を示す表現（「10 秒�
 | R04-5 | 再生速度と自動停止 | §5.2 のとおり（時間予算の中で回し、速度は step 数の上限。「最速」を加える） | base-spec §34 の速度の候補に合わせ、大きな池の平衡を待つための「最速」を加える（03 §4.1）。1 tick に時間予算を設けるのは、計算が重いときにもメッセージを処理できるようにするため。平衡のあとも再生を続けても何も変わらないので、自動で止める |
 | R04-6 | 入力の範囲 | §9 のとおり | 雨量の上限 1000mm は、日本で観測された日降水量の最大級の値を上回るよう、余裕を持たせて置いた。半径の上限は、雨が範囲の外にはみ出さないため |
 | R04-7 | 水深の 2D 表示の方式 | メインスレッドの canvas で着色 | 最も単純で、2D の検証には十分な速さの見込み。tech-spec §14.1 のメインスレッドの最長ブロック 50ms も満たせる。足りなければ 05・06 で GPU に移す |
+| R04-8 | 降雨の円が範囲の端・無効セルで切れる場合の投入量 | 投入量 = πr² × 雨量 × 円内の有効セル数 ÷ 円内の全セル数（全セルはグリッドの外も含めて数える）。各セルの水深は円がすべて有効な場合と同じ | 端に近い地点や海沿いで、残りの有効セルに雨が集まって水深が不自然に深くなるのを避ける。統計の投入水量は、実際に範囲に降った量になる |
 
 ## 14. 後続への引き継ぎ
 

@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  schedule:
+    # 毎週月曜 09:00（日本時間）。audit で新しく公開された脆弱性を拾う
+    - cron: '0 0 * * 1'
+
+permissions:
+  contents: read
+
+# shell を明示すると bash -eo pipefail で動く。`pnpm size | tee` などで左側の失敗を見逃さないため
+defaults:
+  run:
+    shell: bash
+
+# PR の古い実行だけを取り消す。main とタグでは、デプロイを途中で止めない
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm depcheck
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm test:coverage
+
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+      - run: pnpm size | tee -a "$GITHUB_STEP_SUMMARY"
+      # licenses は pnpm の組み込みのコマンドと同名なので run を付ける
+      - run: pnpm run licenses
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm test:e2e
+
+  audit:
+    # 必須にしない。PR では警告だけを出し、週次の実行で見つけたら Issue を起票する（tech-spec §12.4）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - id: audit
+        run: |
+          set +e
+          pnpm audit --audit-level=high > audit.txt 2>&1
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat audit.txt
+      - if: steps.audit.outputs.status != '0' && github.event_name != 'schedule'
+        run: echo "::warning title=pnpm audit::high 以上の脆弱性があります。ログを確認してください"
+      - if: steps.audit.outputs.status != '0' && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --title "pnpm audit で high 以上の脆弱性（$(date -u +%F)）" --body-file audit.txt
+
+  deploy-preview:
+    # 同じリポジトリのブランチからの PR のみ（フォークには Secrets が渡らない）。
+    # プレビューはステージングの Worker にバージョンとして上げ、本番の Worker には触れない
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+        env:
+          CLOUDFLARE_ENV: staging
+      - name: プレビュー用のバージョンを上げる
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # alias は wrangler の規則（英小文字で始まり、英小文字・数字・ハイフン）に必ず合う pr-<番号> にする。
+        # PR ごとに一意で、ブランチ名に依存しない
+        run: |
+          pnpm exec wrangler versions upload --preview-alias "pr-${PR_NUMBER}" --message "PR #${PR_NUMBER} ${GITHUB_SHA::7}" | tee upload.log
+          {
+            echo "### プレビュー"
+            grep -Eo 'https://[^ ]+\.workers\.dev' upload.log | sort -u | sed 's/^/- /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [quality, test, build, e2e]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # 環境はビルド時に決まる。dist/wrangler.json が raintrace-staging 向けに出力される
+      - run: pnpm build
+        env:
+          CLOUDFLARE_ENV: staging
+      - run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-production:
+    # タグ付きリリース（R01-3）。タグの push でも必須ジョブが回り、その成功が前提
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, test, build, e2e]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+      - run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,0 +1,50 @@
+import CssBaseline from '@mui/material/CssBaseline'
+import { ThemeProvider } from '@mui/material/styles'
+import type { SettingsStore } from '../state/settingsStore'
+import { CellInfoHost } from './components/CellInfoHost'
+import { DisclaimerDialog, useDisclaimer } from './components/DisclaimerDialog'
+import { MapView } from './components/MapView'
+import { Panel } from './components/Panel'
+import { TerrainSessionBinder } from './components/TerrainSessionBinder'
+import { ThemeModeBinder } from './components/ThemeModeBinder'
+import { type MissingFeature, WebGLUnsupported } from './components/WebGLUnsupported'
+import type { TerrainSession } from './terrainSession'
+import { theme } from './theme'
+
+interface Props {
+  missingFeatures: readonly MissingFeature[]
+  session: TerrainSession | null
+  settings: SettingsStore
+}
+
+export function App({ missingFeatures, session, settings }: Props) {
+  const disclaimer = useDisclaimer(settings)
+  return (
+    <ThemeProvider theme={theme} defaultMode={settings.getState().map.theme} storageManager={null}>
+      <CssBaseline />
+      <ThemeModeBinder settings={settings} />
+      {missingFeatures.length > 0 ? (
+        <WebGLUnsupported missing={missingFeatures} />
+      ) : (
+        <>
+          {/* Worker を起動できなかった場合（session が null）は、地図だけを出す */}
+          <MapView settings={settings}>
+            {session !== null && <TerrainSessionBinder session={session} />}
+          </MapView>
+          {session !== null && (
+            <>
+              <Panel session={session} settings={settings} onShowDisclaimer={disclaimer.reopen} />
+              <CellInfoHost session={session} />
+            </>
+          )}
+          <DisclaimerDialog
+            open={disclaimer.open}
+            acknowledged={disclaimer.acknowledged}
+            onAcknowledge={disclaimer.acknowledge}
+            onClose={disclaimer.close}
+          />
+        </>
+      )}
+    </ThemeProvider>
+  )
+}

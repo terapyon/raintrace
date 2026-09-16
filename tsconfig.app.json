@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "tsBuildInfoFile": "node_modules/.tmp/tsc/app.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src"],
+  "exclude": [
+    "src/simulation",
+    "src/dem",
+    "src/shared",
+    "src/workers",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ],
+  "references": [{ "path": "./tsconfig.sim.json" }, { "path": "./tsconfig.core.json" }]
+}

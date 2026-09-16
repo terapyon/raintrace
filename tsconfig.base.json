@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    // 全体で有効。例外は src/simulation だけ（tsconfig.sim.json で false。tech-spec §10.2）
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    // 純粋な層は相対 import に .ts を付ける（tech-spec §10.3）。どのプロジェクトも noEmit か
+    // emitDeclarationOnly なので、全体で許しても出力に影響しない
+    "allowImportingTsExtensions": true,
+    "types": []
+  }
+}

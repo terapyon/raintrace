@@ -1,0 +1,143 @@
+import FormControlLabel from '@mui/material/FormControlLabel'
+import Switch from '@mui/material/Switch'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Typography from '@mui/material/Typography'
+import { useStore } from 'zustand'
+import type { AppStore } from '../../state/appStore'
+import { arrowSpacingForRange } from '../../state/arrowSpacing'
+import {
+  ARROW_SPACINGS,
+  BASEMAPS,
+  type Basemap,
+  type PersistedSettings,
+  THEME_MODES,
+  type ThemeMode,
+} from '../../state/persistedSettings'
+import type { SettingsStore } from '../../state/settingsStore'
+import { strings } from '../strings'
+import { DepressionLegend } from './DepressionLegend'
+import { Row } from './TerrainInfo'
+import { View3dSettings } from './View3dSettings'
+import { WaterLegend } from './WaterLegend'
+
+type Display = PersistedSettings['display']
+
+/**
+ * 表示の切り替え（spec 04 §6）。水の流れ・配色・矢印の間隔は保存する設定、標高・窪地・地形の流向は
+ * 02 の画面の一時状態（計画で決めたこと 10）
+ */
+export function DisplaySettings({ app, settings }: { app: AppStore; settings: SettingsStore }) {
+  const layers = useStore(app, (s) => s.display)
+  const display = useStore(settings, (s) => s.display)
+  const sizeM = useStore(settings, (s) => s.area.sizeM)
+  const mapSettings = useStore(settings, (s) => s.map)
+  const setLayer = useStore(app, (s) => s.setDisplay)
+  const setDisplay = (patch: Partial<Display>): void => settings.getState().setDisplay(patch)
+  return (
+    <>
+      <Typography variant="subtitle2">{strings.panel.display}</Typography>
+      <View3dSettings app={app} settings={settings} />
+      <Row label={strings.display.waterPalette}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          aria-label={strings.display.waterPalette}
+          value={display.waterDepthPalette}
+          onChange={(_, value: Display['waterDepthPalette'] | null) => {
+            if (value !== null) setDisplay({ waterDepthPalette: value })
+          }}
+        >
+          <ToggleButton value="stepped">{strings.display.stepped}</ToggleButton>
+          <ToggleButton value="continuous">{strings.display.continuous}</ToggleButton>
+        </ToggleButtonGroup>
+      </Row>
+      <WaterLegend palette={display.waterDepthPalette} />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={display.showFlowVectors}
+            onChange={(_, checked) => setDisplay({ showFlowVectors: checked })}
+          />
+        }
+        label={strings.panel.showWaterFlow}
+      />
+      <FormControlLabel
+        control={
+          <Switch checked={layers.flow} onChange={(_, checked) => setLayer({ flow: checked })} />
+        }
+        label={strings.panel.showFlow}
+      />
+      <Row label={strings.panel.flowSpacing}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          aria-label={strings.panel.flowSpacing}
+          value={display.flowVectorSpacingM}
+          onChange={(_, value: Display['flowVectorSpacingM'] | null) => {
+            if (value !== null) setDisplay({ flowVectorSpacingM: value })
+          }}
+        >
+          {ARROW_SPACINGS.map((m) => (
+            <ToggleButton key={m} value={m}>
+              {strings.panel.flowSpacingValue(arrowSpacingForRange(m, sizeM))}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Row>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={layers.elevation}
+            onChange={(_, checked) => setLayer({ elevation: checked })}
+          />
+        }
+        label={strings.panel.showElevation}
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={layers.depressions}
+            onChange={(_, checked) => setLayer({ depressions: checked })}
+          />
+        }
+        label={strings.panel.showDepressions}
+      />
+      <DepressionLegend />
+      <Row label={strings.map.basemap}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          aria-label={strings.map.basemap}
+          value={mapSettings.basemap}
+          onChange={(_, value: Basemap | null) => {
+            if (value !== null) settings.getState().setMap({ basemap: value })
+          }}
+        >
+          {BASEMAPS.map((b) => (
+            <ToggleButton key={b} value={b}>
+              {strings.map.basemaps[b]}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Row>
+      <Row label={strings.map.theme}>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          aria-label={strings.map.theme}
+          value={mapSettings.theme}
+          onChange={(_, value: ThemeMode | null) => {
+            if (value !== null) settings.getState().setMap({ theme: value })
+          }}
+        >
+          {THEME_MODES.map((m) => (
+            <ToggleButton key={m} value={m}>
+              {strings.map.themes[m]}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Row>
+    </>
+  )
+}
