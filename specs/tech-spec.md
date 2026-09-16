@@ -225,6 +225,8 @@ dem ───────→ （何にも依存しない）
 | `no-circular` | 循環依存を禁止 |
 | `no-orphans` | 依存も被依存も無いモジュールを禁止（テストと型宣言は除外） |
 | `not-reachable-from-entry` | エントリ（`src/main.tsx`、`src/workers/*.worker.ts`）から到達できないモジュールを禁止（テストと、テスト用の組み立て `*.test-support.ts` は対象外）。dependency-cruiser の orphan は「依存も被依存も無い」ものだけなので、import を持つ死んだモジュールや、テストからしか使わないモジュールはこの規則で捕まえる |
+| `three-only-in-renderer` | `three`（と `@types/three`）を import してよいのは `src/renderer/` だけ（実装 spec 05 §3.8、R05-5） |
+| `renderer-dynamic-only` | `src/renderer/` をほかのディレクトリから読むのは動的 import か型だけ。初期ロードに入れない（§14.2）。あわせて `pnpm size` が、初期ロードのチャンクに `three` と `src/renderer/` のモジュールが無いことを検査する |
 
 `types-only-from-core` は、dependency-cruiser の `options.tsPreCompilationDeps: "specify"` で型のみの import を区別し、`dependencyTypesNot: ["type-only"]` を持つルールで違反を検出する。§10.1 の `verbatimModuleSyntax` により型のみの import には必ず `import type` が付くため、判定は確実である。
 

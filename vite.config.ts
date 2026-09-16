@@ -69,6 +69,8 @@ export default defineConfig(({ mode }) => ({
         codeSplitting: {
           groups: [
             { name: 'map', test: /node_modules[\\/]maplibre-gl[\\/]/, priority: 20 },
+            // three は水面のチャンク（src/renderer）から動的 import で読む。1 つのチャンクにまとめ、大きさを測れるようにする（spec 05 §3.8）
+            { name: 'three', test: /node_modules[\\/]three[\\/]/, priority: 20 },
             {
               name: 'ui',
               test: /node_modules[\\/](react|react-dom|scheduler|@mui[\\/][^\\/]+|@emotion[\\/][^\\/]+|@babel[\\/]runtime|stylis|clsx|prop-types|react-is|react-transition-group|@popperjs[\\/]core|hoist-non-react-statics|dom-helpers|zustand)[\\/]/,

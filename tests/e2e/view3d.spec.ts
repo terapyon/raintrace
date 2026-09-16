@@ -114,4 +114,38 @@ test.describe('3D の表示（spec 05 §5）', () => {
     await expect(page.getByTestId('cell-info')).toBeVisible()
     await expect(page.getByTestId('cell-elevation')).toHaveText(/^\d+\.\d{2} m$/)
   })
+
+  test('3D で降雨を始めると水面が出て、2D の水深の canvas は隠れる。three は 3D に切り替えてから読む。2D に戻すと元に戻る', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page)
+    const warnings = collectWarnings(page)
+    const requested: string[] = []
+    page.on('request', (request) => requested.push(request.url()))
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    expect(requested.some((url) => /\/assets\/three-/.test(url))).toBe(false)
+    await switchTo3d(page)
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    const mapEl = mapElement(page)
+    await expect(mapEl).toHaveAttribute(
+      'data-visible-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.water),
+      { timeout: 30_000 },
+    )
+    expect(requested.some((url) => /\/assets\/three-/.test(url))).toBe(true)
+    const visible3d = (await mapEl.getAttribute('data-visible-overlay-layers'))?.split(',') ?? []
+    expect(visible3d).not.toContain(WATER_LAYER_IDS.water)
+    expect(visible3d).toContain(WATER_LAYER_IDS.arrows)
+    await page.getByRole('button', { name: strings.view3d.view2d }).click()
+    await expect(mapEl).toHaveAttribute('data-view3d', 'off')
+    await expect
+      .poll(async () => (await mapEl.getAttribute('data-visible-overlay-layers'))?.split(',') ?? [])
+      .toContain(WATER_LAYER_IDS.water)
+    expect((await mapEl.getAttribute('data-overlay-layers'))?.split(',')).not.toContain(
+      VIEW3D_LAYER_IDS.water,
+    )
+    expect(errors).toEqual([])
+    expect(warnings).toEqual([])
+  })
 })

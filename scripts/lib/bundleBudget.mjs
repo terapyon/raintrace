@@ -85,3 +85,27 @@ export function sharedModules(mainChunks, workerChunks) {
   }
   return result
 }
+
+/** 初期ロードに入れてはいけない（動的 import でだけ読む）モジュール（spec 05 §3.8、tech-spec §14.2） */
+export const LAZY_ONLY_MODULES = [/node_modules\/three\//, /^src\/renderer\//]
+
+/**
+ * 初期ロードのチャンクに、遅延でだけ読むべきモジュールが入っていれば、チャンクごとに違反の文を返す
+ * @param {Record<string, string[]>} mainChunks メインのチャンク → モジュール ID
+ * @param {Set<string>} initial 初期ロードのファイル
+ * @param {RegExp[]} patterns
+ * @returns {string[]}
+ */
+export function lazyOnlyViolations(mainChunks, initial, patterns) {
+  const violations = []
+  for (const [file, ids] of Object.entries(mainChunks)) {
+    if (!initial.has(file)) continue
+    const hits = ids.filter((id) => patterns.some((pattern) => pattern.test(id)))
+    if (hits.length === 0) continue
+    const more = hits.length > 3 ? ` ほか ${hits.length - 3} 件` : ''
+    violations.push(
+      `初期ロードのチャンク（${file}）に、動的 import で読むべきモジュールが入っています: ${hits.slice(0, 3).join(', ')}${more}`,
+    )
+  }
+  return violations
+}

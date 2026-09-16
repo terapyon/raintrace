@@ -26,6 +26,8 @@ function fakeView() {
     setEnabled: vi.fn(),
     setExaggeration: vi.fn(),
     setBasemap: vi.fn(),
+    setWater: vi.fn(),
+    setPalette: vi.fn(),
     restore: vi.fn(),
     dispose: vi.fn(),
   } satisfies View3dLike
@@ -229,4 +231,16 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
       expect(viewB.setEnabled).toHaveBeenCalledWith(true)
     },
   )
+
+  it('水深と配色を渡す（作るときに今の値、その後の変化）', async () => {
+    const { simulation, settings, app, view, inits } = setup()
+    app.getState().setViewMode('3d')
+    await vi.waitFor(() => expect(inits).toHaveLength(1))
+    expect(inits[0]?.palette).toBe('stepped')
+    expect(view.setWater).toHaveBeenCalledWith(null)
+    settings.getState().setDisplay({ waterDepthPalette: 'continuous' })
+    expect(view.setPalette).toHaveBeenLastCalledWith('continuous')
+    simulation.terrainCleared()
+    expect(view.setWater).toHaveBeenLastCalledWith(null)
+  })
 })

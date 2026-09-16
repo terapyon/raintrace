@@ -5,7 +5,15 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
-import { evaluateBudget, initialFiles, kb, packagesIn, sharedModules } from './lib/bundleBudget.mjs'
+import {
+  evaluateBudget,
+  initialFiles,
+  kb,
+  LAZY_ONLY_MODULES,
+  lazyOnlyViolations,
+  packagesIn,
+  sharedModules,
+} from './lib/bundleBudget.mjs'
 
 const dist = 'dist'
 const manifest = JSON.parse(readFileSync(join(dist, '.vite/manifest.json'), 'utf8'))
@@ -16,7 +24,8 @@ const files = readdirSync(join(dist, 'assets'))
     return { file, gzipBytes: gzipSync(readFileSync(join(dist, file)), { level: 9 }).length }
   })
 
-const result = evaluateBudget(files, initialFiles(manifest))
+const initial = initialFiles(manifest)
+const result = evaluateBudget(files, initial)
 const violations = [...result.violations]
 
 console.log('| チャンク | gzip (KB) | 初期ロード |')
@@ -43,6 +52,9 @@ if (!existsSync(reportPath)) {
       `アプリ本体のチャンク（${entryFile}）に外部パッケージが入っています: ${leaked.join(', ')}。vite.config.ts の codeSplitting の一覧を見直してください`,
     )
   }
+
+  // three と src/renderer は 3D に切り替えたときに読む（spec 05 §3.8）。初期ロードに入ったら失敗する
+  violations.push(...lazyOnlyViolations(report.main, initial, LAZY_ONLY_MODULES))
 
   const shared = sharedModules(report.main, report.workers)
   if (shared.length === 0) {

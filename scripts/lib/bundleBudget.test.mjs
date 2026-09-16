@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateBudget, initialFiles, packagesIn, sharedModules } from './bundleBudget.mjs'
+import {
+  evaluateBudget,
+  initialFiles,
+  LAZY_ONLY_MODULES,
+  lazyOnlyViolations,
+  packagesIn,
+  sharedModules,
+} from './bundleBudget.mjs'
 
 const manifest = {
   'index.html': { file: 'assets/index-a.js', isEntry: true, imports: ['_ui-b.js', '_map-c.js'] },
@@ -74,5 +81,31 @@ describe('sharedModules', () => {
         { 'assets/worker.js': ['b', 'c', 'w'] },
       ),
     ).toEqual([{ worker: 'assets/worker.js', main: 'assets/map.js', modules: ['b', 'c'] }])
+  })
+})
+
+describe('lazyOnlyViolations（three と src/renderer は初期ロードに入れない。spec 05 §3.8）', () => {
+  const initial = new Set(['assets/index-a.js', 'assets/ui-b.js'])
+  const three = 'node_modules/.pnpm/three@0.185.1/node_modules/three/build/three.module.js'
+
+  it('遅延のチャンクにあるのは違反でない', () => {
+    const chunks = {
+      'assets/index-a.js': ['src/main.tsx', 'src/ui/view3dSession.ts'],
+      'assets/View3d-c.js': ['src/map/view3d/View3d.ts'],
+      'assets/waterLayer-d.js': ['src/renderer/waterLayer.ts'],
+      'assets/three-e.js': [three],
+    }
+    expect(lazyOnlyViolations(chunks, initial, LAZY_ONLY_MODULES)).toEqual([])
+  })
+
+  it('初期ロードのチャンクに src/renderer や three のモジュールがあれば、チャンクごとに違反', () => {
+    const chunks = {
+      'assets/index-a.js': ['src/main.tsx', 'src/renderer/waterLayer.ts'],
+      'assets/ui-b.js': [three],
+    }
+    const violations = lazyOnlyViolations(chunks, initial, LAZY_ONLY_MODULES)
+    expect(violations).toHaveLength(2)
+    expect(violations[0]).toContain('src/renderer/waterLayer.ts')
+    expect(violations[1]).toContain('three')
   })
 })

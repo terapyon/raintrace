@@ -2,6 +2,7 @@ import type { Basemap } from '../map/basemapStyle'
 import type { MapController } from '../map/MapController'
 import { DEFAULT_VIEW3D_OPTIONS, type View3dOptions } from '../map/view3d/options'
 import type { View3dInit, View3dRendering } from '../map/view3d/View3d'
+import type { WaterPalette } from '../map/waterColormap'
 import type { TerrainPayload } from '../shared/protocol'
 import type { AppStore, ViewMode } from '../state/appStore'
 import type { SettingsStore } from '../state/settingsStore'
@@ -13,6 +14,8 @@ export interface View3dLike {
   setEnabled(enabled: boolean): void
   setExaggeration(value: number): void
   setBasemap(basemap: Basemap): void
+  setWater(water: Float32Array | null): void
+  setPalette(palette: WaterPalette): void
   restore(): void
   dispose(): void
 }
@@ -39,6 +42,7 @@ export class View3dSession {
   private view: View3dLike | null = null
   private loading: Promise<View3dLike | null> | null = null
   private terrain: TerrainPayload | null = null
+  private water: Float32Array | null = null
 
   constructor(
     simulation: SimulationSession,
@@ -53,6 +57,10 @@ export class View3dSession {
     simulation.onTerrain((terrain) => {
       this.terrain = terrain
       this.view?.setTerrain(terrain)
+    })
+    simulation.onWater((water) => {
+      this.water = water
+      this.view?.setWater(water)
     })
   }
 
@@ -77,6 +85,9 @@ export class View3dSession {
       const exaggeration = state.display.verticalExaggeration
       if (exaggeration !== previous.display.verticalExaggeration) {
         this.view?.setExaggeration(exaggeration)
+      }
+      if (state.display.waterDepthPalette !== previous.display.waterDepthPalette) {
+        this.view?.setPalette(state.display.waterDepthPalette)
       }
       if (state.map.basemap !== previous.map.basemap) this.view?.setBasemap(state.map.basemap)
     })
@@ -123,9 +134,11 @@ export class View3dSession {
             options: this.options,
             basemap: map.basemap,
             exaggeration: display.verticalExaggeration,
+            palette: display.waterDepthPalette,
             onRendering: (rendering) => this.onRendering(rendering),
           })
           view.setTerrain(this.terrain)
+          view.setWater(this.water)
           this.view = view
           return view
         },

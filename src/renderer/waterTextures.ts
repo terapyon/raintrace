@@ -6,7 +6,11 @@
 
 /** 水深の色の LUT と帯の求め方（map/waterColormap.ts の waterLutSpec が作る） */
 export interface WaterLut {
-  /** 帯ごとの色（r, g, b の並び。(maxIndex + 1) × 3） */
+  /**
+   * 帯ごとの色（r, g, b の並び。(maxIndex + 1) × 3）。**読み取り専用**。map/waterColormap.ts の
+   * PALETTES が持つ配列をそのまま指す（複製しない）ので、書き換えると 2D の配色まで壊れる。
+   * テクスチャへ上げるだけにする（Task 7 のレビューの指摘）
+   */
   rgb: Uint8Array
   /** 1 m あたりの帯の数（5 cm 刻みは 20、連続は 100） */
   bandsPerM: number

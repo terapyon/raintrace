@@ -572,3 +572,17 @@ describe('SimulationSession: 2D の水深の canvas の表示（3D の間は隠�
     expect(overlay.setDepthVisible).toHaveBeenLastCalledWith(true)
   })
 })
+
+describe('SimulationSession: 3D への水深の受け渡し（spec 05 §3.1、計画で決めたこと 14）', () => {
+  it('今の実行の frame の水深を知らせ、古い runId の frame は知らせない。Reset・地点の変更で null', () => {
+    const { worker, session, terrainId } = setup()
+    const seen: (Float32Array | null)[] = []
+    session.onWater((water) => seen.push(water))
+    session.start(100, 10) // runId 1。start は水を消す（null）
+    worker.reply(frameMessage(terrainId, 1, { runId: 0, stats: statsAt(1) }))
+    worker.reply(frameMessage(terrainId, 2, { runId: 1, stats: statsAt(2) }))
+    session.reset()
+    session.terrainCleared()
+    expect(seen.map((w) => (w === null ? null : 'water'))).toEqual([null, 'water', null, null])
+  })
+})

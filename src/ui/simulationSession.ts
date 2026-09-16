@@ -50,6 +50,8 @@ export class SimulationSession {
   private palette: WaterPalette = 'stepped'
   /** 地形の読み込み・消去の購読者（3D。spec 05 §3.6） */
   private readonly terrainListeners = new Set<(terrain: TerrainPayload | null) => void>()
+  /** 今の実行の水深の購読者（3D。Reset の後の古い frame は runId で捨ててから渡す。計画で決めたこと 14） */
+  private readonly waterListeners = new Set<(water: Float32Array | null) => void>()
   /** 2D の水深の canvas を出すか（3D の間は隠す。計画で決めたこと 16） */
   private depthCanvasVisible = true
 
@@ -97,6 +99,7 @@ export class SimulationSession {
     this.overlay?.clear()
     this.store.getState().reset()
     for (const listener of this.terrainListeners) listener(null)
+    for (const listener of this.waterListeners) listener(null)
   }
 
   /** 地形を読み込んだ。center は降雨中心（範囲の中心。R04-2） */
@@ -161,6 +164,14 @@ export class SimulationSession {
     }
   }
 
+  /** 今の実行の水深（frame のバッファ。次の frame まで有効）と、消えたとき（null）を知らせる。戻り値で外す */
+  onWater(listener: (water: Float32Array | null) => void): () => void {
+    this.waterListeners.add(listener)
+    return () => {
+      this.waterListeners.delete(listener)
+    }
+  }
+
   setDepthCanvasVisible(visible: boolean): void {
     this.depthCanvasVisible = visible
     this.overlay?.setDepthVisible(visible)
@@ -214,6 +225,7 @@ export class SimulationSession {
     if (frame.runId !== this.runId) return
     // 着色は描画フレームごとに最新の 1 つだけ（WaterOverlay）。矢印は null なら前のまま
     this.overlay?.setWater(frame.water)
+    for (const listener of this.waterListeners) listener(frame.water)
     if (frame.arrows !== null) this.arrowsThrottle.push(frame.arrows)
     const { events, ...stats } = frame.stats
     const state = this.store.getState()
@@ -261,6 +273,7 @@ export class SimulationSession {
     this.arrowsThrottle.cancel()
     this.overlay?.setWater(null)
     this.overlay?.clearArrows()
+    for (const listener of this.waterListeners) listener(null)
   }
 
   /** 地形・降雨中心をまとめて消す（terrainCleared・異常終了で使う） */

@@ -74,11 +74,24 @@ export default {
           '\\.d\\.ts$',
           '^src/main\\.tsx$',
           '^src/workers/[^/]+\\.worker\\.ts$',
-          // 05 の Task 7 の間だけ（Task 8 で waterLayer から到達する）
-          '^src/renderer/(waterMesh|matrix|waterShaders)\\.ts$',
         ],
         reachable: false,
       },
+    },
+    {
+      name: 'three-only-in-renderer',
+      comment: 'three を import してよいのは src/renderer/ だけ（spec 05 §3.8、R05-5）',
+      severity: 'error',
+      from: { pathNot: '^src/renderer/' },
+      to: { path: 'node_modules/(@types/)?three/' },
+    },
+    {
+      name: 'renderer-dynamic-only',
+      comment:
+        'src/renderer/ はほかの層から動的 import か型だけで読み、初期ロードに入れない（spec 05 §3.8、tech-spec §14.2）',
+      severity: 'error',
+      from: { pathNot: '^src/renderer/' },
+      to: { path: '^src/renderer/', dependencyTypesNot: ['dynamic-import', 'type-only'] },
     },
   ],
   options: {

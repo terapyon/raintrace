@@ -3,15 +3,19 @@
  * 地形（Terrain3d）、3D の視点、E2E・計測用の印を持つ。地図の操作は whenLoaded の中で行う
  * （ベースマップの切り替え・コンテキスト喪失の間はスタイルが無い）
  */
-import { MercatorCoordinate } from 'maplibre-gl'
+import { type Map as MapLibreMap, MercatorCoordinate } from 'maplibre-gl'
 import type { RangeElevation } from '../../dem/terrainTiles'
 import { fillInvalidNearest } from '../../dem/terrarium'
+import { pixelToLonLat, worldSizePx } from '../../dem/tileMath'
 import type { DrawnTileZoom } from '../../dem/tileZoom'
+import type { WaterLayer, WaterLayerOptions } from '../../renderer/waterLayer'
 import type { TerrainPayload } from '../../shared/protocol'
 import type { Basemap } from '../basemapStyle'
 import type { MapController } from '../MapController'
 import { TERRAIN_LAYER_IDS } from '../TerrainOverlay'
+import { type WaterPalette, waterLutSpec } from '../waterColormap'
 import { drawnTileZoomAt, PITCH_3D_DEG, zoomFor3dView } from './drawnZoom'
+import { VIEW3D_LAYER_IDS } from './layerIds'
 import { createMainTileGenerator } from './mainTileGenerator'
 import { hillshadeEnabled, type View3dOptions } from './options'
 import { Terrain3d } from './Terrain3d'
@@ -23,8 +27,12 @@ export interface View3dInit {
   options: View3dOptions
   basemap: Basemap
   exaggeration: number
+  palette: WaterPalette
   onRendering: (rendering: View3dRendering) => void
 }
+
+/** 水面の Custom Layer の作り方（動的 import で読む renderer/waterLayer の createWaterLayer） */
+type CreateWaterLayer = (map: MapLibreMap, options: WaterLayerOptions) => WaterLayer
 
 /** 視点の移動の時間（ms） */
 const CAMERA_MS = 500
@@ -35,6 +43,12 @@ export class View3d {
   private readonly onRendering: (rendering: View3dRendering) => void
   private readonly terrain3d: Terrain3d
   private basemap: Basemap
+  private exaggeration: number
+  private palette: WaterPalette
+  /** 最新の水深（SimulationSession.onWater から。次の frame まで有効） */
+  private depth: Float32Array | null = null
+  private water: WaterLayer | null = null
+  private waterLoading = false
   private terrain: TerrainPayload | null = null
   /** terrain の無効セルを埋めた標高。3D で描くときに初めて作る（2D の間は作らない） */
   private range: RangeElevation | null = null
@@ -52,6 +66,8 @@ export class View3d {
     this.options = init.options
     this.onRendering = init.onRendering
     this.basemap = init.basemap
+    this.exaggeration = init.exaggeration
+    this.palette = init.palette
     this.terrain3d = new Terrain3d(
       controller.map,
       createMainTileGenerator(),
@@ -71,11 +87,14 @@ export class View3d {
     this.terrain = terrain
     this.range = null
     this.controller.whenLoaded(() => {
+      this.removeWater()
       if (this.rendering === 'off' || this.terrain === null) return
       if (this.rendering === 'fallback-2d') {
+        // 3D に戻す（show3d の最後で水面も足す）
         this.show3d()
       } else {
         this.terrain3d.setRange(this.ensureRange())
+        this.ensureWater()
       }
       this.frame()
     })
@@ -95,7 +114,20 @@ export class View3d {
     })
   }
 
+  setWater(water: Float32Array | null): void {
+    this.depth = water
+    this.water?.setWater(water)
+  }
+
+  setPalette(palette: WaterPalette): void {
+    this.palette = palette
+    this.water?.setLut(waterLutSpec(palette))
+  }
+
+  /** 垂直強調は地形（setTerrain）と水面のシェーダに同じ値を渡す（spec 05 §3.2） */
   setExaggeration(value: number): void {
+    this.exaggeration = value
+    this.water?.setExaggeration(value)
     this.controller.whenLoaded(() => this.terrain3d.setExaggeration(value))
   }
 
@@ -113,7 +145,10 @@ export class View3d {
     const { map } = this.controller
     map.off('render', this.onRender)
     map.off('moveend', this.onMoveEnd)
-    if (this.rendering !== 'off') this.terrain3d.hide()
+    if (this.rendering !== 'off') {
+      this.removeWater()
+      this.terrain3d.hide()
+    }
     this.terrain3d.dispose()
   }
 
@@ -143,9 +178,11 @@ export class View3d {
       beforeId: this.hillshadeBeforeId(),
     })
     this.setRendering('3d')
+    this.ensureWater()
   }
 
   private hide3d(rendering: 'off' | 'fallback-2d'): void {
+    this.removeWater()
     this.terrain3d.hide()
     this.setRendering(rendering)
   }
@@ -163,6 +200,65 @@ export class View3d {
     return map.getLayer(TERRAIN_LAYER_IDS.elevation) !== undefined
       ? TERRAIN_LAYER_IDS.elevation
       : undefined
+  }
+
+  /** 水面の Custom Layer を、無ければ足す。three は初めて要るときに動的 import で読む（spec 05 §3.8） */
+  private ensureWater(): void {
+    if (!this.options.water || this.rendering !== '3d' || this.terrain === null) return
+    if (this.controller.map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) return
+    if (this.waterLoading) return
+    this.waterLoading = true
+    import('../../renderer/waterLayer').then(
+      ({ createWaterLayer }) => {
+        this.waterLoading = false
+        this.controller.whenLoaded(() => this.addWater(createWaterLayer))
+      },
+      (error: unknown) => {
+        this.waterLoading = false
+        console.error(error)
+      },
+    )
+  }
+
+  private addWater(create: CreateWaterLayer): void {
+    const terrain = this.terrain
+    const range = this.ensureRange()
+    const { map } = this.controller
+    if (this.rendering !== '3d' || terrain === null || range === null) return
+    if (map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) return
+    this.water?.dispose()
+    const start = performance.now()
+    const { geo } = terrain
+    const center = pixelToLonLat(geo.originX + geo.size / 2, geo.originY + geo.size / 2, geo.z)
+    const water = create(map, {
+      id: VIEW3D_LAYER_IDS.water,
+      size: geo.size,
+      placement: { originX: geo.originX, originY: geo.originY, worldSizePx: worldSizePx(geo.z) },
+      metersToMercator: MercatorCoordinate.fromLngLat([
+        center.lon,
+        center.lat,
+      ]).meterInMercatorCoordinateUnits(),
+      elevation: range.elevation,
+      lut: waterLutSpec(this.palette),
+      exaggeration: this.exaggeration,
+      onRenderTime: this.options.onRenderTime,
+    })
+    water.setWater(this.depth)
+    // メッシュ（1000 m で約 212 万枚、index 25 MB）とテクスチャの作成の時間。GPU への転送は最初の描画（Task 9 で記録）
+    this.options.onWaterBuildTime?.(performance.now() - start)
+    // 04 の重ね描き（標高・窪地・2D の水深）の上、範囲の枠と矢印の下に置く（矢印は水面の後。spec 05 §3.3）
+    const before =
+      map.getLayer(TERRAIN_LAYER_IDS.outline) !== undefined ? TERRAIN_LAYER_IDS.outline : undefined
+    map.addLayer(water.layer, before)
+    this.water = water
+  }
+
+  /** 水面を外す。スタイルから外すと onRemove が資源を捨てる。スタイルに無い（喪失の後）ときも捨てる */
+  private removeWater(): void {
+    const { map } = this.controller
+    if (map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) map.removeLayer(VIEW3D_LAYER_IDS.water)
+    this.water?.dispose()
+    this.water = null
   }
 
   /** 3D の視点（spec 05 §3.4、計画で決めたこと 4）: 範囲を中心に pitch 60、ズームは zoomFor3dView */
