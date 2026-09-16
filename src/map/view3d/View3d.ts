@@ -272,7 +272,8 @@ export class View3d {
       onRenderTime: this.options.onRenderTime,
     })
     water.setWater(this.depth)
-    // メッシュ（1000 m で約 212 万枚、index 25 MB）とテクスチャの作成の時間。GPU への転送は最初の描画（Task 9 で記録）
+    // メッシュ（1000 m で約 212 万枚、index 25 MB）とテクスチャの作成の時間。GPU への転送（最初の texSubImage2D 等）は
+    // 別で、Task 9 は計測の窓（先頭 1 秒を捨てる）の外に落ちるため測っていない（推測では埋めていない）
     this.options.onWaterBuildTime?.(performance.now() - start)
     // 04 の重ね描き（標高・窪地・2D の水深）の上、範囲の枠と矢印の下に置く（矢印は水面の後。spec 05 §3.3）
     const before =
