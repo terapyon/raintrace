@@ -12,6 +12,8 @@
 
 **前提:** ブランチ `feat/06-performance`（88112cc。M0 は済み、レビュー役 raintrace-b5 の承認済み）。本計画の Task 1 はその次のコミットから。計画そのものはコーディネーターがコミットする。**ブランチは 1 本、PR は最後に 1 つ**（R06-9）。マイルストーン（M1〜M6）はブランチの中の区切りで、**各マイルストーンの最後の Task の後にレビュー役のレビューを受け、承認されてから次のマイルストーンに進む**。性能以外の項目（spec 06 §2.3）は後回しで、この計画に Task を持たない（R06-10）
 
+**M2 の準備での改訂（2026-09-17）:** 05 の 51.0 fps は c25be04（Task 9、矢印の既定 10 m・10,000 本）の値で、05 の最終 b3a8916 と 06 の e95b9c1 では同じ条件で 60.0 だった（`.handoff/06-perf/baseline-check.md`。A/B で原因は矢印の本数）。これに合わせて Task 8・11・12・13・20・22・29 を直した。M3 の対象は「1000 m で矢印の間隔に 5 m を選んだとき（実効 10 m・10,000 本）」で、計測だけの `arrowsM`（5・10・20）と `isolate` の組の 2 変種はコミット済み
+
 ## Global Constraints
 
 - Node 24、pnpm 12.1.0。**依存を足さない**（R06-4 の「安価」= 新しい依存・新しい Worker を足さない、`SimulationEngine` とメッセージ〈`src/shared/protocol.ts`〉の形を変えない）。`pnpm-workspace.yaml` の `minimumReleaseAge: 14400`・`minimumReleaseAgeStrict: true`（10 日のクールダウン）は変えない。`pnpm install` が lockfile を書き換えたら止めて知らせる
@@ -73,7 +75,7 @@
     - `flowVectors()`: エンジンが 2 × N² の配列を持ち、呼ぶたびに 0 で埋めて書き直す。`SimulationEngine` の型は変えず、「戻り値は次の呼び出しで上書きされる」を型のコメントに書く。呼び出し元は Worker の `SimulationRunner.arrowsFor` の 1 か所で、すぐに `thinFlowArrows` で読み切る
     - 1 step の軽い改善（03 の軽微 8）: `FlowSolver` の近傍の判定を、上下左右の端でないセルでは添字の足し算（幅ごとに作る 8 個の差）にする。演算の順は同じなのでビット単位で同じ（テストで端の版と突き合わせる）
     - DEM1A の 404: `RangeElevation` に省略できる `level`（範囲の DEM の段）を足し、段 2 なら z17 の外のタイルで DEM1A を、段 3 なら DEM1A と DEM5 を試さない。範囲の外の遠いタイルも同じ段とみなすので、段の境目の近くでは外の地形が 1 段粗くなりうる（3D の見た目だけ。シミュレーションの入力ではない）
-    - 51 fps の転送側: `depthUploadEvery` の既定を、1000 m（一辺 768 セルを超える範囲）だけ 2 にする。変わった行だけの転送・Float16 は計画し直す（Task 23）
+    - 51 fps の転送側: `depthUploadEvery` の既定を、1000 m（一辺 768 セルを超える範囲）だけ 2 にする。変わった行だけの転送・Float16 は計画し直す（Task 23）。**M2 の準備での改訂**: 既定の矢印の本数では `depthEvery=1・2・4` がどれも 59.9〜60.0 で、転送は主因でない（`.handoff/06-perf/baseline-check.md`）。Task 13 の結論が変わらなければ行わない
     - `ui` のチャンク: `RainfallControls` の `TextField` を `FormControl`・`InputLabel`・`OutlinedInput`・`FormHelperText` に置き換える（ラベルの関連づけと説明文の `aria-describedby` は `useId` で作る）
 17. **M4 の各項目の前後の計測**は、同じ Task の中で「前」を測ってから直し、「後」を同じコマンドで測る。数字は `docs/perf/<実行日>-fixes.md` の項目ごとの節に足す
 18. **Worker のチャンクの `maplibre-gl-shared` の複製**（spec 06 §5.2 の最後の段落）: 計画の作成時に `dist/.vite/chunk-modules.json` を読んだ。複製があるのは MapLibre 自身の Worker（`maplibre-gl-worker-*.js` が `maplibre-gl-shared.mjs` と `maplibre-gl-worker.mjs` を持つ）で、シミュレーションの Worker ではない。Vite の Worker のビルドはメインのチャンクを共有できないので、ビルドの設定では消せない。M2 で記録だけする（Task 9）
@@ -115,7 +117,7 @@
 |---|---|
 | §1.2 M1（計測の道具） | 1〜7 |
 | §1.2 M2（計測・判定、平衡は暫定） | 8〜10 |
-| §1.2 M3（51 fps の切り分け） | 11〜13 |
+| §1.2 M3（51 fps の切り分け。M2 の準備で、矢印の本数と fps の関係の確かめに改めた） | 11〜13 |
 | §1.2 M4（安価な改善、平衡の確定） | 14〜25 |
 | §1.2 M5（`probe=water`） | 26〜28 |
 | §1.2 M6（締め） | 29・30 |
@@ -2870,9 +2872,9 @@ M2 の完了条件（spec 06 §1.2）: §5 のすべての行に判定がある�
 - Consumes: M1 のすべて（manifest と `.cache/perf-dem/` を含む）
 - Produces: Task 10 の判定の材料（`docs/perf/<実行日>.md` の表）
 
-計測は合わせて 3 時間ほどかかる。各コマンドはバックグラウンドで回し、終わりを待ってから次を回す（同時に回さない）。途中で失敗したら、そのコマンドだけを回し直す（`RAINTRACE_*_SITES` などで絞ってよい。絞ったら記録に書く）。
+計測は合わせて 3 時間ほどかかる。各コマンドはバックグラウンドで回し、終わりを待ってから次を回す（同時に回さない）。途中で失敗したら、そのコマンドだけを回し直す（`RAINTRACE_*_SITES` などで絞ってよい。絞ったら記録に書く）。**Step 3〜6 の各組の前と後に、Step 1 の `snap.sh` でマシンの状態を `machine.txt` に足す**（05 の 51.0 の確かめで、負荷の記録が無いと環境の説を否定できなかったため）。
 
-- [ ] **Step 1: 機器の仕様を控える**
+- [ ] **Step 1: 機器の仕様を控え、マシンの状態を足す道具を作る**
 
 Run:
 ```bash
@@ -2880,6 +2882,25 @@ mkdir -p .handoff/06-perf/baseline
 { date -Iseconds; uname -srm; lscpu | grep -E 'Model name|^CPU\(s\)|Thread|Core'; free -g | head -2; nvidia-smi --query-gpu=name,driver_version --format=csv,noheader; google-chrome --version; node --version; git rev-parse --short HEAD; } | tee .handoff/06-perf/baseline/machine.txt
 ```
 Expected: CPU（32 コア）、GPU（GeForce GTX 1080 Ti）、Chrome の版、HEAD が出る。GPU の名前が違えば、05 の headless の数字と比べられないことを記録に書く
+
+マシンの状態（GPU の使用率とメモリ、load average、CPU を使っている上位のプロセス）を足す道具を作る（gitignore の中）:
+
+```bash
+cat > .handoff/06-perf/baseline/snap.sh <<'EOF'
+#!/usr/bin/env bash
+# 使い方: bash .handoff/06-perf/baseline/snap.sh 'before steps-2d-settle'
+{
+  echo "=== $1 — $(date -Iseconds)"
+  nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv
+  uptime
+  # ps の pcpu は起動からの平均なので、瞬間の値は top で取る
+  top -bn1 -o %CPU | sed -n '7,15p'
+  echo
+} >> .handoff/06-perf/baseline/machine.txt
+EOF
+bash .handoff/06-perf/baseline/snap.sh 'before all'
+```
+Expected: `machine.txt` の末尾に `=== before all` と GPU・`uptime`・上位のプロセスが足される。以後の各組は `bash .handoff/06-perf/baseline/snap.sh 'before <組>' && <コマンド>; bash .handoff/06-perf/baseline/snap.sh 'after <組>'` の形で回す
 
 - [ ] **Step 2: Node のベンチマークを回す（ブラウザとの比の参考）**
 
@@ -2894,6 +2915,7 @@ Expected:
 - `.handoff/06-perf/baseline/steps-2d-settle.{json,md}`（18 行）
 - 04 と同じ条件の行（500 m・半径 10 m）の step 数: 綾瀬 267,379・渋谷 49,332・みなとみらい 20,296（DEM が 04 と同じなら一致。違えば、manifest の取得日と 04 の地形の差〈窪地の数が +1〜8。04 の記録〉を記録に書く）
 - 全行で DEM の欠け 0・素通し 0
+- 長いタスク: M1 の試し（Task 7）では、みなとみらい 500 m・半径 10 m で 1 件・59 ms が出た。**再び出たら、平衡までの始め（読み込み・雨の開始）か、平衡の直前かを突き止める**。`steps-2d-settle.json` の `longTasks` は要約（数・最大・合計）だけで、開始の時刻（`entries`）を持たない（`entries` を持つのは `probe=load` の報告だけ）。そのため、その 1 行だけを `RAINTRACE_STEPS_SITES=minatomirai RAINTRACE_STEPS_SIZES=500` で回し直す前に、steps の報告にも `entries` を足すか（計測用のビルドだけの小さな変更）をコントローラーに相談する。出なければ「再発なし」と書く
 
 - [ ] **Step 4: 3D ありの窓（60 秒、固定の DEM、18 ラン、約 25 分）**
 
@@ -2902,10 +2924,12 @@ Expected: 1 件成功、`steps-3d-window.{json,md}`（18 行、`3D` の列が `3
 
 - [ ] **Step 5: fps（3 地点 × 05 の 4 視点 × 地形のみ・水面あり × 3 回、72 ラン、約 60 分）**
 
-Run（バックグラウンド）: `RAINTRACE_FPS_SET=water RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/baseline pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
+Run（バックグラウンド）: `RAINTRACE_FPS_SET=water-sites RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/baseline pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
+
+`water`（05 と同じ既定の雨）ではなく `water-sites`（500 mm・半径 50 m。平衡に届かない雨）を使う。既定の雨はみなとみらいで約 3 秒で平衡に届き、窓の間に水深の転送が止まって地点どうしを比べられないため（Task 6 の直し）。
 Expected:
-- 1 件成功、`water.{json,md}`
-- 渋谷の 8 セルが 05 の表（tech-spec §14.1: 1000 m z16 ×10 p85 の水面ありだけ 51.0 fps、ほかは 59.6〜60.0）と同じ傾向。2 fps 以上ずれるセルがあれば記録に書く（地理院の応答・機械の状態）
+- 1 件成功、`water-sites.{json,md}`
+- 05 の表（tech-spec §14.1）とは雨が違うので直接は比べない。渋谷の傾向の参考は、同じ視点を既定の雨で測った `.handoff/06-perf/baseline-check/water-06/`（e95b9c1、8 セルとも 60.0）。2 fps 以上下がるセルがあれば、`machine.txt` の前後と並べて記録に書く（地理院の応答・機械の状態）
 - 条件の比較に使えない組（視点がそろわない）が出たら、その組を判定に使わない
 
 - [ ] **Step 6: クリックから 2D・3D を押してから最初の 3D のフレーム（3 地点 × 500・1000 m × 3 回、18 ラン、約 15 分）**
@@ -2943,7 +2967,10 @@ Expected: 初期ロード 427.5 KB（M1 と同じ）、`ui` 160.0 KB・`index` 2
 （steps-3d-window.md の表）
 
 ## fps（3 地点 × 05 の 4 視点 × 地形のみ・水面あり × 3 回）
-（water.md のセルごとの中央値の表。ランごとの表は JSON にあると書く）
+（water-sites.md のセルごとの中央値の表。雨は 500 mm・半径 50 m。ランごとの表は JSON にあると書く）
+
+## マシンの状態
+（machine.txt の各組の前後の load average・GPU の使用率・目立つ他のプロセスを 1 つの表にまとめる）
 
 ## クリックから 2D の地形の表示まで・3D を押してから最初の 3D のフレームまで
 （load.md の表と、地点・範囲ごとの中央値）
@@ -3008,11 +3035,13 @@ git commit -m "06 の自動の計測（3 地点の平衡・1 step の所要時�
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=17&ex=5&pitch=60&water=1&fallback=0
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=16&ex=10&pitch=85&water=1&fallback=0
 
-   B. 51 fps の切り分け（渋谷 1000 m・z16 ×10 p85、4 個。A の 4 個目〈地形のみ〉・8 個目〈毎回転送〉と同じ視点）
+   B. 51 fps の切り分け（渋谷 1000 m・z16 ×10 p85、5 個。A の 4 個目〈地形のみ〉・8 個目〈毎回転送〉と同じ視点。
+      5 個目は矢印の間隔 5 m〈1000 m で実効 10 m・10,000 本〉で、05 の 51 fps を測ったときの矢印の本数）
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=16&ex=10&pitch=85&water=1&depthEvery=2&fallback=0
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=16&ex=10&pitch=85&water=1&depthEvery=4&fallback=0
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=16&ex=10&pitch=85&water=1&pause=1&fallback=0
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=16&ex=10&pitch=85&water=1&arrows=0&fallback=0
+   http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&probe=fps&z=16&ex=10&pitch=85&water=1&arrowsM=5&fallback=0
 
    C. クリックから 2D・3D を押してから最初の 3D のフレーム（lat・lon を付けない URL。3 個）
    http://localhost:4173/?size=1000&probe=load&at=35.762300,139.824600&mode=3d&fallback=0
@@ -3024,7 +3053,7 @@ git commit -m "06 の自動の計測（3 地点の平衡・1 step の所要時�
    http://localhost:4173/?lat=35.658&lon=139.7016&size=1000&mm=100&r=500&probe=steps&mode=3d&until=window&ms=60000&fallback=0
 
 4. 終わったら Ctrl+C で preview を止め、pnpm build で通常のビルドに戻してください。
-5. 1 の機器の仕様と、A〜D の JSON（全 17 個）を返してください。deltas（フレームの間隔の生の値）や series（時系列）を含むので、
+5. 1 の機器の仕様と、A〜D の JSON（全 18 個）を返してください。deltas（フレームの間隔の生の値）や series（時系列）を含むので、
    後から閾値を変えて再採点できます。コアの少ない機械では、水面ありの計測で Worker が 1 コアを使い続けるので結果が変わりえます。
 ```
 
@@ -3033,7 +3062,7 @@ git commit -m "06 の自動の計測（3 地点の平衡・1 step の所要時�
 コントローラーから JSON が届いたら、`docs/perf/<実行日>-manual.md` に次を書く:
 - 機器の仕様（Step 1 の 1）
 - A: 8 セルの平均 fps・長いフレーム・g2・長いタスクの最大・`gpuTimerQuery`、05 の headless の表（tech-spec §14.1）と並べる。05 の手動確認の項目 9 の結果として、D15 を満たすかを書く
-- B: 4 変種と A の 4 個目・8 個目の 6 行の表（Task 11 の自動の表と同じ列）
+- B: 5 変種と A の 4 個目・8 個目の 7 行の表（Task 11 の自動の表と同じ列）
 - C: 3 地点の `selectTo2dMs`・`to3d` の各値・長いタスク
 - D: 平衡の step 数・所要・1 step の中央値と p95
 - 参考値であり判定に使わないこと、自動の計測と 2 fps 以上違うセルがあればその旨
@@ -3071,7 +3100,7 @@ git commit -m "06 のユーザーの手動の計測（実 GPU、05 の手動確�
 |---|---|---|---|---|
 | 1 step の中央値・p95 | 8 ms・16 ms（DEM1A・500 m・外接矩形・Chrome） | 500 m の全面を濡らす雨の 3 地点の最悪の中央値・p95（1000 m の値も参考に並べる） | | 超過なら Task 15（近傍の添字）の後に測り直し、なお超過なら Task 24（ブロック単位の走査。計画し直す）、それでも超えれば Rust WASM の spec |
 | 平衡までの時間（「最速」） | 半径 10 m は 60 秒、半径 100 m は 5 分（開発機） | 500 m の 3 地点の r10・r100 の所要（届かなければ「届かず」と step 数） | **暫定**: … | Task 15 の後に Task 25 で確定（fill-spill-merge の spec を起こすか） |
-| 地図操作の fps（D15、g2 も） | 平均 57 fps 以上・長いフレーム 1% 以下 | 3 地点 × 4 視点 × 2 条件のうち D15 を外すセル（平均 fps・長いフレーム・g2） | | M3（Task 11〜13）の結果で、転送なら Task 22・23、描画なら遠景の LOD の spec |
+| 地図操作の fps（D15、g2 も） | 平均 57 fps 以上・長いフレーム 1% 以下 | 3 地点 × 4 視点 × 2 条件のうち D15 を外すセル（平均 fps・長いフレーム・g2） | | M3（Task 11〜13）の結果で、矢印の本数ならユーザーの裁定（Task 13 の Step 2b）、転送なら Task 22・23、描画なら遠景の LOD の spec。3 地点の雨は `water-sites`（500 mm・半径 50 m）で、05 の表とは雨が違う |
 | メインスレッドの最長ブロック | 50 ms（全操作） | 操作ごとの最大（読み込み 1000 m など） | | 超過が読み込みの終わりなら Task 16（RGBA を軽くする）、なお超過なら Task 17（分割。計画し直す） |
 | クリックから 2D の地形の表示 | 3 秒 | 3 地点 × 500・1000 m の中央値の最大 | | 超過なら原因（DEM の取得・デコード）を見て IndexedDB の spec か並列度の見直し |
 | 3D を押してから最初の 3D のフレーム | 3 秒 | 同上 | | 超過で主因がタイルの待ちの DEM1A の 404 なら Task 20 |
@@ -3118,37 +3147,60 @@ git commit -m "spec 06 §5 の M2 の判定（平衡は暫定）と、tech-spec 
 
 M3 の完了条件（spec 06 §1.2）: 原因を数字つきで `docs/perf/` と spec 06 §5.1 に書いている。M1 だけに依存する（M2 と並べて進めてよいが、計測は時間を分ける）。
 
-### Task 11: 切り分けの計測（`depthEvery`・止めた水面・矢印なし・地形のみ、vsync を外す試し）（spec 06 §5.1）
+**M2 の準備での改訂（2026-09-17）:** 05 の 51.0 fps は c25be04（矢印 10,000 本）の値で、既定の本数（2,500 本）では 60.0 だった。原因は A/B で矢印の本数と特定済み（c25be04 55.3、c25be04 + 9079cba 59.9。`.handoff/06-perf/baseline-check.md`）。M3 は、切り分けの表（M1 の確かめで回した `isolate` ×3）に矢印の本数の 2 変種を足して曲線で確かめ、M4 の対応をユーザーの裁定に上げる。
+
+### Task 11: 切り分けの計測（M1 の確かめの `isolate` ×3 に、矢印の本数の 2 変種を足す。vsync を外す試し）（spec 06 §5.1）
 
 **Files:**
 - Create: `docs/perf/<実行日>-isolation.md`
 - Create（gitignore）: `.handoff/06-perf/isolation/`
 
 **Interfaces:**
-- Consumes: Task 6 の組 `isolate`、`RAINTRACE_UNCAPPED=1`
+- Consumes: `.handoff/06-perf/baseline-check/isolate/`（e95b9c1 の `isolate` 7 変種 ×3）、Task 6 の組 `isolate`（M2 の準備で 9 変種）、`arrowsM`、`RAINTRACE_UNCAPPED=1`
 - Produces: Task 13 の結論の材料
 
-- [ ] **Step 1: 切り分けの組を 3 回ずつ回す（6 変種 × 3 回、約 15 分）**
+- [ ] **Step 1: 切り分けの表を写し、矢印の本数の 2 変種を 3 回ずつ回す**
 
-Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_FPS_SET=isolate RAINTRACE_FPS_REPEAT=3 RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/isolation pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
+表の 7 行（地形のみ・depthEvery=1・2・4・止めた水面・矢印なし・depthEvery=4 と矢印なし）は、M1 の確かめで e95b9c1 に回した `isolate` ×3（`.handoff/06-perf/baseline-check.md` の step 1）を使い、**回し直さない**（コードの差は計測だけの `arrowsM` で、既定の経路は変わらない）。
+
+足す 2 変種（「水面あり・矢印 5 m（1000 m で実効 10 m・10,000 本）」「水面あり・矢印 20 m（実効 40 m・625 本）」）を 3 回ずつ回す。`fps.perf.ts` には変種を絞る環境変数が無いので、`RAINTRACE_FPS_SET=isolate` で 9 変種 × 3 回（27 ラン、約 20 分）を回し、**表には新しい 2 変種の行を使う**。同じ時間に回った 7 変種は、baseline-check の表と 2 fps 以上違わないかの確かめだけに使う（違えば `machine.txt` の前後と並べて記録に書き、表は baseline-check のままにする）。
+
+Run（バックグラウンド）:
+```bash
+mkdir -p .handoff/06-perf/isolation
+pnpm build:perf
+# マシンの状態を足す道具（Task 8 の Step 1 と同じ中身で、書き先だけ isolation。Task 8 より先に回すこともあるので、ここで作る）
+cat > .handoff/06-perf/isolation/snap.sh <<'EOF'
+#!/usr/bin/env bash
+{
+  echo "=== $1 — $(date -Iseconds)"
+  nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv
+  uptime
+  top -bn1 -o %CPU | sed -n '7,15p'
+  echo
+} >> .handoff/06-perf/isolation/machine.txt
+EOF
+bash .handoff/06-perf/isolation/snap.sh 'before isolate' && RAINTRACE_FPS_SET=isolate RAINTRACE_FPS_REPEAT=3 RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/isolation pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し; bash .handoff/06-perf/isolation/snap.sh 'after isolate'
+```
 Expected:
-- 1 件成功、`.handoff/06-perf/isolation/isolate.{json,md}`
-- 「地形のみ」は 05 の 59.6 fps 前後、「depthEvery=1」は 05 の 51.0 fps 前後（2 fps 以上違えば、機械の状態を確かめて回し直す。回し直しても違えば、その数字のまま記録し、05 との差を記録に書く）
-- 18 ランの実測 pitch がそろっている（条件の比較に使えない組が出ない）。出たら止めて知らせる
+- 1 件成功、`.handoff/06-perf/isolation/isolate.{json,md}`（27 行）
+- 「矢印 5 m」は c25be04 の 55.3（48.5〜55.7）・05 の記録の 51.0（49.0〜55.8）に近い値に落ちる見込み。落ちなければ、その数字のまま記録する（矢印の本数だけでは説明できないことになり、Task 13 の 4 に当てはめる）
+- 「矢印 20 m」は 60.0 前後
+- 27 ランの実測 pitch（78.6）・描かれるタイル（16）がそろっている。そろわない組が出たら止めて知らせる
 
-- [ ] **Step 2: vsync を外す起動の引数を試す（地形のみ・depthEvery=1 の 2 変種 × 1 回）**
+- [ ] **Step 2: vsync を外す起動の引数を 1 回だけ試し、記録する**
 
 Run: `RAINTRACE_UNCAPPED=1 RAINTRACE_FPS_SET=isolate RAINTRACE_FPS_REPEAT=1 RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/isolation-uncapped pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
-Expected（どちらかになる。どちらでも成功として扱う）:
-- **効いた**: 「地形のみ」の平均 fps が 60 を明らかに超える（例 90 以上）。この場合、60 fps の天井に張り付いていた条件の余裕が読めるので、Step 1 の 6 変種を `RAINTRACE_UNCAPPED=1` でも 3 回回し、表に並べる（約 15 分）
+Expected（どちらかになる。どちらでも成功として扱い、回し直さない）:
+- **効いた**: 「地形のみ」の平均 fps が 60 を明らかに超える（例 90 以上）。9 変種 × 1 回の表をそのまま記録し、天井の外の余裕（特に矢印 5 m と既定の差）を読む。3 回に増やさない
 - **効かない**: どの変種も 60.0 fps 以下。「ANGLE の gl-egl では効かない（<Chrome の版>）」と記録する（spec 06 §4.2 の未検証の項目を閉じる）
 
 注意: 効いた場合の D15 の「長いフレーム」の閾値（中央値の 2.5 倍）は中央値が小さくなるので厳しくなる。判定には天井ありの Step 1 の表を使い、外した表は余裕を読むためだけに使う。
 
-- [ ] **Step 3: GPU のタイマーの有無を読む**
+- [ ] **Step 3: GPU のタイマーの有無を読む（記録だけ）**
 
 Run: `grep -m1 "GPU のタイマー" .handoff/06-perf/isolation/isolate.md`
-Expected: `使える` か `使えない`。`使える` なら Task 12 を行う。`使えない` なら Task 12 を「対象外（<Chrome の版> で EXT_disjoint_timer_query_webgl2 が無い）」と記録して飛ばす
+Expected: `使える` か `使えない`。どちらでも記録するだけで、Task 12 は行わない（Task 12 の「閉じた理由」）
 
 - [ ] **Step 4: `docs/perf/<実行日>-isolation.md` を書く**
 
@@ -3158,8 +3210,17 @@ Expected: `使える` か `使えない`。`使える` なら Task 12 を行う�
 - 条件: 渋谷・1000 m・z16 ×10 p85（実測 pitch <値>・描かれるタイル <値>）・fallback=0・毎回新しい context・3 回の中央値
 - 機器: `docs/perf/<M2 の実行日>.md` と同じ（違えば書く）
 
+## 05 の 51.0 fps の出どころ（M1 の確かめ）
+（`.handoff/06-perf/baseline-check.md` の結論と step 3 の表: c25be04 55.3、c25be04 + 9079cba 59.9、b3a8916・e95b9c1 60.0。視点は同じ。マシンの負荷の表）
+
 ## 天井あり（判定に使う）
-（isolate.md のセルごとの中央値の表: 変種・平均 fps・長いフレーム・g2・長いタスクの最大）
+（セルごとの中央値の表: 変種・平均 fps・長いフレーム・g2・render CPU・長いタスクの最大。7 行は baseline-check の isolate〈e95b9c1〉、矢印 5 m・20 m の 2 行は isolation/isolate.md。行ごとに出どころの列を置く）
+
+## 矢印の本数と fps
+（矢印なし〈0 本〉・矢印 20 m〈625 本〉・既定〈2,500 本。depthEvery=1 の行〉・矢印 5 m〈10,000 本〉の 4 点を、平均 fps と g2 で並べる）
+
+## 同じ時間の 7 変種の確かめ
+（isolation/isolate.md の 7 変種と baseline-check の差。2 fps 以上の差の有無）
 
 ## vsync を外した試し
 （効いた／効かない。効いたなら表）
@@ -3172,40 +3233,47 @@ Expected: `使える` か `使えない`。`使える` なら Task 12 を行う�
 
 ```bash
 git add docs/perf/
-git commit -m "51 fps の切り分けの計測（depthEvery=1・2・4、止めた水面、矢印なし、地形のみ、vsync を外す試し）を docs/perf に記録する（spec 06 §5.1、M3）"
+git commit -m "51 fps の切り分けの計測（M1 の確かめの isolate に矢印 5 m・20 m を足した矢印の本数の曲線、vsync を外す試し）を docs/perf に記録する（spec 06 §5.1、M3）"
 ```
 
 ---
 
-### Task 12:（条件つき・計画し直す）GPU のタイマーで転送と描画の GPU の時間を分ける（spec 06 §5.1 の表の最後の行）
+### Task 12:（閉じた）GPU のタイマーで転送と描画の GPU の時間を分ける（spec 06 §5.1 の表の最後の行）
 
-**条件:** Task 11 の Step 3 で `使える`。`使えない` なら行わず、Task 13 の記録に「対象外」と書く。
+**閉じた（M2 の準備での改訂、2026-09-17）: 対象（転送か描画か）が消えたので行わない。** 理由: この Task は「51 fps の落ちが水深の転送か描画か」を GPU の時間で分けるためのものだった。M1 の確かめ（`.handoff/06-perf/baseline-check.md`）で、既定の矢印の本数では `depthEvery=1・2・4`・止めた水面・矢印なしがどれも 59.9〜60.0 fps で天井に届き、転送と描画のどちらも上限の内にあると分かった。落ちは A/B で矢印の本数に結びついており（c25be04 55.3 → 9079cba を重ねて 59.9。仕組みは Task 11 の本数の曲線で確かめる）、転送と描画の GPU の時間を分けても M4 の判断が変わらない。Task 11 の Step 3 の「使える／使えない」は記録だけする。Task 13 の結論で転送か描画が再び疑われたら、下の枠から計画し直す。
+
+以下は閉じる前の枠（履歴）。
+
+**（履歴）条件:** Task 11 の Step 3 で `使える`。`使えない` なら行わず、Task 13 の記録に「対象外」と書く。
 
 **計画し直す理由:** `EXT_disjoint_timer_query_webgl2` の問い合わせを MapLibre の描画の前後と水面の Custom Layer の `render` の中に挟む必要がある。MapLibre の描画のループのどこに挟めるか（`map.on('prerender')`・`render` のイベントと GL の状態の cache との関係）は、使えると分かってから `maplibre-gl-dev.mjs` を読んで決める。計画し直すときの枠:
 - 計測用のビルドだけ（`perfHook` から `View3dOptions` の受け口で渡す。`onRenderTime` と同じ形）
 - 測る区間: (1) 水面の `render` の中の `texSubImage2D` を含む three の描画、(2) フレーム全体（`prerender` から `render`）
 - 結果は `docs/perf/<実行日>-isolation.md` の「GPU のタイマー」の節
 
-- [ ] **Step 1: 計画を書き足してレビュー役に送る**
+- [ ] ~~**Step 1: 計画を書き足してレビュー役に送る**~~（閉じた。行わない）
 
-この Task の下に、上の枠を具体的な Files・Interfaces・Step（テストを含む）にした計画を書き、コントローラーに送る。承認の後に実装し、1 コミットにする。
+~~この Task の下に、上の枠を具体的な Files・Interfaces・Step（テストを含む）にした計画を書き、コントローラーに送る。承認の後に実装し、1 コミットにする。~~
 
 ---
 
-### Task 13: 51 fps の原因を数字で名指しし、spec 06 §5.1 に書き、M4 の対応を決める（M3 の完了）
+### Task 13: 51 fps の原因を数字で名指しし、spec 06 §5.1 に書き、M4 の対応をユーザーの裁定に上げる（M3 の完了）
 
 **Files:**
 - Modify: `docs/perf/<実行日>-isolation.md`（「結論」の節）
 - Modify: `docs/superpowers/specs/2026-09-10-06-performance-design.md`（§5.1 の末尾に「結果」）
 
 **Interfaces:**
-- Consumes: Task 11（と Task 12）の表
-- Produces: Task 22・23（転送側）と、遠景の LOD の spec の要否（M6）の条件
+- Consumes: Task 11 の表（Task 12 は閉じた）
+- Produces: M4 の矢印の対応（ユーザーの裁定）、Task 22・23（転送側。既定の本数で転送が主因でなければ行わない）と、遠景の LOD の spec の要否（M6）の条件
+
+**M2 の準備での改訂（2026-09-17）:** 下の Step 1 の 1〜4 は、既定の本数の 7 行ではどれにも当てはまらない（すべて 59.9〜60.0）。矢印 5 m の行を加えた表で、先に Step 1 の 0 を当てはめる。
 
 - [ ] **Step 1: 決め方に当てはめる**
 
 Task 11 の Step 1 の表（天井あり、セルごとの中央値）で、次の順に当てはめる。数字は「平均 fps・g2」の両方で読む（spec 06 §5.1）:
 
+0. **矢印 5 m（10,000 本）が D15 を外し、矢印 20 m（625 本）・既定（2,500 本）・矢印なしが 57 fps 以上で、fps が本数とともに下がる** → 主因は**矢印の symbol の本数**（p85 は描かれるタイルが最も多く、MapLibre は symbol をフレームごとに並べ直す）。転送（`depthEvery=1・2・4`）・水面の描画（止めた水面）・地形の描画（地形のみ）は、既定の本数では上限の内。1〜3 は行わず Step 2 の結論の型を使う。矢印 5 m も D15 を満たすなら「10,000 本でも落ちない（c25be04 との差は矢印以外）」として 4 に進む
 1. **止めた水面（`pause=1`）が D15 を満たさない**（転送 0 でも 57 fps 未満）→ 主因は**描画**（水面の約 212 万枚の三角形か地形）。さらに「地形のみ」との差を書く。差が 3 fps 以上なら「水面の描画」、3 fps 未満なら「地形の描画が天井に近い（05 の 59.6・58.5）ところへ水面の描画が加わる」。対応: 遠景の LOD の spec（M6 で雛形）。Task 22・23 は行わない
 2. **止めた水面が D15 を満たし、`depthEvery` を上げるほど平均 fps が戻る**（N=4 が N=1 より 3 fps 以上高い）→ 主因は**転送**。対応: Task 22（N=2 が D15 を満たすなら既定の間引き）、満たさなければ Task 23（変わった行だけ・Float16。計画し直す）
 3. **矢印なし（`arrows=0`）が `depthEvery=1` より 3 fps 以上高い** → 矢印の `setData` と並べ直しも寄与する。1・2 と独立に記録し、Task 13 の Step 3 の報告で「3D の間の矢印の間引き」を M4 の候補として計画し直すかをコントローラーに相談する（spec 06 §5.2 の候補の一覧に無いので、足すなら計画のレビューに上げる）
@@ -3213,13 +3281,40 @@ Task 11 の Step 1 の表（天井あり、セルごとの中央値）で、次�
 
 - [ ] **Step 2: 結論を書く**
 
-`docs/perf/<実行日>-isolation.md` の末尾に「## 結論」として、当てはめた番号、根拠の数字（変種ごとの平均 fps・g2）、対応を書く。
+`docs/perf/<実行日>-isolation.md` の末尾に「## 結論」として、当てはめた番号、根拠の数字（変種ごとの平均 fps・g2）、対応を書く。0 に当てはまったときは次の型で書く:
+
+```markdown
+## 結論
+
+- **主因は矢印の symbol の本数**（Step 1 の 0）。1000 m・z16 ×10 p85・水面ありの平均 fps（3 回の中央値）と g2: 矢印なし <値>・<g2>、矢印 20 m（625 本）<値>・<g2>、既定（2,500 本）<値>・<g2>、矢印 5 m（10,000 本）<値>・<g2>。p85 は描かれるタイルが最も多く（16）、MapLibre は symbol をフレームごとに並べ直すので、本数に比例して CPU の時間が増える
+- 既定の本数では、転送（depthEvery=1 <値>・2 <値>・4 <値>）、水面の描画（止めた水面 <値>）、地形の描画（地形のみ <値>）はどれも上限（60.0 fps）の内。render CPU は <値> ms
+- 05 の 51.0 fps との関係: c25be04（10,000 本）55.3、c25be04 + 9079cba（2,500 本）59.9（`.handoff/06-perf/baseline-check.md`）
+- vsync を外す引数は <効いた／効かない>、GPU のタイマーは <使える／使えない>（Task 12 は閉じた）
+- M4 の対応: ユーザーの裁定（下の R）
+```
 
 spec 06 §5.1 の末尾（「原因を数字つきで `docs/perf/` と本節に書く」の後）に足す:
 
 ```markdown
-> **結果（<実行日>、`docs/perf/<実行日>-isolation.md`）**: 主因は <転送／水面の描画／地形の描画／未切り分け>。平均 fps（3 回の中央値）: 地形のみ <値>、depthEvery=1 <値>・2 <値>・4 <値>、止めた水面 <値>、矢印なし <値>。g2: <値の並び>。vsync を外す引数は <効いた／効かない>、GPU のタイマーは <使える／使えない>。対応: <Task 22／Task 23／遠景の LOD の spec／レビュー役に相談>。
+> **結果（<実行日>、`docs/perf/<実行日>-isolation.md`）**: 主因は <矢印の symbol の本数／転送／水面の描画／地形の描画／未切り分け>。平均 fps（3 回の中央値）と g2: 矢印なし <値>・<g2>、矢印 20 m <値>・<g2>、既定 <値>・<g2>、矢印 5 m <値>・<g2>、地形のみ <値>、depthEvery=1 <値>・2 <値>・4 <値>、止めた水面 <値>。転送・水面の描画・地形の描画は既定の本数では上限の内。vsync を外す引数は <効いた／効かない>、GPU のタイマーは <使える／使えない>。M4 の対応: <ユーザーの裁定の結果>。
 ```
+
+- [ ] **Step 2b: M4 の対応をユーザーの裁定に上げる（0 に当てはまったとき）**
+
+`.superpowers/sdd/2026-09-17-06-performance/m3-report.md` に次の裁定の依頼を書き、コントローラーに渡す（推奨は付けてよいが、決めるのはユーザー）:
+
+```text
+【裁定】1000 m で矢印の間隔に 5 m を選んだときの fps（spec 06 §5.1、M4）
+
+事実: 1000 m・z16 ×10 p85・水面ありで、矢印 5 m（実効 10 m・10,000 本）は <値> fps（g2 <値>）で D15（57）を外す。既定（2,500 本）は <値>、625 本は <値>、矢印なしは <値>。
+転送・水面と地形の描画は既定の本数では上限の内。
+
+(a) 1000 m の実効の間隔の下限を 20 m にする（5 m を選んでも 1000 m では 20 m。DisplaySettings にその旨を表示する。文言は strings.ts）
+(b) 変えない。記録に残し、注意を表示するかどうかを決める
+(c) 矢印の更新を間引く（setData の頻度を下げる）。fps が本数に比例して下がる（並べ直しの負荷で、更新の頻度ではない）なら効かないので落とす
+```
+
+M4 の「前」は `arrowsM=5` で測る（`isolate` の「水面あり・矢印 5 m」の行、または同じ URL）。裁定の結果で M4 に Task を足す場合は、計画のレビューに上げる。0 に当てはまらなければこの Step は行わず、1〜4 の対応に従う。
 
 - [ ] **Step 3: コミットし、マイルストーンの区切りに進む**
 
@@ -4158,7 +4253,7 @@ git commit -m "雨量と半径の入力欄を TextField から FormControl・Out
 
 - [ ] **Step 1: 前を測る**
 
-条件を満たした地点（段 2・3）の 1000 m で、`RAINTRACE_LOAD=1` のテストを回す。`SITES` にその地点が無いので、`tests/perf/support.ts` の `SITES` に `tier2: { label: '<地名>（段 2）', lat: '<緯度>', lon: '<経度>' }` を足し、`RAINTRACE_FPS_SITES=tier2 RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/20-before` で回す。地点は M2 で超過した地点をそのまま使う。
+条件を満たした地点（段 2）の 1000 m で、`RAINTRACE_LOAD=1` のテストを回す。段 2 の地点 `nemuro`（根室駅付近）は Task 6 で `tests/perf/support.ts` の `LOAD_ONLY_SITES` にあるので、新しい地点の鍵（`tier2` など）は足さず、`RAINTRACE_LOAD=1 RAINTRACE_FPS_SITES=nemuro RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/20-before pnpm perf:fps tests/perf/fps.perf.ts -g クリック` で回す。
 
 - [ ] **Step 2: 失敗するテストを書く**
 
@@ -4272,6 +4367,8 @@ git commit -m "範囲の DEM の段を手がかりに、範囲の外のタイル
 
 **条件:** Task 13 の結論が「主因は転送」で、Task 11 の表で `depthEvery=2` のセルが D15 を満たす。`depthEvery=2` でも満たさなければ、この Task は行わず Task 23 に進む。
 
+**見込み（M2 の準備での改訂、2026-09-17）: おそらく条件を満たさない。** M1 の確かめ（`.handoff/06-perf/baseline-check.md`）で、既定の矢印の本数では `depthEvery=1` がすでに 60.0 fps（`depthEvery=2・4` は 59.9）で、転送側は主因でなかった。Task 13 の結論が「主因は矢印の本数」なら、この Task と Task 23 は行わず「行わなかった項目」に書く。条件はそのまま残す。
+
 **Files:**
 - Modify: `src/map/view3d/View3d.ts`（`defaultDepthUploadEvery`、`addWater`）
 - Create: `src/map/view3d/View3d.depth.test.ts`
@@ -4283,8 +4380,8 @@ git commit -m "範囲の DEM の段を手がかりに、範囲の外のタイル
 
 - [ ] **Step 1: 前を測る**
 
-Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_FPS_SET=water RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/22-before pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
-Expected: Task 8 の Step 5 と同じ表（水面ありの 1000 m・z16 ×10 p85 が D15 を外す）
+Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_FPS_SET=water-sites RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/22-before pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
+Expected: Task 8 の Step 5（`water-sites`）と同じ表（水面ありの 1000 m・z16 ×10 p85 が D15 を外す）
 
 - [ ] **Step 2: 失敗するテストを書く**
 
@@ -4336,7 +4433,7 @@ export function defaultDepthUploadEvery(size: number): number {
 Run: `pnpm vitest run src/map/view3d/`
 Expected: PASS
 
-Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_FPS_SET=water RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/22-after pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
+Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_FPS_SET=water-sites RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/22-after pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
 Expected: 3 地点の 1000 m・z16 ×10 p85・水面ありが D15 を満たす。500 m のセルは前と同じ（毎回転送のまま）。満たさなければ、この Task のコードを戻し（コミットしない）、Task 23 に進む
 
 `docs/perf/<実行日>-fixes.md` に「## Task 22: 1000 m の水深の転送の間引き」として 3 地点 × 4 視点の水面ありの前後を書く。
@@ -5319,7 +5416,13 @@ M6 の完了条件（spec 06 §1.2）: spec 06 §6 を満たす。
 
 - [ ] **Step 2: tech-spec §14 の最終の値を書く**
 
-§14.1 の「06 の M4 の後」の表（Task 25）を正とし、表の上の「目標」の表は変えない。§14.1 の末尾に、51 fps の原因（Task 13）と `probe=water` の結果（Task 28）を 1 文ずつ足す。§14.2 に、M6 の時点の `pnpm build && pnpm size` の表を足す（Task 19 を行わず変わらなければ「06 の着手時と同じ」）。
+§14.1 の「06 の M4 の後」の表（Task 25）を正とし、表の上の「目標」の表は変えない。§14.1 の末尾に、51 fps の原因（Task 13。05 の 51.0 は c25be04〈矢印 10,000 本〉の値で、M2 の準備で §14.1 に訂正済み）と `probe=water` の結果（Task 28）を 1 文ずつ足す。§14.2 に、M6 の時点の `pnpm build && pnpm size` の表を足す（Task 19 を行わず変わらなければ「06 の着手時と同じ」）。
+
+spec 06 §4.1 の本文の「3D の有無で 2 通り測る（step の所要時間・長いタスク・fps）」を、計画で決めたこと 4 に合わせて直す（M1 のレビューの持ち越し）。直した後の文:
+
+```markdown
+- 平衡までの時間は 2D だけで測る。3D ありでは平衡を待たず、60 秒の窓で 1 step の所要時間と長いタスクを測る（3D の描画は平衡の step 数を変えない。エンジンは決定的）。fps は 3D で測る
+```
 
 - [ ] **Step 3: 別の spec の雛形を起こす（M4 の後の判定で要るとしたものだけ）**
 
