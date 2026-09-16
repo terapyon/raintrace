@@ -13,7 +13,9 @@ import {
   summarizeLongTasks,
   summarizeStepSeries,
 } from './perfCollectors'
+import { runLoadProbe } from './perfLoad'
 import { parsePerfParams } from './perfParams'
+import { runStepsProbe } from './perfSteps'
 import {
   nextFrame,
   type ProbeView,
@@ -55,8 +57,24 @@ export async function installPerfHook(
     // arrows=0: 水の流れの矢印を止める（spec 06 §5.1、計画で決めたこと 8）。Worker は flowVectors() を呼ばない
     ...(params.arrows ? {} : { showFlowVectors: false }),
   })
+  /** 結果を <html data-*> と画面に出す */
+  const publish = (key: 'stepsResult' | 'loadResult', report: unknown): void => {
+    root.dataset[key] = JSON.stringify(report)
+    show(report)
+  }
   const { store } = session
   try {
+    if (params.probe === 'steps') {
+      publish('stepsResult', await runStepsProbe(session, settings, params, longTasks, stepTimes))
+      return
+    }
+    if (params.probe === 'load') {
+      publish(
+        'loadResult',
+        await runLoadProbe(session, params, longTasks, { prepareMs, waterBuildMs }),
+      )
+      return
+    }
     await waitFor(
       () => store.getState().load.status === 'ready',
       (listener) => store.subscribe(listener),
