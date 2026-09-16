@@ -18,7 +18,10 @@ export interface View3dOptions {
   hillshade: HillshadeOption
   /** 水面を描くか。false は計測の「地形のみ」の基準（spec 05 §4.4） */
   water: boolean
-  /** 計測用（perfHook）。水面の render の CPU の時間（ms） */
+  /**
+   * 計測用（perfHook）。水面の render の CPU の時間（ms）。これを呼ぶのは水面の Custom Layer なので、
+   * 呼び出し元が入るのは Task 8。それまで計測の表の render CPU の列は「未計測」になる
+   */
   onRenderTime: ((ms: number) => void) | null
   /** 計測用。タイル 1 枚の組み立ての時間（ソースごと） */
   onTileTime: ((sample: TileTimeSample) => void) | null

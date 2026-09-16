@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { type Browser, expect, type Page, test } from '@playwright/test'
 import type { FpsResult } from '../../src/map/fpsProbe'
 import { percentile } from '../../src/map/fpsStats'
@@ -13,11 +13,21 @@ interface Variant {
   water: '0' | '1'
 }
 
+/** 実際に置けた視点（要求どおりとは限らない。地形がカメラを持ち上げる） */
+interface Achieved {
+  mapZoom: number
+  mapPitch: number
+}
+
 interface Report {
-  /** 測った視点（フックが入れる。URL と照合する） */
+  /** 測った視点（フックが入れる。URL と照合する）。mapZoom・mapPitch は計測の後に読んだ値 */
   view3d: string
   mapZoom: number
   mapPitch: number
+  /** タイルが揃ってからの 2 回目の jumpTo の直後（落ち着かせる前） */
+  achievedBeforeSettle: Achieved
+  /** 計測の窓を閉じた後。achievedBeforeSettle と一致すれば、窓の間ずっとこの視点だったと言える */
+  achievedAfterRun: Achieved
   prepareMs: number[]
   waterBuildMs: number[]
   tiles: { loaded: boolean; waitMs: number }
@@ -59,6 +69,22 @@ const repeat = Number(process.env.RAINTRACE_FPS_REPEAT ?? '3')
 const RUN_TIMEOUT_MS = 240_000
 const outDir = new URL('../../.handoff/05-fps/', import.meta.url)
 
+/**
+ * 計測用のビルド（pnpm build:perf）でなければフックが入らず、印は一生付かない。そのまま回すと 240 秒の
+ * timeout まで待たされ、「固まった」のか「ビルドし忘れた」のか分からない。先に dist を見て区別する
+ */
+function assertPerfBuild(): void {
+  const manifest = new URL('../../dist/.vite/manifest.json', import.meta.url)
+  if (!existsSync(manifest)) {
+    throw new Error('dist がありません。先に pnpm build:perf を実行してください')
+  }
+  if (!readFileSync(manifest, 'utf8').includes('perfHook')) {
+    throw new Error(
+      'dist が計測用のビルドではありません（manifest に perfHook が無い）。先に pnpm build:perf を実行してください',
+    )
+  }
+}
+
 function query(params: Record<string, string | undefined>): string {
   const entries = Object.entries(params).filter(
     (entry): entry is [string, string] => entry[1] !== undefined,
@@ -76,15 +102,20 @@ async function withFreshPage<T>(
   run: (page: Page) => Promise<T>,
 ): Promise<T> {
   const context = await browser.newContext({ baseURL, viewport: VIEWPORT, deviceScaleFactor: 1 })
+  let closed = false
   try {
     await acknowledgeDisclaimer(context)
     const page = await context.newPage()
     const errors = collectErrors(page)
     const value = await run(page)
     expect(errors).toEqual([])
+    // 報告を読んだ後（閉じるまでの間）に出たコンソールのエラーも見る。1 回目の確認だけだと取り逃す
+    await context.close()
+    closed = true
+    expect(errors).toEqual([])
     return value
   } finally {
-    await context.close()
+    if (!closed) await context.close()
   }
 }
 
@@ -126,30 +157,68 @@ function formatTable(rows: readonly Row[]): string {
     const h = r.gapHistogram
     const wait = `${(tiles.waitMs / 1000).toFixed(1)}${tiles.loaded ? '' : '（揃わず）'}`
     lines.push(
-      `| ${variant} #${run} | ${size} m | ${view} | ${requested.pitch} | ${mapPitch.toFixed(1)} | ${requested.z} | ${mapZoom.toFixed(3)} | ${r.meanFps.toFixed(1)} | ${r.p50Ms.toFixed(1)} | ${r.longFrames}/${r.frames}（${(r.longFrameRatio * 100).toFixed(1)}%） | ${h.g1}/${h.g2}/${h.g3}/${h.g4}/${h.g5plus} | ${r.renderCpuMeanMs.toFixed(2)} | ${tileCell(r.tileGen.terrain)} | ${tileCell(r.tileGen.hillshade)} | ${r.drawnTileZoom} | ${wait} | ${prepareMs.map((ms) => ms.toFixed(0)).join('・')} | ${waterBuildMs.map((ms) => ms.toFixed(0)).join('・')} | ${r.pass} |`,
+      `| ${variant} #${run} | ${size} m | ${view} | ${requested.pitch} | ${mapPitch.toFixed(1)} | ${requested.z} | ${mapZoom.toFixed(3)} | ${r.meanFps.toFixed(1)} | ${r.p50Ms.toFixed(1)} | ${r.longFrames}/${r.frames}（${(r.longFrameRatio * 100).toFixed(1)}%） | ${h.g1}/${h.g2}/${h.g3}/${h.g4}/${h.g5plus} | ${r.renderFrames === 0 || r.renderCpuMeanMs === null ? '未計測' : r.renderCpuMeanMs.toFixed(2)} | ${tileCell(r.tileGen.terrain)} | ${tileCell(r.tileGen.hillshade)} | ${r.drawnTileZoom} | ${wait} | ${prepareMs.map((ms) => ms.toFixed(0)).join('・')} | ${waterBuildMs.map((ms) => ms.toFixed(0)).join('・')} | ${r.pass} |`,
     )
+  }
+  const warnings = comparabilityWarnings(rows)
+  if (warnings.length > 0) {
+    lines.push('', '**条件の比較に使えない組**（同じセルなのに実測の視点がそろっていない）:')
+    for (const warning of warnings) lines.push(`- ${warning}`)
   }
   lines.push(
     '',
-    'S との比較について: S の「z16 ×10 p85」は、実アプリでは pitch 85° に届かない。垂直強調 ×10 では、MapLibre の',
-    '_elevateCameraIfInsideTerrain（maplibre-gl-dev.mjs の 22431〜22443 行）が、カメラが持ち上がった地形の中に',
-    '入ってしまうときカメラをその地形の高さまで持ち上げ、calculateCameraOptionsFromTo で pitch とズームを',
-    '作り直す。これは transform の更新ごとの修飾として働く（同 22454 行あたり）。渋谷の 8.8〜33 m は ×10 で',
-    '88〜330 m になり、z16・p85 でのカメラの高さを超える。',
-    '落ち着く角度は、視点を置いたまま静止していれば約 83°、上の表のように計測で地図を動かしている間は約 78.6°。',
-    '動かすとカメラがより高い地面の上を通り、持ち上がりが大きくなるためで、持ち上がりは「カメラの下の標高 ×',
-    '垂直強調」に比例する固定でない量である。要求どおりの 85° になるのは垂直強調 ×1 のとき、また pitch 0 は',
-    '常に要求どおりになる（いずれも実測で確認）。',
+    '注意 1（「実測 pitch」「実測 zoom」の読み方）: この 2 列は、計測の窓を閉じた後に 1 回だけ読んだ値である。',
+    'runFpsProbe は rAF の loop を抜けて map.jumpTo({ center, bearing }) で中心と bearing を戻し、その後に',
+    'perfHook が getZoom()・getPitch() を読む。10 秒の計測の間ずっとこの角度だった、という意味ではない。',
+    '',
+    '注意 2（垂直強調 ×10 では pitch 85° に届かない）: MapLibre の _elevateCameraIfInsideTerrain',
+    '（maplibre-gl-dev.mjs の 22431〜22443 行）が、カメラが持ち上がった地形の中に入るときカメラをその地形の',
+    '高さまで持ち上げ、calculateCameraOptionsFromTo で pitch とズームを作り直す（transform の更新ごとの修飾。',
+    '同 22454 行あたり）。渋谷の 8.8〜33 m は ×10 で 88〜330 m になり、z16・p85 でのカメラの高さを超える。',
+    '同じ「z16 ×10 p85」を要求した 4 セルで、実測は 78.60° と 82.96° に分かれた。つまりこの角度は固定の量では',
+    'なく、カメラの下の標高 × 垂直強調に応じて変わる。要求どおりの 85° になるのは垂直強調 ×1 のとき、',
+    'pitch 0 は常に要求どおりになる（いずれも実測で確認）。',
+    '',
+    '注意 3（render CPU の列）: onRenderTime を呼ぶのは水面の Custom Layer で、入るのは Task 8。',
+    'それまでこの列は「未計測」であって、0 ms という意味ではない。',
+    '',
+    '注意 4（タイルの待ちが短い理由）: 視点を置く前に data-view3d-framed（3D の視点へ動き終えたこと）を',
+    '待っているので、areTilesLoaded() は 0.12〜0.51 秒で真になる。実際に落ち着かせている時間は、その後の',
+    '3 秒と合わせて約 3.1〜3.5 秒で、S の固定 3 秒とほぼ同じ。areTilesLoaded() だけを根拠にしない。',
     '',
     '推定（未検証。事実としては扱わない）: S も同じ渋谷の地形に対し、同じ MapLibre 6.6.0 で同じ',
     'map.jumpTo({ zoom, pitch }) を使っており、実測の pitch・zoom を記録していなかった。したがって S の',
-    '「z16 ×10 p85」も、おそらく ≈83° で測られている。そうであれば比較は実質的に同じ条件どうしで、',
+    '「z16 ×10 p85」も、おそらく 85° 未満で測られている。そうであれば比較は実質的に同じ条件どうしで、',
     'S の側でそれが記録されていなかっただけ、ということになる。',
     '',
-    '合否（平均 57 fps 以上・長いフレーム 1% 以下）は、この「落ち着いた後の視点」に対して判定する。',
-    'それが利用者が実際に到達できる、いちばん厳しい視点だからである。各行の「実測 pitch」「実測 zoom」がその視点。',
+    '合否（平均 57 fps 以上・長いフレーム 1% 以下）は、要求した視点を MapLibre が落ち着かせた先に対して',
+    '判定する。それが利用者が実際に到達できる、いちばん厳しい視点だからである。',
   )
   return `${lines.join('\n')}\n`
+}
+
+/**
+ * 同じセル（範囲・視点）の中で、実測の視点がそろっていない組を探す。地形があると要求どおりの pitch にならず、
+ * しかもその角度は固定でない（注意 2）。実測の視点が違う行どうしを「hillshade の有無の差」として読むと
+ * 結論を取り違えるので、表の中で名指しする
+ */
+function comparabilityWarnings(rows: readonly Row[]): string[] {
+  const cells = new Map<string, Row[]>()
+  for (const row of rows) {
+    const key = `${row.size} m・${row.view}`
+    cells.set(key, [...(cells.get(key) ?? []), row])
+  }
+  const warnings: string[] = []
+  for (const [key, runs] of cells) {
+    const pitches = runs.map((r) => r.mapPitch)
+    const drawn = [...new Set(runs.map((r) => r.result.drawnTileZoom))]
+    if (Math.max(...pitches) - Math.min(...pitches) <= 0.5 && drawn.length <= 1) continue
+    warnings.push(
+      `${key}: 実測 pitch が ${pitches.map((p) => p.toFixed(2)).join(' / ')}、描かれるタイルが ${drawn.join(' / ')} とそろっていない。` +
+        'この組は条件（hillshade の有無など）の比較には使えない。視点そのものが違う',
+    )
+  }
+  return warnings
 }
 
 /** 中央値（回数が偶数なら上側。percentile と同じ） */
@@ -193,6 +262,7 @@ function formatSummary(rows: readonly Row[]): string {
 }
 
 test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
+  assertPerfBuild()
   const variants = SETS[setName]
   if (variants === undefined) throw new Error(`計測の組がありません: ${setName}`)
   if (!Number.isInteger(repeat) || repeat < 1) {
@@ -262,6 +332,7 @@ test('描かれる地形タイルのズームの実測と、pitch つきの見�
   browser,
 }, testInfo) => {
   test.skip(process.env.RAINTRACE_DRAWN_ZOOM !== '1', 'RAINTRACE_DRAWN_ZOOM=1 のときだけ回す')
+  assertPerfBuild()
   const baseURL = testInfo.project.use.baseURL ?? 'http://localhost:4175'
   const lines = ['| 地図のズーム | pitch | 見込み | 実測 |', '|---:|---:|---:|---:|']
   for (const z of [15.5, 16, 16.5, 17]) {

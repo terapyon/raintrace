@@ -23,8 +23,13 @@ export interface FpsResult extends FrameStats {
   renderer: string
   durationMs: number
   warmupMs: number
-  renderCpuMeanMs: number
-  renderCpuP95Ms: number
+  /**
+   * 水面の render の CPU の時間。これを呼ぶのは水面の Custom Layer で、入るのは Task 8。
+   * それまでサンプルが 1 つも無いので null（0 ms ではなく「未計測」）
+   */
+  renderCpuMeanMs: number | null
+  renderCpuP95Ms: number | null
+  /** 0 なら未計測（onRenderTime の呼び出し元がまだ無い） */
   renderFrames: number
   /** 計測の間のタイルの作成（ソースごと） */
   tileGen: Record<DemSourceKind, TileGenStats>
@@ -88,14 +93,15 @@ export async function runFpsProbe(
   map.jumpTo({ center, bearing })
   const cpu = samples.renderTimes.slice(renderStart).sort((a, b) => a - b)
   const tiles = samples.tileTimes.slice(tileStart)
+  // map.painter は MapLibre の内部で、公開 API ではない。版を 6.6.0 に固定しているから使える（版を上げたら見直す）
   const gl = map.painter.context.gl
   return {
     ...summarizeFrames(deltas),
     renderer: rendererName(gl),
     durationMs: deltas.reduce((a, b) => a + b, 0),
     warmupMs: WARMUP_MS,
-    renderCpuMeanMs: mean(cpu),
-    renderCpuP95Ms: percentile(cpu, 0.95),
+    renderCpuMeanMs: cpu.length === 0 ? null : mean(cpu),
+    renderCpuP95Ms: cpu.length === 0 ? null : percentile(cpu, 0.95),
     renderFrames: cpu.length,
     tileGen: {
       terrain: summarizeTileTimes(tiles, 'terrain'),

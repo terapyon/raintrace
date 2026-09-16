@@ -67,6 +67,41 @@ function show(value: unknown): void {
   document.body.append(pre)
 }
 
+/** 視点を置くのに使う、地図の最小の面（テストでは偽物に差し替える） */
+export interface ProbeView {
+  center: [number, number]
+  zoom: number
+  pitch: number
+  bearing: number
+}
+
+export interface ProbeMap {
+  jumpTo(view: ProbeView): void
+}
+
+/**
+ * 視点を置き、タイルが揃うのを待ってから、同じ視点をもう一度置く。
+ *
+ * 2 回置くのは、MapLibre の `_elevateCameraIfInsideTerrain` が
+ * `terrain.getElevationForLngLatZoom(カメラの位置, ズーム)` で「そのとき読める」DEM からカメラの持ち上がりを
+ * 決めるため。1 回目の jumpTo の時点ではタイルがまだ読めておらず、しかも要求するタイルの組は hillshade の
+ * 有無で違うので、条件ごとに違う LOD の標高で持ち上がりが決まり、同じ視点を要求しても落ち着く先がずれる
+ * （Task 5 の実測では、同じ「z16 ×10 p85」が 78.60° と 82.96° に分かれた）。タイルが揃ってから置き直せば、
+ * 読める地形の上で計算されるので、条件どうしが同じ視点に収束する
+ */
+export async function placeViewOnLoadedTerrain<T>(
+  map: ProbeMap,
+  view: ProbeView,
+  afterFirstJump: () => void,
+  waitTiles: () => Promise<T>,
+): Promise<T> {
+  map.jumpTo(view)
+  afterFirstJump()
+  const tiles = await waitTiles()
+  map.jumpTo(view)
+  return tiles
+}
+
 export async function installPerfHook(
   session: TerrainSession,
   settings: SettingsStore,
@@ -117,18 +152,26 @@ export async function installPerfHook(
         },
       )
     }
-    map.jumpTo({
+    const camera: ProbeView = {
       center: [selected.lon, selected.lat],
       zoom: params.zoom,
       pitch: params.pitch,
       bearing: params.bearing,
-    })
-    if (params.water) {
-      session.simulation.setSpeed('max')
-      const { amountMm, radiusM } = settings.getState().rainfall
-      session.simulation.start(amountMm, radiusM)
     }
-    const tiles = await waitTilesLoaded(map)
+    const tiles = await placeViewOnLoadedTerrain(
+      map,
+      camera,
+      () => {
+        if (!params.water) return
+        session.simulation.setSpeed('max')
+        const { amountMm, radiusM } = settings.getState().rainfall
+        session.simulation.start(amountMm, radiusM)
+      },
+      () => waitTilesLoaded(map),
+    )
+    // 2 回目の jumpTo（読める地形の上で計算された視点）の直後の値。計測の後の値と一致すれば、
+    // 計測の窓の間ずっとこの視点だったと言える（1 回の標本では、窓の間の視点を示せない）
+    const achievedBeforeSettle = { mapZoom: map.getZoom(), mapPitch: map.getPitch() }
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
     if (params.probe === 'view') {
       root.dataset.perfReady = 'true'
@@ -137,17 +180,23 @@ export async function installPerfHook(
     const result = await runFpsProbe(map, params.durationMs, { renderTimes, tileTimes })
     // 測った視点。mode=3d の fps で 3D で描いていなければ（(c) で 2D に落ちた。URL に fallback=0 が無い）、
     // 2D の fps を 3D として記録しないよう失敗にする
-    const view = {
-      view3d: dataset.view3d ?? 'off',
-      mapZoom: map.getZoom(),
-      mapPitch: map.getPitch(),
+    const achievedAfterRun = { mapZoom: map.getZoom(), mapPitch: map.getPitch() }
+    const view3d = dataset.view3d ?? 'off'
+    if (params.mode === '3d' && view3d !== '3d') {
+      throw new Error(`3D で描いていません（data-view3d=${view3d}）。URL に fallback=0 を付ける`)
     }
-    if (params.mode === '3d' && view.view3d !== '3d') {
-      throw new Error(
-        `3D で描いていません（data-view3d=${view.view3d}）。URL に fallback=0 を付ける`,
-      )
+    const report = {
+      params,
+      view3d,
+      // 既存の読み手のために、mapZoom・mapPitch は「計測の後」の値のまま残す
+      ...achievedAfterRun,
+      achievedBeforeSettle,
+      achievedAfterRun,
+      prepareMs,
+      waterBuildMs,
+      tiles,
+      result,
     }
-    const report = { params, ...view, prepareMs, waterBuildMs, tiles, result }
     root.dataset.fpsResult = JSON.stringify(report)
     show(report)
   } catch (error) {
