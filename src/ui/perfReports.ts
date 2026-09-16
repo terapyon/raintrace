@@ -42,6 +42,8 @@ export interface To3dTiming {
   tilesLoaded: boolean
   /** タイルが揃って 2 フレーム描くまで（spec 06 §5「3D を押してから最初の 3D のフレーム」） */
   firstFrameMs: number
+  /** firstFrameMs を取った時点で 3D の視点が定まっていたか（data-view3d-framed。横断レビュー task-5 軽微 1） */
+  framed: boolean
 }
 
 export interface LoadReport {

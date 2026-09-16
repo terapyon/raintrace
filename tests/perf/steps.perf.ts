@@ -8,7 +8,9 @@
  * 3D ありの窓（60 秒）:
  *   RAINTRACE_STEPS_MODE=3d pnpm perf:fps tests/perf/steps.perf.ts -g 所要時間
  *
- * 環境変数: RAINTRACE_STEPS_SITES（ayase,shibuya,minatomirai）・RAINTRACE_STEPS_SIZES（500,1000）・
+ * 環境変数: RAINTRACE_STEPS_SITES（所要時間の計測は ayase,shibuya,minatomirai。RAINTRACE_DEM=record のときは
+ * これに nemuro〈段 2。probe=load 専用。ユーザーの裁定 R5〉も選べ、既定は 4 地点すべてを記録する）・
+ * RAINTRACE_STEPS_SIZES（500,1000）・
  * RAINTRACE_STEPS_RAINS（r10,r100,full）・RAINTRACE_STEPS_MODE（2d|3d）・RAINTRACE_STEPS_UNTIL（settle|window。
  * 既定は 2d なら settle、3d なら window）・RAINTRACE_STEPS_CAP_MS（300000）・RAINTRACE_STEPS_WINDOW_MS（60000）・
  * RAINTRACE_STEPS_OUT_DIR（.handoff/06-perf）・RAINTRACE_DEM（replay|record|live）
@@ -25,7 +27,10 @@ import {
 } from './demFixtures'
 import {
   assertPerfBuild,
+  LOAD_SITES,
+  type LoadSiteName,
   listFromEnv,
+  loadSitesFromEnv,
   outDirFromEnv,
   query,
   readReport,
@@ -156,11 +161,15 @@ test('1 step の所要時間と平衡までの時間（spec 06 §4.2）', async 
   console.log(table)
 })
 
+// steps・fps の 3 地点に、probe=load だけで使う段 2 の地点（nemuro）も足す。今は load の計測が地理院へ直接
+// 接続するので manifest を必須では読まないが、Task 7 のアメンドメントで固定の DEM の記録に含める
+const ALL_RECORD_SITES = Object.keys(LOAD_SITES) as LoadSiteName[]
+
 test('DEM のフィクスチャを記録する（RAINTRACE_DEM=record。計画で決めたこと 5）', async ({
   browser,
 }, testInfo) => {
   test.skip(process.env.RAINTRACE_DEM !== 'record', 'RAINTRACE_DEM=record のときだけ回す')
-  const sites = sitesFromEnv(process.env.RAINTRACE_STEPS_SITES, ALL_SITES)
+  const sites = loadSitesFromEnv(process.env.RAINTRACE_STEPS_SITES, ALL_RECORD_SITES)
   test.setTimeout(sites.length * SIZES.length * 180_000)
   const baseURL = testInfo.project.use.baseURL ?? 'http://localhost:4175'
   const manifest = readManifest()
@@ -170,7 +179,7 @@ test('DEM のフィクスチャを記録する（RAINTRACE_DEM=record。計画�
         browser,
         baseURL,
         async (page) => {
-          await page.goto(query({ lat: SITES[site].lat, lon: SITES[site].lon, size }))
+          await page.goto(query({ lat: LOAD_SITES[site].lat, lon: LOAD_SITES[site].lon, size }))
           await expect(page.locator('[data-range-shown="true"]')).toBeAttached({
             timeout: 120_000,
           })

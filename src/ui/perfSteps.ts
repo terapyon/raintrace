@@ -105,6 +105,13 @@ export async function runStepsProbe(
     // （waterBuilds ≥ 1）まで、降雨を始める前に待つ（perfLoad の待ち方と揃える。横断レビュー R2）
     const container = map.getContainer()
     await waitForDataset(container, (dataset) => dataset.view3dFramed === 'true')
+    // (c) で 2D に落ちていれば ensureWater は 3D のときしか水面を作らないので、水面ありの窓は
+    // waterBuilds が届かないまま 120 秒の一般的な timeout まで待たされる。先に data-view3d を確かめ、
+    // fps の probe と同じはっきりした理由で早く失敗させる（Task 5 review 軽微 2）
+    const view3d = container.dataset.view3d ?? 'off'
+    if (view3d !== '3d') {
+      throw new Error(`3D で描いていません（data-view3d=${view3d}）。URL に fallback=0 を付ける`)
+    }
     if (params.water) {
       await waitForDataset(container, (dataset) => Number(dataset.waterBuilds ?? '0') >= 1)
     }

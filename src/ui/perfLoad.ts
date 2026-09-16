@@ -66,6 +66,8 @@ export async function runLoadProbe(
       waterBuiltMs: waterBuilt === null ? null : waterBuilt - pressed,
       tilesLoaded: tiles.loaded,
       firstFrameMs: first - pressed,
+      // firstFrameMs を取った瞬間に 3D の視点が定まっていたか（Task 5 review 軽微 1）
+      framed: container.dataset.view3dFramed === 'true',
     }
     to3dWindow = [pressed, first]
   }
