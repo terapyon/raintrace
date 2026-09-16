@@ -5,6 +5,8 @@
  * 絶対に起きないようにする保険である
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type Browser, expect, type Page, test } from '@playwright/test'
 import type { FpsResult } from '../../src/map/fpsProbe'
 import { percentile } from '../../src/map/fpsStats'
@@ -64,7 +66,7 @@ const TERRAIN_MAIN_ONLY: readonly Variant[] = [
 ]
 
 /**
- * 計測の組（RAINTRACE_FPS_SET で選ぶ）。Task 9 で組を足す。
+ * 計測の組（RAINTRACE_FPS_SET で選ぶ）。water の組は Task 9 で足した。
  * terrain-main（Task 5）・terrain-tiles（Task 6）は今は同じ中身（Worker の 2 行を消したため）。
  * 別の名を残すのは、既存の記録（.handoff/05-fps/terrain-{main,tiles}.{json,md} や計画書）が
  * どちらの名も使っているため。同じ配列を指させて、直し忘れの二重管理を避ける
@@ -84,7 +86,14 @@ const setName = process.env.RAINTRACE_FPS_SET ?? DEFAULT_SET
 const repeat = Number(process.env.RAINTRACE_FPS_REPEAT ?? '3')
 /** 1 回の計測を待つ上限（readReport） */
 const RUN_TIMEOUT_MS = 240_000
-const outDir = new URL('../../.handoff/05-fps/', import.meta.url)
+/**
+ * 結果（JSON と表）の書き先。RAINTRACE_FPS_OUT_DIR にリポジトリの根からの相対（または絶対）のパスを渡すと
+ * そこへ書く（06 の計測用。spec 06 §4.2）。省くと 05 の記録の場所 .handoff/05-fps/ のまま
+ */
+const repoRoot = new URL('../../', import.meta.url)
+const outDir = pathToFileURL(
+  `${resolve(fileURLToPath(repoRoot), process.env.RAINTRACE_FPS_OUT_DIR ?? '.handoff/05-fps')}/`,
+)
 
 /**
  * 計測用のビルド（pnpm build:perf）でなければフックが入らず、印は一生付かない。そのまま回すと 240 秒の
@@ -202,7 +211,7 @@ function formatTable(rows: readonly Row[]): string {
     '前の挙動であり、今のデータには当てはまらない。',
     '',
     '注意 3（render CPU の列）: onRenderTime を呼ぶのは水面の Custom Layer で、呼び出し元は Task 8 で入った',
-    '（Task 9 の実測は 0.149〜0.416 ms）。水面を描いていない条件ではこの列は「未計測」であって、0 ms という意味ではない。',
+    '（Task 9 の実測は条件ごとの中央値で 0.149〜0.416 ms。ランごとの値は 0.137〜0.463 ms）。水面を描いていない条件ではこの列は「未計測」であって、0 ms という意味ではない。',
     '',
     '注意 4（タイルの待ちが短い理由）: 視点を置く前に data-view3d-framed（3D の視点へ動き終えたこと）を',
     '待っているので、areTilesLoaded() は 0.12〜0.51 秒で真になる。実際に落ち着かせている時間は、その後の',

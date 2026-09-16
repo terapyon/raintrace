@@ -105,7 +105,9 @@ describe('View3d.dispose（横断レビュー m4: コンテキスト喪失の間
     const { controller, setLoaded } = createHarness()
     // MapLibre 6.6.0 は喪失で style.destroy() の後 style = null にするが、map.terrain は残す。そのため
     // getTerrain() は地形を返し、setTerrain(null) は先頭の this.style._checkLoaded() で TypeError を投げる。
-    // getLayer・getSource は this.style?. なので undefined を返す（removeLayer・removeSource には進まない）
+    // getLayer・getSource は this.style?. なので undefined を返す（removeLayer・removeSource には進まない）。
+    // 喪失の後の復帰は Style.serialize()（terrain を含む）を戻すので、地形が外れるのは次の style.load ではない。
+    // このテストは「喪失の間に投げない」ことだけを確かめる（本番では dispose は MapView を外すときだけ）
     const map = controller.map as unknown as Record<string, unknown>
     const setTerrain = vi.fn(() => {
       throw new TypeError("Cannot read properties of null (reading '_checkLoaded')")

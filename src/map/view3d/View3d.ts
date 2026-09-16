@@ -173,9 +173,13 @@ export class View3d {
       // コンテキスト喪失・ベースマップの切り替えの間（スタイルが無い、または読み込み中）は地形を外さない。
       // MapLibre 6.6.0 の Map.setTerrain は先頭で this.style._checkLoaded() を呼び、喪失の間（style = null）は
       // TypeError、読み込み中は Style is not done loading. を投げる（喪失でも map.terrain は残るので
-      // getTerrain() は地形を返す）。次の style.load が setTerrain(stylesheet.terrain ?? null) で地形を外し、
-      // 新しいスタイルには 3D のソースも hillshade も無い。下の購読の解除・水面・タイルの生成の後始末は
-      // スタイルに依らないので、ここで飛ばさない（横断レビュー m4。R1 と同じ isLoaded）
+      // getTerrain() は地形を返す）。ベースマップの切り替えなら、次の style.load が
+      // setTerrain(stylesheet.terrain ?? null) で地形を外し、新しいスタイルには 3D のソースも hillshade も無い。
+      // コンテキスト喪失ではそうならない: 復帰は Style.serialize() を setStyle し直し、その中に terrain と
+      // DEM のソース・hillshade が入る（dev.mjs 24926〜24929・14950・14968）ので、喪失の間に dispose すると、
+      // 復帰の後に後始末済みのタイルの生成につながった地形が戻る。本番では dispose は MapView を外すとき
+      // （map.remove() と一緒）にしか呼ばれないので、この経路には入らない（06 の M0、05 の最終の再レビューの軽微 1）。
+      // 下の購読の解除・水面・タイルの生成の後始末はスタイルに依らないので、ここで飛ばさない（横断レビュー m4。R1 と同じ isLoaded）
       if (this.controller.isLoaded()) this.terrain3d.hide()
       // 3D で傾けた地図を戻す（Task 4 のレビューの積み残し）。dispose は 3D をやめるとき・外すときにだけ
       // 呼ばれる（唯一の呼び出し元は View3dSession.attach の後始末）。コンテキスト喪失では呼ばれない

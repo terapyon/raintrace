@@ -278,6 +278,11 @@ test.describe('3D の表示（spec 05 §5）', () => {
       new RegExp(VIEW3D_LAYER_IDS.water),
       { timeout: 30_000 },
     )
+    // 上の hillshade の無さは、スタイルの読み込み中の空のレイヤーの一覧でも通ってしまう。水面が作り直された
+    // （restore が済んだ）後の一覧で、hillshade が足し直されていないことを確かめ直す（05 の最終の再レビューの軽微 2）
+    const restoredLayers = await mapEl.getAttribute('data-overlay-layers')
+    expect(restoredLayers).toMatch(new RegExp(VIEW3D_LAYER_IDS.water))
+    expect(restoredLayers).not.toMatch(new RegExp(VIEW3D_LAYER_IDS.hillshade))
     await page.getByRole('button', { name: strings.map.basemaps.pale }).click()
     await expect(mapEl).toHaveAttribute('data-basemap', 'pale')
     await expect(mapEl).toHaveAttribute(

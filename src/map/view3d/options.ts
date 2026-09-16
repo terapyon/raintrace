@@ -16,13 +16,14 @@ export interface View3dOptions {
   /** 水面を描くか。false は計測の「地形のみ」の基準（spec 05 §4.4） */
   water: boolean
   /**
-   * (c) 境界より粗いときに 2D に落とすか（spec 05 §4.3）。計測（perfHook の fallback=0）で S の視点
-   * （z16 ×10 p85 は画面の中心のタイルが 14）を 3D のまま測るときだけ false にする
+   * (c) 境界より粗いときに 2D に落とすか（spec 05 §4.3）。計測（perfHook の fallback=0）で S の視点を
+   * 3D のまま測るときだけ false にする。z16 ×10 p85 の実測は描かれるタイル 16 で 2D には落ちないが
+   * （「中心のタイルが 14」は pitch つきの見込みで、実測で否定された）、計測の途中で境界を割らないための保険
    */
   boundaryFallback: boolean
   /**
    * 計測用（perfHook）。水面の render の CPU の時間（ms）。これを呼ぶのは水面の Custom Layer。
-   * 呼び出し元は Task 8 で入り、Task 9 の実測は 0.149〜0.416 ms だった
+   * 呼び出し元は Task 8 で入り、Task 9 の実測は条件ごとの中央値で 0.149〜0.416 ms（ランごとの値は 0.137〜0.463 ms）だった
    */
   onRenderTime: ((ms: number) => void) | null
   /** 計測用。タイル 1 枚の組み立ての時間（ソースごと） */

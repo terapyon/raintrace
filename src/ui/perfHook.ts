@@ -1,6 +1,6 @@
 /**
  * 計測用のフック（spec 05 §4.4、R05-6、計画で決めたこと 20）。pnpm build:perf のときだけビルドに入る。
- * URL（例: ?lat=35.658&lon=139.7016&size=500&probe=fps&z=16&ex=10&pitch=85&water=0&hillshade=on&tiles=main）を読み、
+ * URL（例: ?lat=35.658&lon=139.7016&size=500&probe=fps&z=16&ex=10&pitch=85&water=0&hillshade=on）を読み、
  * 地形の読み込みの後に 3D の視点を置き、タイルが揃うのを待ち、水面ありなら「最速」で降雨を回して計測する。
  * 結果の JSON は <html data-fps-result> と画面の左上に出す（利用者の画面ではないので strings.ts を使わない）
  */
