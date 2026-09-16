@@ -11,6 +11,7 @@ import {
   waitTerrain,
 } from './support/app'
 import { routeGsi } from './support/gsi'
+import { decodePng, waterColoredFraction } from './support/png'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 
@@ -147,5 +148,57 @@ test.describe('3D の表示（spec 05 §5）', () => {
     )
     expect(errors).toEqual([])
     expect(warnings).toEqual([])
+  })
+
+  test('3D で強い降雨をすると、範囲の中心付近の画素が実際に水の配色へ変わる（Task 8 の申し送り。着手前の確かめ P6 の probe の常設化）', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    // 500 mm・半径 200 m（範囲 500 m 四方の 4 分の 1 の円）は着手前の確かめ P6 と同じ強さ。水面の面積が
+    // 画素で判定できるほど広がる（P6: 既定の 100mm・10m では潜水面積が範囲の 0.26% しかなく判定できなかった）
+    await page.goto(`${SHIBUYA}&mm=500&r=200`)
+    await waitTerrain(page)
+    // 矢印（濃い青の icon。#0d47a1）は 3D でも描かれ、水の配色の判定を汚すので消しておく。
+    // このテストは three の Custom Layer（水面）だけを見る
+    await page.getByLabel(strings.panel.showWaterFlow).click()
+    await switchTo3d(page)
+    const mapEl = mapElement(page)
+    const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
+    if (box === null) throw new Error('地図の canvas がありません')
+    // 3D の視点は範囲の中心を画面の中心に置く（frame。View3d.ts）ので、中心付近の小さな窓だけを見れば
+    // 範囲の中心付近を見たことになる。右のパネルや UI から離れた位置（コントローラーの指示 A: 比率で見る）
+    const side = Math.min(box.width, box.height) * 0.25
+    const clip = {
+      x: box.x + box.width / 2 - side / 2,
+      y: box.y + box.height / 2 - side / 2,
+      width: side,
+      height: side,
+    }
+    const before = waterColoredFraction(decodePng(await page.screenshot({ clip })))
+
+    await page.getByRole('button', { name: strings.playback.max, exact: true }).click()
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    await expect(mapEl).toHaveAttribute(
+      'data-visible-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.water),
+      { timeout: 30_000 },
+    )
+    // 冠水した面積が範囲（500 m 四方 = 250,000 m²）の 20% を超えるまで待つ。実測では雨を強くした直後
+    // （1 秒未満）に到達し、そのまま 140,000〜150,000 m² 前後で安定する
+    await expect
+      .poll(
+        async () => {
+          const text = (await page.getByTestId('stat-flooded-area').textContent()) ?? ''
+          return Number(text.replace(/[^0-9.]/g, ''))
+        },
+        { timeout: 30_000 },
+      )
+      .toBeGreaterThan(50_000)
+
+    const after = waterColoredFraction(decodePng(await page.screenshot({ clip })))
+    // 実測（本タスク、3 回）: before は 0、after は 0.855〜0.859。シェーダを discard させると after も 0 になる
+    // （報告に記録）。しきい値は大きな余裕を取っている
+    expect(before).toBeLessThan(0.05)
+    expect(after - before).toBeGreaterThan(0.3)
   })
 })

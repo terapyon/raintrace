@@ -35,6 +35,9 @@ import { packLutRgba, type WaterLut } from './waterTextures'
 const POLYGON_OFFSET_FACTOR = -1
 const POLYGON_OFFSET_UNITS = -4
 
+/** 頂点の格子座標の attribute 名（waterShaders.ts の a_cell と 1 対 1。waterLayer.test.ts が突き合わせる） */
+export const CELL_ATTRIBUTE = 'a_cell'
+
 export interface WaterLayerOptions {
   id: string
   /** 一辺のセル数 N */
@@ -83,21 +86,45 @@ function lutTexture(lut: WaterLut): DataTexture {
   return texture
 }
 
-export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): WaterLayer {
-  const n = options.size
-  const zeros = new Float32Array(n * n)
-  const elevationTexture = floatTexture(options.elevation, n)
-  const depthTexture = floatTexture(zeros, n)
-  let lut = lutTexture(options.lut)
-  const geometry = new BufferGeometry()
-  geometry.setAttribute('a_cell', new BufferAttribute(gridVertices(n), 2))
-  geometry.setIndex(new BufferAttribute(gridIndices(n), 1))
-  const model = gridModelMatrix(options.placement, options.metersToMercator)
-  const uniforms = {
+/** マテリアルの uniform（waterShaders.ts の宣言と名前が 1 対 1。GL なしで作れるので waterLayer.test.ts が確かめる） */
+export interface WaterUniforms {
+  [key: string]: { value: unknown }
+  u_matrix: { value: Matrix4 }
+  u_elevation: { value: DataTexture }
+  u_depth: { value: DataTexture }
+  u_size: { value: number }
+  u_exaggeration: { value: number }
+  u_minDepth: { value: number }
+  u_lut: { value: DataTexture }
+  u_bandsPerM: { value: number }
+  u_maxIndex: { value: number }
+  u_epsilon: { value: number }
+  u_alpha: { value: number }
+}
+
+/**
+ * setWater が使うデータを決める（大きさが合わないバッファ・null は水を消す）。GL を使わないので、
+ * この module で唯一 GL なしで確かめられる振る舞い（Task 8 の申し送りの反映。waterLayer.test.ts）
+ */
+export function resolveDepthData(
+  water: Float32Array | null,
+  n: number,
+  zeros: Float32Array,
+): Float32Array {
+  return water !== null && water.length === n * n ? water : zeros
+}
+
+export function buildUniforms(
+  elevationTexture: DataTexture,
+  depthTexture: DataTexture,
+  lut: DataTexture,
+  options: Pick<WaterLayerOptions, 'size' | 'exaggeration' | 'lut'>,
+): WaterUniforms {
+  return {
     u_matrix: { value: new Matrix4() },
     u_elevation: { value: elevationTexture },
     u_depth: { value: depthTexture },
-    u_size: { value: n },
+    u_size: { value: options.size },
     u_exaggeration: { value: options.exaggeration },
     u_minDepth: { value: options.lut.minDepthM },
     u_lut: { value: lut },
@@ -106,6 +133,19 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
     u_epsilon: { value: options.lut.epsilonM },
     u_alpha: { value: options.lut.alpha },
   }
+}
+
+export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): WaterLayer {
+  const n = options.size
+  const zeros = new Float32Array(n * n)
+  const elevationTexture = floatTexture(options.elevation, n)
+  const depthTexture = floatTexture(zeros, n)
+  let lut = lutTexture(options.lut)
+  const geometry = new BufferGeometry()
+  geometry.setAttribute(CELL_ATTRIBUTE, new BufferAttribute(gridVertices(n), 2))
+  geometry.setIndex(new BufferAttribute(gridIndices(n), 1))
+  const model = gridModelMatrix(options.placement, options.metersToMercator)
+  const uniforms = buildUniforms(elevationTexture, depthTexture, lut, options)
   const material = new RawShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: WATER_VERTEX,
@@ -175,16 +215,21 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
   return {
     layer,
     setWater(water) {
-      depthTexture.image.data = water !== null && water.length === n * n ? water : zeros
+      // 破棄の後は終端（Task 8 の申し送りの反映）: ベースマップの切り替えの間の窓で呼ばれても、
+      // 新しい DataTexture を確保して捨てられないまま残すことがない
+      if (disposed) return
+      depthTexture.image.data = resolveDepthData(water, n, zeros)
       // 次の描画で 1 回だけ texSubImage2D で上げる（N = 512 で 1 MB、1031 で 4.25 MB。spec 05 §3.1）
       depthTexture.needsUpdate = true
       map.triggerRepaint()
     },
     setExaggeration(value) {
+      if (disposed) return
       uniforms.u_exaggeration.value = value
       map.triggerRepaint()
     },
     setLut(next) {
+      if (disposed) return
       const texture = lutTexture(next)
       lut.dispose()
       lut = texture

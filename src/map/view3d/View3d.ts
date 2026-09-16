@@ -145,10 +145,10 @@ export class View3d {
     const { map } = this.controller
     map.off('render', this.onRender)
     map.off('moveend', this.onMoveEnd)
-    if (this.rendering !== 'off') {
-      this.removeWater()
-      this.terrain3d.hide()
-    }
+    // removeWater は冪等で安価なので、rendering の状態に関わらず必ず呼ぶ（hide3d が先に呼んでいる前提に
+    // 頼らない。Task 8 の申し送りの反映）
+    this.removeWater()
+    if (this.rendering !== 'off') this.terrain3d.hide()
     this.terrain3d.dispose()
   }
 
