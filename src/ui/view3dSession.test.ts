@@ -135,6 +135,26 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
     expect(view.setEnabled).not.toHaveBeenCalledWith(true)
   })
 
+  it('読み込みの最中に 3D → 2D → 3D と戻すと、読み込み中の知らせ（loading）をもう一度出し、読み込みは 1 回（横断レビュー m3）', async () => {
+    const view = fakeView()
+    let finish: (factory: View3dFactory) => void = () => {}
+    const load = vi.fn(
+      () =>
+        new Promise<View3dFactory>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const { app } = setup(load)
+    app.getState().setViewMode('3d')
+    app.getState().setViewMode('2d')
+    expect(app.getState().view3dStatus).toBe('off')
+    app.getState().setViewMode('3d')
+    expect(app.getState().view3dStatus).toBe('loading')
+    finish(() => view)
+    await vi.waitFor(() => expect(view.setEnabled).toHaveBeenCalledWith(true))
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
   it('読み込みに失敗したら状態は error。もう一度 3D にすると読み込み直す', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const load = vi.fn(() => Promise.reject(new Error('chunk')))

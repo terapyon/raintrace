@@ -2,27 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GSI_RETRY_DELAYS_MS } from '../../dem/async'
 import type { TileCoord } from '../../dem/tileMath'
 import { createMainGsiFetcher } from './gsiDemTile'
-
-/** 復号に渡す 256 × 256 の画素（すべて 0 → 標高 0 m の有効セル） */
-const TILE_PIXELS = new Uint8ClampedArray(256 * 256 * 4)
-
-class FakeOffscreenCanvas {
-  getContext() {
-    return {
-      globalCompositeOperation: '',
-      drawImage: () => {},
-      getImageData: () => ({ data: TILE_PIXELS }),
-    }
-  }
-}
-
-function stubTileDecoding(width = 256, height = 256): void {
-  vi.stubGlobal('OffscreenCanvas', FakeOffscreenCanvas)
-  vi.stubGlobal(
-    'createImageBitmap',
-    vi.fn(async () => ({ width, height, close: () => {} })),
-  )
-}
+import { okResponse, stubTileDecoding } from './tileDecoding.test-support'
 
 const tile = (x: number, y: number): TileCoord => ({ z: 16, x, y })
 const key = (t: TileCoord): string => `${t.z}/${t.x}/${t.y}`
@@ -40,7 +20,6 @@ describe(
   () => {
     it('枠を待っている間に要らなくなったタイルは、取得せずに reject する（UnwantedTileError）', async () => {
       stubTileDecoding()
-      const okResponse = { status: 200, ok: true, blob: async () => ({}) }
       const pending: { url: string; resolve: () => void }[] = []
       const fetchMock = vi.fn(
         (url: string) =>
@@ -131,7 +110,7 @@ describe(
       stubTileDecoding(1, 1)
       const target = tile(3, 3)
       const isWanted = vi.fn(() => true)
-      const fetchMock = vi.fn(async () => ({ status: 200, ok: true, blob: async () => ({}) }))
+      const fetchMock = vi.fn(async () => okResponse)
       vi.stubGlobal('fetch', fetchMock)
       const fetchTile = createMainGsiFetcher(isWanted)
 

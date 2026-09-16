@@ -118,7 +118,12 @@ export class View3dSession {
 
   private ensureView(): Promise<View3dLike | null> {
     if (this.view !== null) return Promise.resolve(this.view)
-    if (this.loading !== null) return this.loading
+    if (this.loading !== null) {
+      // 読み込みの途中で 2D に戻す（applyMode が状態を off にする）と、3D を選び直したときに読み込み中の
+      // 知らせが消えたままになる。読み込みは続いているので、知らせを立て直す（横断レビュー m3）
+      this.app.getState().setView3dStatus('loading')
+      return this.loading
+    }
     const controller = this.controller
     if (controller === null) return Promise.resolve(null)
     this.app.getState().setView3dStatus('loading')

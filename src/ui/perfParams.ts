@@ -1,3 +1,4 @@
+import { PITCH_3D_DEG } from '../map/view3d/drawnZoom'
 import { DEFAULT_VIEW3D_OPTIONS, type HillshadeOption } from '../map/view3d/options'
 import { VERTICAL_EXAGGERATIONS } from '../state/persistedSettings'
 
@@ -39,7 +40,8 @@ export function parsePerfParams(search: string): PerfParams | null {
     probe,
     mode: params.get('mode') === '2d' ? '2d' : '3d',
     zoom: number('z', 16, 0, 18),
-    pitch: number('pitch', 60, 0, 85),
+    // 既定は 3D の視点の pitch（View3d.frame と同じ値。横断レビュー m5）
+    pitch: number('pitch', PITCH_3D_DEG, 0, 85),
     bearing: number('bearing', 0, -180, 180),
     exaggeration: oneOf(VERTICAL_EXAGGERATIONS, Number(params.get('ex')), 1),
     water: params.get('water') !== '0',

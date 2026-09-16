@@ -1,30 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { demZoom } from '../../dem/tileZoom'
 import { createMainTileGenerator } from './mainTileGenerator'
-
-/** 復号に渡す 256 × 256 の画素（すべて 0 → 標高 0 m の有効セル） */
-const TILE_PIXELS = new Uint8ClampedArray(256 * 256 * 4)
-
-class FakeOffscreenCanvas {
-  getContext() {
-    return {
-      globalCompositeOperation: '',
-      drawImage: () => {},
-      getImageData: () => ({ data: TILE_PIXELS }),
-    }
-  }
-}
-
-const okResponse = { status: 200, ok: true, blob: async () => ({}) }
-const notFoundResponse = { status: 404, ok: false, blob: async () => ({}) }
-
-function stubTileDecoding(width = 256, height = 256): void {
-  vi.stubGlobal('OffscreenCanvas', FakeOffscreenCanvas)
-  vi.stubGlobal(
-    'createImageBitmap',
-    vi.fn(async () => ({ width, height, close: () => {} })),
-  )
-}
+import { notFoundResponse, okResponse, stubTileDecoding } from './tileDecoding.test-support'
 
 /** z16 の隣り合う 2 枚は、同じ z15 の親（dem5a）を出所にする（ancestorTile） */
 const TILE_A = { z: demZoom(16), x: 2, y: 2 }

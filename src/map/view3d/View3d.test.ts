@@ -20,7 +20,7 @@ function createHarness(): {
   const getContainer = vi.fn(() => ({ dataset }))
   const map = {
     on: (event: string, handler: () => void) => handlers.set(event, handler),
-    off: () => {},
+    off: vi.fn(),
     isMoving: () => false,
     getContainer,
     getZoom: vi.fn(() => 16),
@@ -97,5 +97,55 @@ describe('View3d.afterRender（R1: スタイルの読み込み中は境界の判
     // 保留（boundaryCheckPending）が立っていなければ、読み込みが済んでも判定はしない
     expect(getContainer).toHaveBeenCalled()
     expect(checkBoundary).not.toHaveBeenCalled()
+  })
+})
+
+describe('View3d.dispose（横断レビュー m4: コンテキスト喪失の間に外す）', () => {
+  it('スタイルが無い（喪失の間）ときは地形を外さず（setTerrain を呼ばず）、スタイルに依らない後始末は済ませる', () => {
+    const { controller, setLoaded } = createHarness()
+    // MapLibre 6.6.0 は喪失で style.destroy() の後 style = null にするが、map.terrain は残す。そのため
+    // getTerrain() は地形を返し、setTerrain(null) は先頭の this.style._checkLoaded() で TypeError を投げる。
+    // getLayer・getSource は this.style?. なので undefined を返す（removeLayer・removeSource には進まない）
+    const map = controller.map as unknown as Record<string, unknown>
+    const setTerrain = vi.fn(() => {
+      throw new TypeError("Cannot read properties of null (reading '_checkLoaded')")
+    })
+    Object.assign(map, {
+      getTerrain: () => ({ source: 'terrain-3d-dem', exaggeration: 1 }),
+      setTerrain,
+      getLayer: () => undefined,
+      getSource: () => undefined,
+      removeLayer: vi.fn(),
+      removeSource: vi.fn(),
+      easeTo: vi.fn(),
+    })
+    const view = new View3d(controller, {
+      options: DEFAULT_VIEW3D_OPTIONS,
+      basemap: 'pale',
+      exaggeration: 1,
+      palette: 'stepped',
+      onRendering: () => {},
+    })
+    const internals = view as unknown as {
+      rendering: string
+      water: { dispose: () => void } | null
+      terrain3d: { dispose: () => void }
+    }
+    internals.rendering = '3d'
+    const water = { dispose: vi.fn() }
+    internals.water = water
+    const terrainDispose = vi.spyOn(internals.terrain3d, 'dispose')
+
+    setLoaded(false)
+    expect(() => view.dispose()).not.toThrow()
+
+    expect(setTerrain).not.toHaveBeenCalled()
+    // 購読・水面・タイルの生成（Terrain3d.dispose）はスタイルに依らず手放す
+    expect(map.off).toHaveBeenCalledWith('render', expect.any(Function))
+    expect(map.off).toHaveBeenCalledWith('moveend', expect.any(Function))
+    expect(map.off).toHaveBeenCalledWith('webglcontextlost', expect.any(Function))
+    expect(water.dispose).toHaveBeenCalledTimes(1)
+    expect(internals.water).toBeNull()
+    expect(terrainDispose).toHaveBeenCalledTimes(1)
   })
 })

@@ -170,7 +170,13 @@ export class View3d {
     // 頼らない。Task 8 の申し送りの反映）
     this.removeWater()
     if (this.rendering !== 'off') {
-      this.terrain3d.hide()
+      // コンテキスト喪失・ベースマップの切り替えの間（スタイルが無い、または読み込み中）は地形を外さない。
+      // MapLibre 6.6.0 の Map.setTerrain は先頭で this.style._checkLoaded() を呼び、喪失の間（style = null）は
+      // TypeError、読み込み中は Style is not done loading. を投げる（喪失でも map.terrain は残るので
+      // getTerrain() は地形を返す）。次の style.load が setTerrain(stylesheet.terrain ?? null) で地形を外し、
+      // 新しいスタイルには 3D のソースも hillshade も無い。下の購読の解除・水面・タイルの生成の後始末は
+      // スタイルに依らないので、ここで飛ばさない（横断レビュー m4。R1 と同じ isLoaded）
+      if (this.controller.isLoaded()) this.terrain3d.hide()
       // 3D で傾けた地図を戻す（Task 4 のレビューの積み残し）。dispose は 3D をやめるとき・外すときにだけ
       // 呼ばれる（唯一の呼び出し元は View3dSession.attach の後始末）。コンテキスト喪失では呼ばれない
       // ——喪失の間は 3D のまま復帰を待つので、ここで pitch を戻すと復帰と争う（spec 05 §3.7）。
@@ -316,6 +322,8 @@ export class View3d {
   private measuredCentreZoom(): DrawnTileZoom | null {
     const { map } = this.controller
     if (this.rendering !== '3d' || map.getTerrain() === null) return null
+    // map.terrain.tileManager.getRenderableTiles() は MapLibre の内部（公開 API ではない）。6.6.0 に固定して
+    // 使っている。上げるときは有無と戻り値（tileID.canonical）を確かめる（横断レビュー m6）
     const tiles = map.terrain.tileManager.getRenderableTiles().map((tile) => tile.tileID.canonical)
     return drawnTileZoomAt(tiles, MercatorCoordinate.fromLngLat(map.getCenter()))
   }
