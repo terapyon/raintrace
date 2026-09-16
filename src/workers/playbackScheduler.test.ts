@@ -269,3 +269,78 @@ describe('PlaybackScheduler: 止めたら実行速度を 0 に戻す（Step・Re
     expect(h.frames.at(-1)).toEqual({ step: 100, settled: true, stepsPerSecond: 0 })
   })
 })
+
+describe('PlaybackScheduler: 1 step の所要時間（計測用の onStepTime。spec 06 §3、計画で決めたこと 1）', () => {
+  /**
+   * step ごとに時計を stepMs[k] 進める。onStepTime を渡すかを選べる。play の直後の tick を 1 回だけ回す。
+   * settleAt 回目の step で settled を返す
+   */
+  function timed(
+    stepMs: readonly number[],
+    speed: PlaybackSpeed,
+    withTiming: boolean,
+    settleAt = Number.POSITIVE_INFINITY,
+  ) {
+    const clock = { now: 0 }
+    let nowCalls = 0
+    let k = 0
+    const times: number[] = []
+    const timers: (() => void)[] = []
+    const scheduler = new PlaybackScheduler({
+      now: () => {
+        nowCalls++
+        return clock.now
+      },
+      setTimer: (run) => {
+        timers.push(run)
+        return timers.length
+      },
+      clearTimer: () => {},
+      step: () => {
+        clock.now += stepMs[k % stepMs.length] ?? 1
+        k++
+        return stats(k, k >= settleAt)
+      },
+      sendFrame: () => true,
+      ...(withTiming ? { onStepTime: (ms: number) => times.push(ms) } : {}),
+    })
+    scheduler.setSpeed(speed)
+    scheduler.play()
+    timers.shift()?.()
+    return { scheduler, times, nowCalls: () => nowCalls, steps: () => k }
+  }
+
+  it('「最速」: 予算の判定で読む now() の差を 1 step の時間として渡す（最後の step は予算の判定の値で閉じる）', () => {
+    const t = timed([5, 3, 4], 'max', true)
+    expect(t.steps()).toBe(3)
+    expect(t.times).toEqual([5, 3, 4])
+  })
+
+  it('速度 1: ループを上限で抜けた最後の step は、実行速度の窓の now() で閉じる', () => {
+    const t = timed([7], 1, true)
+    expect(t.steps()).toBe(1)
+    expect(t.times).toEqual([7])
+  })
+
+  it('平衡で止まった tick の最後の step も数える', () => {
+    const t = timed([2, 6], 'max', true, 2)
+    expect(t.steps()).toBe(2)
+    expect(t.times).toEqual([2, 6])
+  })
+
+  it('now() の呼び出し回数は onStepTime の有無で変わらない（タイマーの呼び出しを増やさない）', () => {
+    // play 1 + tick の開始 1 + 予算の判定 4 + 実行速度の窓 1 + 次の tick の予約 1 = 8（「最速」・5・3・4 ms）
+    expect(timed([5, 3, 4], 'max', true).nowCalls()).toBe(8)
+    expect(timed([5, 3, 4], 'max', false).nowCalls()).toBe(8)
+    // play 1 + tick の開始 1 + 予算の判定 1 + 実行速度の窓 1 + 次の tick の予約 1 = 5（速度 1）
+    expect(timed([7], 1, true).nowCalls()).toBe(5)
+    expect(timed([7], 1, false).nowCalls()).toBe(5)
+  })
+
+  it('Step ボタンの 1 step（stepOnce）は数えない', () => {
+    const t = timed([5, 3, 4], 'max', true)
+    t.scheduler.pause()
+    t.scheduler.stepOnce()
+    expect(t.times).toEqual([5, 3, 4])
+  })
+})

@@ -6,7 +6,7 @@
     // DOM と WebWorker の lib を同じコンパイル単位に置かない（tech-spec §10.3）
     "lib": ["ES2023", "WebWorker"]
   },
-  "include": ["src/workers"],
+  "include": ["src/workers", "src/perf-env.d.ts"],
   "exclude": ["src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.sim.json" }, { "path": "./tsconfig.core.json" }]
 }

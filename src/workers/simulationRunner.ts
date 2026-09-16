@@ -11,6 +11,8 @@ export interface RunnerPorts {
   now(): number
   setTimer(run: () => void, delayMs: number): unknown
   clearTimer(handle: unknown): void
+  /** 計測用（spec 06 §3）。PlaybackScheduler にそのまま渡す。計測用のビルドの Worker だけが渡す */
+  onStepTime?: (ms: number) => void
 }
 
 /** 雨を置く前と reset の直後の統計 */
@@ -73,6 +75,8 @@ export class SimulationRunner {
       clearTimer: ports.clearTimer,
       step: () => this.step(),
       sendFrame: (stats, stepsPerSecond) => this.sendFrame(stats, stepsPerSecond),
+      // exactOptionalPropertyTypes のため、無いときは項目ごと渡さない
+      ...(ports.onStepTime === undefined ? {} : { onStepTime: ports.onStepTime }),
     })
   }
 

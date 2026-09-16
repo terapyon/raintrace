@@ -16,6 +16,11 @@ export interface SchedulerPorts {
   step(): StepStats
   /** frame を送る。返却済みのバッファが無くて送れなければ false（新しいバッファは確保しない） */
   sendFrame(stats: StepStats, stepsPerSecond: number): boolean
+  /**
+   * 計測用（spec 06 §3。計測用のビルドの Worker だけが渡す。計画で決めたこと 1）。tick の中の 1 step の所要時間（ms）。
+   * 時間は tick がすでに読んでいる now() の差で求め、now() の呼び出し回数を増やさない。stepOnce の 1 step は数えない
+   */
+  onStepTime?: (ms: number) => void
 }
 
 /**
@@ -109,10 +114,19 @@ export class PlaybackScheduler {
     if (!this.running) return
     const start = this.ports.now()
     const cap = this.cap()
+    const onStepTime = this.ports.onStepTime
     let steps = 0
     let last: StepStats | null = null
-    // 先に予算を調べるので、1 step が予算を超えても 1 tick に 1 step は回る
-    while (steps < cap && this.ports.now() - start < TICK_BUDGET_MS) {
+    // 計測中の step の始まり（その直前に読んだ now()）。step の後に最初に読む now() で閉じる。NaN は計測中でない
+    let stepStart = Number.NaN
+    // 先に予算を調べるので、1 step が予算を超えても 1 tick に 1 step は回る。
+    // now() を読むのは steps < cap のときだけ（書き換える前の `steps < cap && now() - start < 予算` と同じ回数）
+    while (steps < cap) {
+      const now = this.ports.now()
+      if (onStepTime !== undefined && !Number.isNaN(stepStart)) onStepTime(now - stepStart)
+      stepStart = Number.NaN
+      if (now - start >= TICK_BUDGET_MS) break
+      stepStart = now
       last = this.ports.step()
       steps++
       if (last.settled) {
@@ -121,7 +135,9 @@ export class PlaybackScheduler {
         break
       }
     }
-    this.measure(steps)
+    const measuredAt = this.measure(steps)
+    // 上限か平衡でループを抜けた最後の step は、実行速度の窓で読んだ now() で閉じる
+    if (onStepTime !== undefined && !Number.isNaN(stepStart)) onStepTime(measuredAt - stepStart)
     // 平衡で止まったら実行速度は 0（平衡の frame と、その後の表示に再生中の値を載せない）
     if (!this.running) this.rate = 0
     if (last !== null) this.offer(last)
@@ -139,7 +155,8 @@ export class PlaybackScheduler {
     return cap
   }
 
-  private measure(steps: number): void {
+  /** 実行速度の窓を進める。読んだ now() を返す（tick が最後の step の時間を閉じるのに使う） */
+  private measure(steps: number): number {
     this.windowSteps += steps
     const now = this.ports.now()
     const elapsed = now - this.windowStart
@@ -148,5 +165,6 @@ export class PlaybackScheduler {
       this.windowStart = now
       this.windowSteps = 0
     }
+    return now
   }
 }
