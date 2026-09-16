@@ -1,5 +1,4 @@
 import type {
-  ArrowSpacingM,
   FrameMessage,
   MainToWorkerMessage,
   PlaybackSpeed,
@@ -213,7 +212,7 @@ export class SimulationClient {
   setSpeed(speed: PlaybackSpeed): void {
     this.command({ type: 'setSpeed', speed })
   }
-  setArrows(visible: boolean, spacingM: ArrowSpacingM): void {
+  setArrows(visible: boolean, spacingM: number): void {
     this.command({ type: 'setArrows', visible, spacingM })
   }
 

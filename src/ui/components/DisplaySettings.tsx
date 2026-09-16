@@ -5,6 +5,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { useStore } from 'zustand'
 import type { AppStore } from '../../state/appStore'
+import { arrowSpacingForRange } from '../../state/arrowSpacing'
 import {
   ARROW_SPACINGS,
   BASEMAPS,
@@ -29,6 +30,7 @@ type Display = PersistedSettings['display']
 export function DisplaySettings({ app, settings }: { app: AppStore; settings: SettingsStore }) {
   const layers = useStore(app, (s) => s.display)
   const display = useStore(settings, (s) => s.display)
+  const sizeM = useStore(settings, (s) => s.area.sizeM)
   const mapSettings = useStore(settings, (s) => s.map)
   const setLayer = useStore(app, (s) => s.setDisplay)
   const setDisplay = (patch: Partial<Display>): void => settings.getState().setDisplay(patch)
@@ -78,7 +80,7 @@ export function DisplaySettings({ app, settings }: { app: AppStore; settings: Se
         >
           {ARROW_SPACINGS.map((m) => (
             <ToggleButton key={m} value={m}>
-              {strings.panel.flowSpacingValue(m)}
+              {strings.panel.flowSpacingValue(arrowSpacingForRange(m, sizeM))}
             </ToggleButton>
           ))}
         </ToggleButtonGroup>

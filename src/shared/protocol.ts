@@ -10,9 +10,6 @@ import type { RainfallInput, StepStats } from '../simulation/types.ts'
 /** 再生速度（spec 04 §5.2）。'max' は「最速」（step 数の上限を持たず、時間予算だけで回す） */
 export type PlaybackSpeed = 0.25 | 0.5 | 1 | 2 | 4 | 'max'
 
-/** 矢印の間隔（m。base-spec §32） */
-export type ArrowSpacingM = 5 | 10 | 20
-
 /**
  * 再生の命令（spec 04 §5.1）。setArrows は spec の setArrowSpacing の代わり。
  * 矢印が非表示なら Worker は flowVectors() を呼ばない（呼ぶたびに 2 × N² を確保する）。
@@ -22,7 +19,9 @@ export type ArrowSpacingM = 5 | 10 | 20
  * Worker は受け取った runId をそのまま覚え、以降の frame・simFailed に載せて返す。PlaybackScheduler の
  * 保留枠は 1 つしかなく、reset が送る step 0 の frame（ZERO_STATS）は、直後に start が来ると
  * 届く前に discardPending() で消えることがあるので、frame の新旧は「step が 0 かどうか」ではなく
- * runId で区別する
+ * runId で区別する。
+ *
+ * setArrows の spacingM は実際の間隔（m）。範囲に比例させた後の値（spec 05 §3.3）
  */
 export type SimulationCommand =
   | { type: 'start'; rain: RainfallInput; runId: number }
@@ -31,7 +30,7 @@ export type SimulationCommand =
   | { type: 'step' }
   | { type: 'reset'; runId: number }
   | { type: 'setSpeed'; speed: PlaybackSpeed }
-  | { type: 'setArrows'; visible: boolean; spacingM: ArrowSpacingM }
+  | { type: 'setArrows'; visible: boolean; spacingM: number }
   | { type: 'returnBuffer'; buffer: ArrayBuffer }
 
 export type MainToWorkerMessage =

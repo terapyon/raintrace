@@ -1,9 +1,4 @@
-import type {
-  ArrowSpacingM,
-  SimFailureReason,
-  SimulationCommand,
-  WorkerToMainMessage,
-} from '../shared/protocol'
+import type { SimFailureReason, SimulationCommand, WorkerToMainMessage } from '../shared/protocol'
 import { TsSimulationEngine } from '../simulation/TsSimulationEngine'
 import type { Depression, TerrainGrid } from '../simulation/terrain/types'
 import type { RainfallInput, SimulationEvent, StepStats } from '../simulation/types'
@@ -60,7 +55,7 @@ export class SimulationRunner {
   private events: SimulationEvent[] = []
   private lastStats: StepStats = ZERO_STATS
   private arrowsVisible = false
-  private arrowSpacingM: ArrowSpacingM = 10
+  private arrowSpacingM = 10
   /** 表示・間隔が変わった、または地形・水が変わった。次の frame で必ず矢印を送る */
   private arrowsDirty = false
   private arrowsAt = Number.NEGATIVE_INFINITY
@@ -186,7 +181,9 @@ export class SimulationRunner {
     this.scheduler.offer(ZERO_STATS)
   }
 
-  private setArrows(visible: boolean, spacingM: ArrowSpacingM): void {
+  private setArrows(visible: boolean, spacingM: number): void {
+    // メインが送る値だが、Worker に届く命令は信用しない（04 の A7 と同じ）
+    if (!(Number.isFinite(spacingM) && spacingM > 0)) return
     this.arrowsVisible = visible
     this.arrowSpacingM = spacingM
     this.arrowsDirty = true

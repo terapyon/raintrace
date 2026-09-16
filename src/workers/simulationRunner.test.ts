@@ -320,6 +320,19 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     expect(last?.stats.settled).toBe(true)
     expect(last?.arrows).not.toBeNull()
   })
+
+  it('正の有限でない間隔（0・負・NaN・無限）は無視する（Worker に届く命令を信用しない）', () => {
+    const h = setup()
+    h.runner.loadTerrain(1, basin(), [])
+    h.returnAll()
+    const count = h.frames().length
+    for (const spacingM of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      h.runner.handle({ type: 'setArrows', visible: true, spacingM })
+    }
+    expect(h.frames()).toHaveLength(count)
+    h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
+    expect(h.frames().length).toBeGreaterThan(count)
+  })
 })
 
 describe('SimulationRunner: 失敗と地形の差し替え', () => {

@@ -4,6 +4,7 @@ import { wrapLongitude } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
+import { arrowSpacingForRange } from '../state/arrowSpacing'
 import { type ClickEvent, type ClickTarget, reduceClick } from '../state/clickState'
 import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
@@ -43,11 +44,12 @@ export class TerrainSession {
     this.view3d = new View3dSession(simulation, store, settings)
   }
 
-  /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通。計画で決めたこと 10） */
+  /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通）を範囲に比例させた値（spec 05 §3.3） */
   private overlayDisplay(): OverlayDisplay {
+    const { display, area } = this.settings.getState()
     return {
       ...this.store.getState().display,
-      flowSpacingM: this.settings.getState().display.flowVectorSpacingM,
+      flowSpacingM: arrowSpacingForRange(display.flowVectorSpacingM, area.sizeM),
     }
   }
 

@@ -4,7 +4,8 @@ import type { MapController } from '../map/MapController'
 import { WaterOverlay } from '../map/WaterOverlay'
 import type { WaterPalette } from '../map/waterColormap'
 import { waterArrowFeatures } from '../map/waterFeatures'
-import type { ArrowSpacingM, PlaybackSpeed, TerrainPayload } from '../shared/protocol'
+import type { PlaybackSpeed, TerrainPayload } from '../shared/protocol'
+import { arrowSpacingForRange } from '../state/arrowSpacing'
 import type { SettingsState, SettingsStore } from '../state/settingsStore'
 import type { DisplayStats, SimulationStore } from '../state/simulationStore'
 import { createThrottle, type Throttle } from '../state/throttle'
@@ -43,7 +44,7 @@ export class SimulationSession {
   private runId = 0
   private overlay: WaterOverlay | null = null
   private readonly arrowsThrottle: Throttle<Float32Array>
-  private arrowSettings: { visible: boolean; spacingM: ArrowSpacingM } = {
+  private arrowSettings: { visible: boolean; spacingM: number } = {
     visible: true,
     spacingM: 10,
   }
@@ -80,14 +81,18 @@ export class SimulationSession {
     })
     client.onCrash(() => this.onCrash())
 
-    // 矢印の表示・間隔と水深の配色は設定のストアが持つ（tech-spec §8.1）。ここで初期値を反映し、以後の変更も購読する
-    const apply = (display: SettingsState['display']): void => {
-      this.setArrows(display.showFlowVectors, display.flowVectorSpacingM)
+    // 矢印の表示・間隔（範囲に比例させる。spec 05 §3.3）と水深の配色は設定のストアが持つ（tech-spec §8.1）
+    const apply = (state: SettingsState): void => {
+      const { display, area } = state
+      this.setArrows(
+        display.showFlowVectors,
+        arrowSpacingForRange(display.flowVectorSpacingM, area.sizeM),
+      )
       this.setPalette(display.waterDepthPalette)
     }
-    apply(settings.getState().display)
+    apply(settings.getState())
     settings.subscribe((state, previous) => {
-      if (state.display !== previous.display) apply(state.display)
+      if (state.display !== previous.display || state.area !== previous.area) apply(state)
     })
   }
 
@@ -140,7 +145,7 @@ export class SimulationSession {
   }
 
   /** 水の流れの矢印の表示と間隔。非表示なら Worker は flowVectors() を呼ばない */
-  setArrows(visible: boolean, spacingM: ArrowSpacingM): void {
+  setArrows(visible: boolean, spacingM: number): void {
     this.arrowSettings = { visible, spacingM }
     this.overlay?.setArrowsVisible(visible)
     if (this.terrain !== null) this.client.setArrows(visible, spacingM)
