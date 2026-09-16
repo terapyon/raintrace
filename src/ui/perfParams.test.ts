@@ -11,7 +11,7 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
     expect(
       parsePerfParams(
         '?probe=steps&mode=3d&z=16&pitch=85&bearing=10&ex=10&water=0&hillshade=off&ms=5000&fallback=0&settle=20000' +
-          '&arrows=0&depthEvery=4&pause=1&until=window&cap=120000&at=35.7623,139.8246',
+          '&arrows=0&arrowsM=5&depthEvery=4&pause=1&until=window&cap=120000&at=35.7623,139.8246',
       ),
     ).toEqual({
       probe: 'steps',
@@ -27,6 +27,7 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       settleMs: 20_000,
       arrows: false,
       depthEvery: 4,
+      arrowsM: 5,
       pauseBeforeRun: true,
       until: 'window',
       capMs: 120_000,
@@ -34,7 +35,7 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
     })
   })
 
-  it('無い・不正な項目は既定値（3D・z16・pitch 60・倍率 1・水面あり・矢印あり・転送の間引きの指定なし・止めない・平衡まで 300 秒・地点なし）', () => {
+  it('無い・不正な項目は既定値（3D・z16・pitch 60・倍率 1・水面あり・矢印あり・転送の間引きと矢印の間隔の指定なし・止めない・平衡まで 300 秒・地点なし）', () => {
     expect(parsePerfParams('?probe=load&z=99&pitch=-5&ex=3&hillshade=x&ms=1&cap=5&at=x')).toEqual({
       probe: 'load',
       mode: '3d',
@@ -49,6 +50,7 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       settleMs: 3000,
       arrows: true,
       depthEvery: null,
+      arrowsM: null,
       pauseBeforeRun: false,
       until: 'settle',
       capMs: 300_000,
@@ -62,6 +64,17 @@ describe('depthEvery（spec 06 §5.1）', () => {
     expect(parsePerfParams('?probe=fps&depthEvery=3')?.depthEvery).toBe(1)
     expect(parsePerfParams('?probe=fps&depthEvery=2')?.depthEvery).toBe(2)
     expect(parsePerfParams('?probe=fps')?.depthEvery).toBeNull()
+  })
+})
+
+describe('arrowsM（spec 06 §5.1）', () => {
+  it('5・10・20 を読み、それ以外の値と省いたときは null（設定を触らない）', () => {
+    expect(parsePerfParams('?probe=fps&arrowsM=5')?.arrowsM).toBe(5)
+    expect(parsePerfParams('?probe=fps&arrowsM=10')?.arrowsM).toBe(10)
+    expect(parsePerfParams('?probe=fps&arrowsM=20')?.arrowsM).toBe(20)
+    expect(parsePerfParams('?probe=fps&arrowsM=15')?.arrowsM).toBeNull()
+    expect(parsePerfParams('?probe=fps&arrowsM=')?.arrowsM).toBeNull()
+    expect(parsePerfParams('?probe=fps')?.arrowsM).toBeNull()
   })
 })
 

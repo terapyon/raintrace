@@ -39,7 +39,7 @@ interface Variant {
   label: string
   hillshade?: string
   water: '0' | '1'
-  /** URL に足す項目（depthEvery・pause・arrows。spec 06 §5.1） */
+  /** URL に足す項目（depthEvery・pause・arrows・arrowsM。spec 06 §5.1） */
   extra?: Record<string, string>
 }
 
@@ -137,7 +137,7 @@ const SETS: Record<string, SetDef> = {
       },
     ],
   },
-  // 51 fps の切り分け（spec 06 §5.1）。05 と同じ 1000 m・z16 ×10 p85 だけ（7 条件。既定の 3 回で 21 回）
+  // 51 fps の切り分け（spec 06 §5.1）。05 と同じ 1000 m・z16 ×10 p85 だけ（9 条件。既定の 3 回で 27 回）
   isolate: {
     sizes: ['1000'],
     views: ['z16 ×10 p85'],
@@ -154,6 +154,17 @@ const SETS: Record<string, SetDef> = {
         label: '水面あり・depthEvery=4・矢印なし（arrows=0）',
         water: '1',
         extra: { depthEvery: '4', arrows: '0' },
+      },
+      // 矢印の本数と fps の関係（M2 の準備で追加）。1000 m の実効の間隔は設定の 2 倍、既定（10 m）は実効 20 m・2,500 本
+      {
+        label: '水面あり・矢印 5 m（1000 m で実効 10 m・10,000 本）',
+        water: '1',
+        extra: { arrowsM: '5' },
+      },
+      {
+        label: '水面あり・矢印 20 m（実効 40 m・625 本）',
+        water: '1',
+        extra: { arrowsM: '20' },
       },
     ],
   },

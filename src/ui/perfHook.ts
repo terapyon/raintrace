@@ -56,6 +56,8 @@ export async function installPerfHook(
     verticalExaggeration: params.exaggeration,
     // arrows=0: 水の流れの矢印を止める（spec 06 §5.1、計画で決めたこと 8）。Worker は flowVectors() を呼ばない
     ...(params.arrows ? {} : { showFlowVectors: false }),
+    // arrowsM=5・10・20: 矢印の間隔の設定（1000 m の実効はその 2 倍）。省けば設定を触らない（spec 06 §5.1）
+    ...(params.arrowsM === null ? {} : { flowVectorSpacingM: params.arrowsM }),
   })
   /** 結果を <html data-*> と画面に出す */
   const publish = (key: 'stepsResult' | 'loadResult', report: unknown): void => {

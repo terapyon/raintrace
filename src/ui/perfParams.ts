@@ -1,6 +1,6 @@
 import { PITCH_3D_DEG } from '../map/view3d/drawnZoom'
 import { DEFAULT_VIEW3D_OPTIONS, type HillshadeOption } from '../map/view3d/options'
-import { VERTICAL_EXAGGERATIONS } from '../state/persistedSettings'
+import { ARROW_SPACINGS, VERTICAL_EXAGGERATIONS } from '../state/persistedSettings'
 
 /** fps・view（spec 05 §4.4）、steps・load（spec 06 §3・§4.2） */
 export type PerfProbe = 'fps' | 'view' | 'steps' | 'load'
@@ -35,6 +35,11 @@ export interface PerfParams {
    * null は指定なし（View3d の既定に任せる。Task 22 で 1000 m の既定が変わりうる）
    */
   depthEvery: (typeof DEPTH_EVERY)[number] | null
+  /**
+   * 矢印の間隔の設定（arrowsM=5・10・20。表示の設定の flowVectorSpacingM を置き換える。1000 m の実効の間隔はその 2 倍）。
+   * 矢印の本数と fps の関係を測る（spec 06 §5.1、M3）。null は指定なし・不正な値（設定を触らない）
+   */
+  arrowsM: (typeof ARROW_SPACINGS)[number] | null
   /** true は fps の窓の直前に再生を一時停止し、止めた水面を測る（pause=1。spec 06 §5.1、計画で決めたこと 7） */
   pauseBeforeRun: boolean
   /** probe=steps: settle は平衡か cap まで、window は durationMs だけ回す（計画で決めたこと 4） */
@@ -91,6 +96,7 @@ export function parsePerfParams(search: string): PerfParams | null {
       params.get('depthEvery') === null
         ? null
         : oneOf(DEPTH_EVERY, Number(params.get('depthEvery')), 1),
+    arrowsM: ARROW_SPACINGS.find((m) => String(m) === params.get('arrowsM')) ?? null,
     pauseBeforeRun: params.get('pause') === '1',
     until: params.get('until') === 'window' ? 'window' : 'settle',
     capMs: number('cap', 300_000, 1000, 1_800_000),
