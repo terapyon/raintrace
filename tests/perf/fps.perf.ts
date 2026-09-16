@@ -53,16 +53,21 @@ const SIZES = ['500', '1000'] as const
 const SHIBUYA = { lat: '35.658000', lon: '139.701600' }
 const VIEWPORT = { width: 960, height: 600 }
 
-/** 計測の組（RAINTRACE_FPS_SET で選ぶ）。Task 6・9 で組を足す */
+/** main・地形のみの 2 変種（Task 5）。Worker を採らなかった（Task 6）ので、地形の生成場所は常に main */
+const TERRAIN_MAIN_ONLY: readonly Variant[] = [
+  { label: 'main・hillshade あり・地形のみ', tiles: 'main', hillshade: 'on', water: '0' },
+  { label: 'main・hillshade なし・地形のみ', tiles: 'main', hillshade: 'off', water: '0' },
+]
+
+/**
+ * 計測の組（RAINTRACE_FPS_SET で選ぶ）。Task 9 で組を足す。
+ * terrain-main（Task 5）・terrain-tiles（Task 6）は今は同じ中身（Worker の 2 行を消したため）。
+ * 別の名を残すのは、既存の記録（.handoff/05-fps/terrain-{main,tiles}.{json,md} や計画書）が
+ * どちらの名も使っているため。同じ配列を指させて、直し忘れの二重管理を避ける
+ */
 const SETS: Record<string, readonly Variant[]> = {
-  'terrain-main': [
-    { label: 'main・hillshade あり・地形のみ', tiles: 'main', hillshade: 'on', water: '0' },
-    { label: 'main・hillshade なし・地形のみ', tiles: 'main', hillshade: 'off', water: '0' },
-  ],
-  'terrain-tiles': [
-    { label: 'main・hillshade あり・地形のみ', tiles: 'main', hillshade: 'on', water: '0' },
-    { label: 'main・hillshade なし・地形のみ', tiles: 'main', hillshade: 'off', water: '0' },
-  ],
+  'terrain-main': TERRAIN_MAIN_ONLY,
+  'terrain-tiles': TERRAIN_MAIN_ONLY,
 }
 
 const DEFAULT_SET = 'terrain-main'
@@ -140,7 +145,7 @@ function formatTable(rows: readonly Row[]): string {
   const lines = [
     `描画: ${rows[0]?.result.renderer ?? '不明'}（実 GPU・headless。rAF は 60Hz に刻まれるので 60 fps が上限）`,
     '',
-    'タイルの列は「組み立てた数・使い回した数・組み立ての平均・最大（ms）」。tiles=worker の時間は Worker の中の時間で、メインスレッドを止めない',
+    'タイルの列は「組み立てた数・使い回した数・組み立ての平均・最大（ms）」。',
     '',
     '| 条件 | 範囲 | 視点 | 要求 pitch | 実測 pitch | 要求 zoom | 実測 zoom | 平均 fps | 中央値 (ms) | 長いフレーム | ヒストグラム g1/g2/g3/g4/g5+ | render CPU 平均 (ms) | 地形のタイル | hillshade のタイル | 描かれるタイル | タイルの待ち (s) | 準備 (ms) | 水面の作成 (ms) | pass |',
     '|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|---|---|---:|---|---|---|---|',
@@ -179,9 +184,12 @@ function formatTable(rows: readonly Row[]): string {
     '（maplibre-gl-dev.mjs の 22431〜22443 行）が、カメラが持ち上がった地形の中に入るときカメラをその地形の',
     '高さまで持ち上げ、calculateCameraOptionsFromTo で pitch とズームを作り直す（transform の更新ごとの修飾。',
     '同 22454 行あたり）。渋谷の 8.8〜33 m は ×10 で 88〜330 m になり、z16・p85 でのカメラの高さを超える。',
-    '同じ「z16 ×10 p85」を要求した 4 セルで、実測は 78.60° と 82.96° に分かれた。つまりこの角度は固定の量では',
-    'なく、カメラの下の標高 × 垂直強調に応じて変わる。要求どおりの 85° になるのは垂直強調 ×1 のとき、',
-    'pitch 0 は常に要求どおりになる（いずれも実測で確認）。',
+    'つまり要求どおりの 85° には届かず、実測は 78.6° 付近に落ち着く。要求どおりの 85° になるのは垂直強調 ×1 の',
+    'とき、pitch 0 は常に要求どおりになる（いずれも実測で確認）。加えて（Task 6 で入れた直しにより）タイルが',
+    '揃った後に同じ jumpTo をもう一度発行してから計測しているので、到達する視点は条件・ラン共通で同一になる',
+    '（下の表の z16 ×10 p85 の 12 行はすべて 78.6037°・幅 0.0000）。Task 5 の 1 回目の jumpTo（タイルが読める',
+    '前）では、同じ「z16 ×10 p85」を要求した 4 セルで実測が 78.60° と 82.96° に割れたが、それはこの直しの',
+    '前の挙動であり、今のデータには当てはまらない。',
     '',
     '注意 3（render CPU の列）: onRenderTime を呼ぶのは水面の Custom Layer で、入るのは Task 8。',
     'それまでこの列は「未計測」であって、0 ms という意味ではない。',
