@@ -547,6 +547,18 @@ describe('SimulationSession: 地形の購読（spec 05。3D が地形を受け�
     session.terrainCleared()
     expect(seen).toEqual([null, terrain])
   })
+
+  it(
+    '異常終了は onTerrain を呼ばない（3D 側の地形は保ったままにする。Worker の作り直し後の ' +
+      'terrainReady で改めて知らせる。Task 4 の申し送りの反映）',
+    () => {
+      const { worker, session } = setup()
+      const seen: (TerrainPayload | null)[] = []
+      session.onTerrain((t) => seen.push(t))
+      worker.crash()
+      expect(seen).toEqual([])
+    },
+  )
 })
 
 describe('SimulationSession: 2D の水深の canvas の表示（3D の間は隠す。spec 05 §3.6）', () => {

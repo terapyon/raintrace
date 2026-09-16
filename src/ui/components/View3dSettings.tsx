@@ -51,7 +51,7 @@ export function View3dSettings({ app, settings }: { app: AppStore; settings: Set
         </ToggleButtonGroup>
       </Row>
       {viewMode === '3d' && status === 'loading' && (
-        <Typography variant="body2" data-testid="view3d-loading">
+        <Typography variant="body2" role="status" data-testid="view3d-loading">
           {strings.view3d.loading}
         </Typography>
       )}

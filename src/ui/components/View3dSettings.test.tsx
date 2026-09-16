@@ -4,15 +4,16 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAppStore } from '../../state/appStore'
 import { memoryStorage } from '../../state/memoryStorage.test-support'
+import { DEFAULT_SETTINGS, SETTINGS_KEY } from '../../state/persistedSettings'
 import { createSettingsStore } from '../../state/settingsStore'
 import { strings } from '../strings'
 import { View3dSettings } from './View3dSettings'
 
 afterEach(cleanup)
 
-function setup() {
+function setup(storage = memoryStorage()) {
   const app = createAppStore()
-  const settings = createSettingsStore(memoryStorage())
+  const settings = createSettingsStore(storage)
   render(<View3dSettings app={app} settings={settings} />)
   return { app, settings, user: userEvent.setup() }
 }
@@ -29,6 +30,18 @@ describe('View3dSettings（spec 05 §3.2・§3.6）', () => {
     expect(settings.getState().display.verticalExaggeration).toBe(10)
     await user.click(screen.getByRole('button', { name: strings.view3d.view2d }))
     expect(app.getState().viewMode).toBe('2d')
+  })
+
+  it('垂直強調は 04 で保存された値から始まる（5 なら 5x が選ばれている）', () => {
+    const persisted = memoryStorage({
+      [SETTINGS_KEY]: JSON.stringify({
+        ...DEFAULT_SETTINGS,
+        display: { ...DEFAULT_SETTINGS.display, verticalExaggeration: 5 },
+      }),
+    })
+    setup(persisted)
+    const fiveX = screen.getByRole('button', { name: strings.view3d.exaggerationValue(5) })
+    expect(fiveX.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('3D の準備中と失敗を知らせる', () => {

@@ -27,13 +27,14 @@ function waitFor(
       resolve()
       return
     }
+    let timer: ReturnType<typeof setTimeout>
     const off = subscribe(() => {
       if (!check()) return
       clearTimeout(timer)
       off()
       resolve()
     })
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       off()
       reject(new Error('計測の準備が時間内に終わりませんでした'))
     }, WAIT_MS)

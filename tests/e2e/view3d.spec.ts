@@ -21,12 +21,17 @@ const layersOf = async (element: Locator, name: string): Promise<string[]> =>
 
 /** パネルの「3D」を押し、3D の視点へ動き終えるまで待つ（SwiftShader では地形の用意に数秒かかる） */
 async function switchTo3d(page: Page): Promise<void> {
-  await page.getByRole('button', { name: strings.view3d.view3d }).click()
+  await page.getByRole('button', { name: strings.view3d.view3d, exact: true }).click()
   await expect(mapElement(page)).toHaveAttribute('data-view3d', '3d', { timeout: 30_000 })
   await expect(mapElement(page)).toHaveAttribute('data-view3d-framed', 'true', { timeout: 30_000 })
 }
 
 test.describe('3D の表示（spec 05 §5）', () => {
+  // 一部のテストは 30 秒までの per-assertion wait を複数重ねる。Playwright の既定のテストの timeout
+  // （30 秒）はそれより短いので、SwiftShader の遅い CI でも収まるよう引き上げる（着手前の検査 P8 の許容。
+  // Task 4 の申し送りの反映）
+  test.describe.configure({ timeout: 60_000 })
+
   test.beforeEach(async ({ context }) => {
     await routeGsi(context)
     await acknowledgeDisclaimer(context)
@@ -45,15 +50,15 @@ test.describe('3D の表示（spec 05 §5）', () => {
       'data-overlay-layers',
       new RegExp(VIEW3D_LAYER_IDS.hillshade),
     )
-    expect(await layersOf(mapEl, 'data-visible-overlay-layers')).not.toContain(
-      WATER_LAYER_IDS.water,
-    )
+    await expect
+      .poll(() => layersOf(mapEl, 'data-visible-overlay-layers'))
+      .not.toContain(WATER_LAYER_IDS.water)
     // 画面の中心で描かれている地形タイルのズーム（実測）は、境界以上
     await expect(mapEl).toHaveAttribute('data-drawn-tile-zoom', /^\d+$/, { timeout: 30_000 })
     expect(Number(await mapEl.getAttribute('data-drawn-tile-zoom'))).toBeGreaterThanOrEqual(
       MIN_3D_DRAWN_TILE_ZOOM,
     )
-    await page.getByRole('button', { name: strings.view3d.view2d }).click()
+    await page.getByRole('button', { name: strings.view3d.view2d, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-view3d', 'off')
     await expect(mapEl).not.toHaveAttribute(
       'data-overlay-layers',
@@ -78,15 +83,17 @@ test.describe('3D の表示（spec 05 §5）', () => {
       .poll(
         async () => {
           const el = mapElement(page)
-          const drawn = await el.getAttribute('data-drawn-tile-zoom')
-          const zoom = await el.getAttribute('data-map-zoom')
-          const pitch = await el.getAttribute('data-map-pitch')
-          if (drawn === null || drawn === '' || zoom === null || pitch === null) return 'まだ'
-          const predicted = drawnTileZoomForView(Number(zoom), Number(pitch))
-          const measured = Number(drawn)
+          const { drawnTileZoom, mapZoom, mapPitch } = await el.evaluate((element) => ({
+            ...(element as HTMLElement).dataset,
+          }))
+          if (drawnTileZoom === undefined || mapZoom === undefined || mapPitch === undefined) {
+            return 'まだ'
+          }
+          const predicted = drawnTileZoomForView(Number(mapZoom), Number(mapPitch))
+          const measured = Number(drawnTileZoom)
           return measured >= predicted
             ? '合う'
-            : `実測 ${drawn}・見込み ${predicted}（z ${zoom}・pitch ${pitch}）`
+            : `実測 ${drawnTileZoom}・見込み ${predicted}（z ${mapZoom}・pitch ${mapPitch}）`
         },
         { timeout: 30_000 },
       )

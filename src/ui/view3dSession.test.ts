@@ -163,4 +163,70 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
     expect(view.dispose).toHaveBeenCalledTimes(1)
     expect(canvas).toHaveBeenLastCalledWith(true)
   })
+
+  it('3D のコードを読み込んでいる最中に外すと、setEnabled も dispose も呼ばれず、状態は変わらない（Task 4 の申し送りの反映）', async () => {
+    const view = fakeView()
+    let finish: (factory: View3dFactory) => void = () => {}
+    const load = vi.fn(
+      () =>
+        new Promise<View3dFactory>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const { app, detach } = setup(load)
+    app.getState().setViewMode('3d')
+    expect(app.getState().view3dStatus).toBe('loading')
+    detach()
+    expect(app.getState().view3dStatus).toBe('loading')
+    finish(() => view)
+    await flush()
+    expect(view.setEnabled).not.toHaveBeenCalled()
+    expect(view.dispose).not.toHaveBeenCalled()
+  })
+
+  it(
+    '読み込みの最中に外して付け直すと、後の attach が作り、先の読み込みの結果は捨てる' +
+      '（Task 4 の申し送りの反映）',
+    async () => {
+      const finishers: ((factory: View3dFactory) => void)[] = []
+      const load = vi.fn(
+        () =>
+          new Promise<View3dFactory>((resolve) => {
+            finishers.push(resolve)
+          }),
+      )
+      const client = new SimulationClient(() => new FakeWorker())
+      const settings = createSettingsStore(memoryStorage())
+      const simulation = new SimulationSession(client, createSimulationStore(), settings)
+      const app = createAppStore()
+      const session = new View3dSession(simulation, app, settings, load)
+      const controllerA = { onRestyle: () => () => {} } as unknown as MapController
+      const controllerB = { onRestyle: () => () => {} } as unknown as MapController
+      const detachA = session.attach(controllerA)
+      app.getState().setViewMode('3d')
+      expect(load).toHaveBeenCalledTimes(1)
+      detachA()
+      session.attach(controllerB)
+      expect(load).toHaveBeenCalledTimes(2)
+
+      const viewA = fakeView()
+      const viewB = fakeView()
+      const created: View3dLike[] = []
+      finishers[0]?.((_controller, _init) => {
+        created.push(viewA)
+        return viewA
+      })
+      finishers[1]?.((_controller, _init) => {
+        created.push(viewB)
+        return viewB
+      })
+      await flush()
+
+      // 先の読み込み（controllerA 向け）は、届いたときには controller が入れ替わっているので
+      // create() が呼ばれない（View3dLike が作られない）。後の attach（controllerB）だけが作る
+      expect(created).toEqual([viewB])
+      expect(viewA.setEnabled).not.toHaveBeenCalled()
+      expect(viewB.setEnabled).toHaveBeenCalledWith(true)
+    },
+  )
 })

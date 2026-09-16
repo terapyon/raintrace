@@ -90,6 +90,9 @@ export class Terrain3d {
       rgba = await generate()
     }
     if (!fresh) this.onTileTime?.({ source: request.source, composeMs: 0, cached: true })
+    // 共有の待ち（completed.load）の間に、この要求だけが取り消されていることがある（他の要求がまだ
+    // 待っている、または既に組み立て済みだったため rgba は得られた）。ここで止める（minor 1）
+    if (signal.aborted) throw new Error('取り消された地形のタイル')
     return createImageBitmap(new ImageData(rgba, DEM_TILE_SIZE, DEM_TILE_SIZE), {
       premultiplyAlpha: 'none',
       colorSpaceConversion: 'none',
