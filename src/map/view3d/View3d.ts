@@ -66,8 +66,19 @@ export class View3d {
   private boundaryCheckPending = false
   /** 直前に書いた印（変わらなければ書き直さない） */
   private readonly marks = { mapZoom: '', mapPitch: '', drawnTileZoom: '' }
+  /** 水面を作った回数（E2E の印 data-water-builds。計画で決めたこと 21） */
+  private waterBuilds = 0
   private readonly onRender = (): void => this.afterRender()
   private readonly onMoveEnd = (): void => this.afterMove()
+  /**
+   * 喪失でスタイルごと消えた水面の three の資源（WebGLRenderer・テクスチャ・メッシュ）を捨てる（spec 05 §3.7）。
+   * MapLibre は喪失のとき Style.destroy() ですべてのレイヤーの onRemove を先に呼ぶ（水面の dispose はそこで済む）。
+   * ここは安全網で、dispose は冪等（計画で決めたこと 19）
+   */
+  private readonly onContextLost = (): void => {
+    this.water?.dispose()
+    this.water = null
+  }
 
   constructor(controller: MapController, init: View3dInit) {
     this.controller = controller
@@ -84,6 +95,7 @@ export class View3d {
     )
     controller.map.on('render', this.onRender)
     controller.map.on('moveend', this.onMoveEnd)
+    controller.map.on('webglcontextlost', this.onContextLost)
   }
 
   /**
@@ -153,10 +165,18 @@ export class View3d {
     const { map } = this.controller
     map.off('render', this.onRender)
     map.off('moveend', this.onMoveEnd)
+    map.off('webglcontextlost', this.onContextLost)
     // removeWater は冪等で安価なので、rendering の状態に関わらず必ず呼ぶ（hide3d が先に呼んでいる前提に
     // 頼らない。Task 8 の申し送りの反映）
     this.removeWater()
-    if (this.rendering !== 'off') this.terrain3d.hide()
+    if (this.rendering !== 'off') {
+      this.terrain3d.hide()
+      // 3D で傾けた地図を戻す（Task 4 のレビューの積み残し）。dispose は 3D をやめるとき・外すときにだけ
+      // 呼ばれる（唯一の呼び出し元は View3dSession.attach の後始末）。コンテキスト喪失では呼ばれない
+      // ——喪失の間は 3D のまま復帰を待つので、ここで pitch を戻すと復帰と争う（spec 05 §3.7）。
+      // rendering が off のときは View3d が傾けていないので、利用者が自分で傾けた pitch を消さない
+      map.easeTo({ pitch: 0, duration: CAMERA_MS })
+    }
     this.terrain3d.dispose()
   }
 
@@ -259,6 +279,8 @@ export class View3d {
       map.getLayer(TERRAIN_LAYER_IDS.outline) !== undefined ? TERRAIN_LAYER_IDS.outline : undefined
     map.addLayer(water.layer, before)
     this.water = water
+    this.waterBuilds++
+    map.getContainer().dataset.waterBuilds = String(this.waterBuilds)
   }
 
   /** 水面を外す。スタイルから外すと onRemove が資源を捨てる。スタイルに無い（喪失の後）ときも捨てる */

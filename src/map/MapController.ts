@@ -33,8 +33,12 @@ export class MapController {
   private readonly attribution: Attribution
   private basemap: Basemap
   private loaded = false
-  /** setBasemap の後、style.load を待っている */
-  private switching = false
+  /**
+   * 次の style.load で onRestyle の購読者を呼ぶ。setBasemap の後（02 の P2）と、WebGL のコンテキスト喪失の後
+   * （復帰で MapLibre が保存したスタイルを setStyle で戻す。spec 05 §3.7）に立てる。最初の読み込みの style.load
+   * では立っていないので、購読者を二重に呼ばない（計画で決めたこと 19）
+   */
+  private awaitingStyle = false
   private readonly waiting: (() => void)[] = []
   private readonly restyleListeners = new Set<() => void>()
   /** 直前に書いた値（present と visible を | でつないだ値）。変わらなければ書き直さない */
@@ -62,12 +66,24 @@ export class MapController {
     })
     // 地図と同時に購読するので、load を取り逃さない。isStyleLoaded() はタイルの読み込み中に false を返すので使わない
     this.map.once('load', () => this.ready())
-    // ベースマップの切り替えの後（setBasemap）。最初の読み込みは上の load で扱う
+    // ベースマップの切り替えとコンテキストの復帰の後。最初の読み込みは上の load で扱う
     this.map.on('style.load', () => {
-      if (!this.switching) return
-      this.switching = false
+      if (!this.awaitingStyle) return
+      this.awaitingStyle = false
       for (const listener of this.restyleListeners) listener()
       this.ready()
+    })
+    // コンテキスト喪失（spec 05 §3.7）。MapLibre はスタイルを破棄し、復帰で保存したスタイルを setStyle で戻す。
+    // Custom Layer（水面）は戻らないので、次の style.load で onRestyle の購読者が足し直す。喪失の間はスタイルが
+    // 無いので、whenLoaded を待たせ、印を空にする。最初の読み込みの前の喪失は、最初の load が扱う
+    this.map.on('webglcontextlost', () => {
+      if (!this.loaded && !this.awaitingStyle) return
+      this.loaded = false
+      this.awaitingStyle = true
+      this.lastOverlayLayers = ''
+      const { dataset } = this.map.getContainer()
+      dataset.overlayLayers = ''
+      dataset.visibleOverlayLayers = ''
     })
     this.map.on('render', () => this.writeOverlayLayers())
   }
@@ -87,11 +103,11 @@ export class MapController {
     if (basemap === this.basemap) return
     this.basemap = basemap
     this.loaded = false
-    this.switching = true
+    this.awaitingStyle = true
     this.map.setStyle(createGsiStyle(basemap, this.attribution), { diff: false })
   }
 
-  /** ベースマップの切り替えの後に呼ぶ。登録した順に呼ぶ（地形の重ね描きを先に、水を後に） */
+  /** ベースマップの切り替えとコンテキストの復帰の後に呼ぶ。登録した順に呼ぶ（地形の重ね描きを先に、水を後に） */
   onRestyle(listener: () => void): () => void {
     this.restyleListeners.add(listener)
     return () => {

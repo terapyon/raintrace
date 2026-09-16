@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from '@playwright/test'
+import { TERRAIN_LAYER_IDS } from '../../src/map/TerrainOverlay'
 import { drawnTileZoomForView, MIN_3D_DRAWN_TILE_ZOOM } from '../../src/map/view3d/drawnZoom'
 import { VIEW3D_LAYER_IDS } from '../../src/map/view3d/layerIds'
 import { WATER_LAYER_IDS } from '../../src/map/WaterOverlay'
@@ -212,7 +213,9 @@ test.describe('3D の表示（spec 05 §5）', () => {
     await switchTo3d(page)
     const mapEl = mapElement(page)
     // 3D の視点（16.5、pitch 60。中心のタイルは 16）から、Shift + − で 2 段ズームアウトする（MapLibre のキーボード
-    // 操作）。14.5 では中心のタイルが境界より粗くなる
+    // 操作。MapLibre は Shift を押している間、キーボードのズームの増分を 2 倍にする
+    // ——keyboard の `zoomDir * (e.shiftKey ? 2 : 1)`——ので、Shift + − 1 回で 2 段動く）。
+    // 14.5 では中心のタイルが境界より粗くなる
     await page.locator('canvas.maplibregl-canvas').focus()
     await page.keyboard.press('Shift+Minus')
     await expect(mapEl).toHaveAttribute('data-view3d', 'fallback-2d', { timeout: 10_000 })
@@ -235,5 +238,76 @@ test.describe('3D の表示（spec 05 §5）', () => {
     )
     expect(errors).toEqual([])
     expect(warnings).toEqual([])
+  })
+
+  test('3D の表示中に WebGL のコンテキストを失って戻すと、水面が新しいコンテキストで作り直され、hillshade と 04 の重ね描きが戻り、エラーが出ない（spec 05 §3.7）', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page)
+    const warnings = collectWarnings(page)
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    await switchTo3d(page)
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    const mapEl = mapElement(page)
+    await expect(mapEl).toHaveAttribute(
+      'data-visible-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.water),
+      { timeout: 30_000 },
+    )
+    const builds = Number(await mapEl.getAttribute('data-water-builds'))
+    // WEBGL_lose_context で失わせ、1 秒後に同じ拡張で戻す。喪失の間は render が来ず、render で書く印は凍るので
+    // （着手前の確かめ P9）、喪失と復帰はブラウザの webglcontextlost・webglcontextrestored で待つ
+    const events = await page.evaluate(async () => {
+      const canvas = document.querySelector<HTMLCanvasElement>('canvas.maplibregl-canvas')
+      const extension = canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')
+      if (canvas === null || extension === undefined || extension === null) {
+        throw new Error('WEBGL_lose_context がありません')
+      }
+      const seen: string[] = []
+      const next = (name: string): Promise<void> =>
+        new Promise((resolve) => {
+          const listener = (): void => {
+            seen.push(name)
+            resolve()
+          }
+          canvas.addEventListener(name, listener, { once: true })
+        })
+      const lost = next('webglcontextlost')
+      extension.loseContext()
+      await lost
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const restored = next('webglcontextrestored')
+      extension.restoreContext()
+      await restored
+      return seen
+    })
+    expect(events).toEqual(['webglcontextlost', 'webglcontextrestored'])
+    // 復帰の style.load で onRestyle が走り、View3d が水面（three の資源）を新しいコンテキストで作り直す
+    await expect
+      .poll(async () => Number(await mapEl.getAttribute('data-water-builds')), { timeout: 30_000 })
+      .toBeGreaterThan(builds)
+    await expect(mapEl).toHaveAttribute(
+      'data-visible-overlay-layers',
+      new RegExp(VIEW3D_LAYER_IDS.water),
+      { timeout: 30_000 },
+    )
+    const present = (await mapEl.getAttribute('data-overlay-layers'))?.split(',') ?? []
+    expect(present).toContain(VIEW3D_LAYER_IDS.hillshade)
+    expect(present).toContain(TERRAIN_LAYER_IDS.elevation)
+    await expect(mapEl).toHaveAttribute('data-view3d', '3d')
+    expect(errors).toEqual([])
+    // このテストだけで許す警告は 2 種類（ほかのテストの collectWarnings は空のまま）:
+    // 1. MapLibre は喪失のとき、Custom Layer（水面）を戻せない旨を console.warn で出す（error ではない）
+    // 2. MapLibre は 3D の地形を戻すとき、失ったコンテキストの GL の資源を新しいコンテキストで触る
+    //    （bindTexture・framebufferTexture2D・delete の "object does not belong to this context"）。
+    //    これは本タスクの変更の前（BASE）からあり、足し直しを外して測っても同じ 258 件が出た。2D だけの
+    //    喪失と復帰では 1 件も出ない（3D の地形の経路に限る）。復帰の後の描画そのものは正しい
+    //    （地形タイルのズーム 16 → 16、水の画素 0.829 → 0.757）。MapLibre 側の後始末なので 06 へ申し送る
+    const allowedWarning = (text: string): boolean =>
+      text.includes(`Custom layer with id '${VIEW3D_LAYER_IDS.water}'`) ||
+      text.includes('object does not belong to this context') ||
+      text.includes('too many errors, no more errors will be reported')
+    expect(warnings.filter((text) => !allowedWarning(text))).toEqual([])
   })
 })
