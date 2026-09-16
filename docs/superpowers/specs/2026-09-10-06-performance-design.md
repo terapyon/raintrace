@@ -116,14 +116,14 @@ M3 と M5 は M1 だけに依存する。M4 は M2・M3 の判定に依存する
 - 3D の有無で 2 通り測る（step の所要時間・長いタスク・fps）
 - **平衡までの時間は「最速」（R04-5）で測る**。1x は step 数 ÷ 60 で報告するが、目標にはしない（R06-6）。2 分で平衡に届かない雨は、打ち切りの上限を計画で決め、届かなかったことと、その時点の step 数を記録する
 - fps は 05 の 4 視点（500 m・1000 m × z17 ×5 p60・z16 ×10 p85）× 地形のみ・水面ありを、3 地点で測る（05 は渋谷だけ）
-- **DEM の用意**: CPU で決まる計測（step の所要時間・平衡）は、毎回同じ DEM で回す。Playwright の `page.route` で固定のタイル（フィクスチャ）を返し、アプリの取得の経路は変えない（§4.2）。**タイルの組が小さければリポジトリに置き、大きければ SHA-256 で固定した取得のスクリプトにする。どちらにするかは計画で決める**（`page.route` が返すフィクスチャの保存方法だけの問題になる）。出典は `tests/fixtures/gsi/README.md` と同じ形で記す。fps とクリックから表示までは、05 と同じく地理院に実際に接続する（本番のタイルの経路）
+- **DEM の用意**: CPU で決まる計測（step の所要時間・平衡）は、毎回同じ DEM で回す。Playwright の `context.route` で固定のタイル（フィクスチャ）を返し、アプリの取得の経路は変えない（§4.2）。DEM の取得は Worker の中で行うので、`page.route` では捕まらない。E2E の `routeGsi`（`tests/e2e/support/gsi.ts`）と同じく browser context で差し替える。**タイルの組が小さければリポジトリに置き、大きければ SHA-256 で固定した取得のスクリプトにする。どちらにするかは計画で決める**（`context.route` が返すフィクスチャの保存方法だけの問題になる）。出典は `tests/fixtures/gsi/README.md` と同じ形で記す。fps とクリックから表示までは、05 と同じく地理院に実際に接続する（本番のタイルの経路）
 
 ### 4.2 実行方法
 
 - **自動**: `pnpm build:perf` の後に `pnpm perf:fps`（`playwright.perf.config.ts`。ポート 4175、実 GPU の headless Chrome〈`--use-gl=angle --use-angle=gl-egl`〉、workers 1）。組は `RAINTRACE_FPS_SET`・`RAINTRACE_FPS_REPEAT` で選び、新しい設定のファイルは作らない。05 は実 GPU の headless で fps を測れることを示した（改訂前の「ヘッドレスでは意味を持たない」は当たらない）
   - 限界: rAF が 60 Hz に刻まれるので、60.0 fps の天井に張り付いた条件は余裕を読めない（05 の 8 条件のうち 6 条件）。vsync を外す起動の引数（例: `--disable-gpu-vsync --disable-frame-rate-limit`）が ANGLE の gl-egl で効くかは**未検証**で、M3 で試す
   - GPU の時間（`EXT_disjoint_timer_query_webgl2`）はこの機械の Chrome で使えるか**未検証**。使える前提で計画しない
-- **自動化（1 step の所要時間・平衡までの時間）**: `perfHook` に `probe=steps` を足す。降雨を開始し、`settled` になるか打ち切りの上限に達するまで待って、1 step の所要時間の統計（中央値・p95）・step 数・経過時間を JSON に書く。実行するファイルは `tests/perf/` に 1 つ足し、既存の `playwright.perf.config.ts` をそのまま使う（実 GPU の起動引数は CPU の計測を妨げない）。DEM は §4.1 のとおり `page.route` で固定のタイルを返し、アプリは変えない
+- **自動化（1 step の所要時間・平衡までの時間）**: `perfHook` に `probe=steps` を足す。降雨を開始し、`settled` になるか打ち切りの上限に達するまで待って、1 step の所要時間の統計（中央値・p95）・step 数・経過時間を JSON に書く。実行するファイルは `tests/perf/` に 1 つ足し、既存の `playwright.perf.config.ts` をそのまま使う（実 GPU の起動引数は CPU の計測を妨げない）。DEM は §4.1 のとおり `context.route` で固定のタイルを返し、アプリは変えない
 - **手動（実 GPU、1 回）**: ユーザーが手で行う。**05 の手動確認の項目 9（fps の 8 個の URL）を含め**（R06-8）、§5.1 の切り分けの URL と、§3 の新しい計測（g2・長いタスク・step の所要時間）もこの回で取る
   - 機器の仕様を記録する: OS、CPU とコア数、GPU、`chrome://gpu` の GL_RENDERER、Chrome の版、画面のリフレッシュレート、ウィンドウの大きさ
   - 水面ありの計測では Worker が「最速」で 1 コアを使い続ける。05 の headless は 32 コアの機械なので競合しないが、コアの少ない機械では結果が変わりうる
