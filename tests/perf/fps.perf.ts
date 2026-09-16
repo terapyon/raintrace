@@ -68,6 +68,10 @@ const TERRAIN_MAIN_ONLY: readonly Variant[] = [
 const SETS: Record<string, readonly Variant[]> = {
   'terrain-main': TERRAIN_MAIN_ONLY,
   'terrain-tiles': TERRAIN_MAIN_ONLY,
+  water: [
+    { label: '既定・地形のみ', water: '0' },
+    { label: '既定・水面あり（最速で降雨、水深を毎フレーム更新）', water: '1' },
+  ],
 }
 
 const DEFAULT_SET = 'terrain-main'
