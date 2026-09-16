@@ -6,13 +6,13 @@
  * 行うので、この視点は 2D に落ちない。fallback=0 は、計測の途中で実測が境界を割って 2D に落ちることが
  * 絶対に起きないようにする保険である
  *
- * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate）・RAINTRACE_FPS_REPEAT（既定 3）・
+ * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate・water-sites）・
+ * RAINTRACE_FPS_REPEAT（既定 3）・
  * RAINTRACE_FPS_SITES（既定 shibuya。06 の M2 は ayase,shibuya,minatomirai。RAINTRACE_LOAD=1 のときだけ
  * nemuro〈段 2。ユーザーの裁定 R5〉も選べる）・RAINTRACE_FPS_OUT_DIR
- * （既定 .handoff/05-fps）・RAINTRACE_LOAD=1（クリックから表示まで）・RAINTRACE_DRAWN_ZOOM=1
- *
- * 水面ありの条件は、平衡に届かない雨（WATER_RAIN）で測る。既定の雨（100 mm・半径 10 m）はみなとみらいで約 3 秒で
- * 平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを比べられなくなる（R-b。05 の shots.perf の水面の撮影と同じ雨）
+ * （既定は 05 にあった組〈terrain-main・terrain-tiles・water〉と RAINTRACE_DRAWN_ZOOM=1 が .handoff/05-fps、
+ * 06 で足した組〈isolate・water-sites〉と RAINTRACE_LOAD=1 が .handoff/06-perf）・RAINTRACE_LOAD=1（クリックから
+ * 表示まで）・RAINTRACE_DRAWN_ZOOM=1
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
@@ -90,10 +90,27 @@ type Size = (typeof SIZES)[number]
 
 interface SetDef {
   variants: readonly Variant[]
+  /** 水面ありの条件の URL に足す雨（mm・r）。省けば既定の雨（05 と同じ） */
+  waterRain?: Readonly<Record<string, string>>
+  /** 05 にあった組か。05 の記録を上書きしないよう、06 で足した組の結果の既定の書き先を分ける */
+  from05?: true
   /** 省けば SIZES と VIEWS のすべて */
   sizes?: readonly Size[]
   views?: readonly ViewName[]
 }
+
+/**
+ * 3 地点の組の水面ありの条件の雨（平衡に届かない。R-b。05 の shots.perf の水面の撮影と同じ雨）。既定の雨
+ * （100 mm・半径 10 m）はみなとみらいで約 3 秒で平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを
+ * 比べられなくなる。05 と比べる組（water・isolate。渋谷）には使わない。渋谷は既定の雨で窓の間に平衡に届かず
+ * （04 の実測 47.9 秒）、05 の 51.0 fps はその雨で測ったため
+ */
+const WATER_RAIN = { mm: '500', r: '50' } as const
+
+const WATER_VARIANTS: readonly Variant[] = [
+  { label: '既定・地形のみ', water: '0' },
+  { label: '既定・水面あり（最速で降雨、水深を毎フレーム更新）', water: '1' },
+]
 
 /** 地形のみの 2 変種（05 の Task 5）。地形の生成場所は main のみ（05 の Task 6 で Worker を採らなかった） */
 const TERRAIN_MAIN_ONLY: readonly Variant[] = [
@@ -102,13 +119,16 @@ const TERRAIN_MAIN_ONLY: readonly Variant[] = [
 ]
 
 /**
- * 計測の組（RAINTRACE_FPS_SET で選ぶ）。water の組は 05 の Task 9、isolate は 06 の §5.1。
+ * 計測の組（RAINTRACE_FPS_SET で選ぶ）。water の組は 05 の Task 9、isolate は 06 の §5.1、water-sites は 06 の
+ * §4.1（3 地点。RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai と組み合わせる）。
  * terrain-main（05 の Task 5）・terrain-tiles（05 の Task 6）は同じ中身（既存の記録が両方の名を使うため）
  */
 const SETS: Record<string, SetDef> = {
-  'terrain-main': { variants: TERRAIN_MAIN_ONLY },
-  'terrain-tiles': { variants: TERRAIN_MAIN_ONLY },
-  water: {
+  'terrain-main': { variants: TERRAIN_MAIN_ONLY, from05: true },
+  'terrain-tiles': { variants: TERRAIN_MAIN_ONLY, from05: true },
+  water: { variants: WATER_VARIANTS, from05: true },
+  'water-sites': {
+    waterRain: WATER_RAIN,
     variants: [
       { label: '既定・地形のみ', water: '0' },
       {
@@ -145,9 +165,8 @@ const setName = process.env.RAINTRACE_FPS_SET ?? DEFAULT_SET
 const repeat = Number(process.env.RAINTRACE_FPS_REPEAT ?? '3')
 /** 1 回の計測を待つ上限 */
 const RUN_TIMEOUT_MS = 240_000
-const outDir = outDirFromEnv(process.env.RAINTRACE_FPS_OUT_DIR, '.handoff/05-fps')
-/** 水面ありの条件の雨（平衡に届かない。R-b） */
-const WATER_RAIN = { mm: '500', r: '50' } as const
+const outDirFor = (fallback: '.handoff/05-fps' | '.handoff/06-perf'): URL =>
+  outDirFromEnv(process.env.RAINTRACE_FPS_OUT_DIR, fallback)
 
 const tileCell = (t: FpsResult['tileGen']['terrain']): string =>
   `${t.count}・${t.cached}・${t.meanMs.toFixed(1)}・${t.maxMs.toFixed(1)}`
@@ -280,6 +299,7 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
   const sites = sitesFromEnv(process.env.RAINTRACE_FPS_SITES, ['shibuya'])
   const set = SETS[setName]
   if (set === undefined) throw new Error(`計測の組がありません: ${setName}`)
+  const outDir = outDirFor(set.from05 === true ? '.handoff/05-fps' : '.handoff/06-perf')
   if (!Number.isInteger(repeat) || repeat < 1) {
     throw new Error(`RAINTRACE_FPS_REPEAT は 1 以上の整数: ${process.env.RAINTRACE_FPS_REPEAT}`)
   }
@@ -308,7 +328,7 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
               ex: view.ex,
               pitch: view.pitch,
               water: variant.water,
-              ...(variant.water === '1' ? WATER_RAIN : {}),
+              ...(variant.water === '1' ? set.waterRain : {}),
               hillshade: variant.hillshade,
               fallback: '0',
               ...variant.extra,
@@ -395,6 +415,7 @@ test('クリックから 2D の地形の表示まで・3D を押してから最�
       `| ${LOAD_SITES[site].label} | ${size} m | ${run} | ${seconds(r.selectToReadyMs)} | ${seconds(r.selectTo2dMs)} | ${seconds(t?.statusMs)} | ${seconds(t?.waterBuiltMs)} | ${seconds(t?.firstFrameMs)} | ${t?.tilesLoaded === false ? '揃わず' : '揃った'} | ${load.count}・${load.maxMs.toFixed(0)} | ${to3d === null ? '—' : `${to3d.count}・${to3d.maxMs.toFixed(0)}`} | ${r.prepareMs.map((ms) => ms.toFixed(0)).join('・')} | ${r.waterBuildMs.map((ms) => ms.toFixed(0)).join('・')} |`,
     )
   }
+  const outDir = outDirFor('.handoff/06-perf')
   mkdirSync(outDir, { recursive: true })
   writeFileSync(new URL('load.json', outDir), `${JSON.stringify(rows, null, 2)}\n`)
   writeFileSync(new URL('load.md', outDir), `${lines.join('\n')}\n`)
@@ -430,6 +451,7 @@ test('描かれる地形タイルのズームの実測と、pitch つきの見�
       lines.push(`| ${z} | ${pitch} | ${drawnTileZoomForView(z, pitch)} | ${drawn ?? ''} |`)
     }
   }
+  const outDir = outDirFor('.handoff/05-fps')
   mkdirSync(outDir, { recursive: true })
   writeFileSync(new URL('drawn-zoom.md', outDir), `${lines.join('\n')}\n`)
   console.log(lines.join('\n'))
