@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:perf": "tsc -b && vite build --mode perf",
+    "perf:fps": "playwright test --config playwright.perf.config.ts",
     "preview": "vite preview",
     "lint": "biome ci",
     "format": "biome check --write",

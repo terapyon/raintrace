@@ -8,7 +8,14 @@
     "lib": ["ES2023", "DOM"],
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "tests/e2e/**/*.ts"],
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "playwright.perf.config.ts",
+    "tests/e2e/**/*.ts",
+    "tests/perf/**/*.ts"
+  ],
   // tests/e2e/simulation.spec.ts が src/map 経由で shared/protocol・simulation の型に届く（Task 13 fix
   // round 1）。参照しないと、simulation のソースをこのプロジェクトの設定（noUncheckedIndexedAccess: true）
   // で検査してしまう（tsconfig.core.json の同じ注記のとおり）

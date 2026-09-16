@@ -64,3 +64,9 @@ createRoot(container).render(
     <App missingFeatures={missingFeatures} session={session} settings={settings} />
   </StrictMode>,
 )
+
+// 計測用のフック（spec 05 §4.4）。通常のビルドでは __RAINTRACE_PERF__ が false に置き換わり、この分岐ごと消える
+if (__RAINTRACE_PERF__ && session !== null) {
+  const target = session
+  void import('./ui/perfHook').then(({ installPerfHook }) => installPerfHook(target, settings))
+}

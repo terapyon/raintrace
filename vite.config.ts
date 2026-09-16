@@ -53,7 +53,9 @@ function workerChunkModulesCollector(): Plugin {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // 計測用のフック（src/ui/perfHook.ts）は vite build --mode perf のときだけ入れる（spec 05 の計画で決めたこと 20）
+  define: { __RAINTRACE_PERF__: JSON.stringify(mode === 'perf') },
   plugins: [react(), cloudflare(), chunkModulesReport()],
   // Worker は { type: 'module' } で起動するので ES モジュールとして出力する
   worker: { format: 'es', plugins: () => [workerChunkModulesCollector()] },
@@ -77,4 +79,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
