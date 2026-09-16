@@ -292,22 +292,34 @@ test.describe('3D の表示（spec 05 §5）', () => {
       new RegExp(VIEW3D_LAYER_IDS.water),
       { timeout: 30_000 },
     )
-    const present = (await mapEl.getAttribute('data-overlay-layers'))?.split(',') ?? []
-    expect(present).toContain(VIEW3D_LAYER_IDS.hillshade)
-    expect(present).toContain(TERRAIN_LAYER_IDS.elevation)
+    await expect
+      .poll(() => layersOf(mapEl, 'data-overlay-layers'))
+      .toEqual(expect.arrayContaining([VIEW3D_LAYER_IDS.hillshade, TERRAIN_LAYER_IDS.elevation]))
+    // 喪失と復帰の経路で rendering を外れる分岐は無いので、ここでの再確認は「壊れていない」証拠というより
+    // 直前の確認（30 秒の poll）からの後退が無いことの見張り（ガード）
     await expect(mapEl).toHaveAttribute('data-view3d', '3d')
     expect(errors).toEqual([])
     // このテストだけで許す警告は 2 種類（ほかのテストの collectWarnings は空のまま）:
     // 1. MapLibre は喪失のとき、Custom Layer（水面）を戻せない旨を console.warn で出す（error ではない）
     // 2. MapLibre は 3D の地形を戻すとき、失ったコンテキストの GL の資源を新しいコンテキストで触る
     //    （bindTexture・framebufferTexture2D・delete の "object does not belong to this context"）。
-    //    これは本タスクの変更の前（BASE）からあり、足し直しを外して測っても同じ 258 件が出た。2D だけの
-    //    喪失と復帰では 1 件も出ない（3D の地形の経路に限る）。復帰の後の描画そのものは正しい
-    //    （地形タイルのズーム 16 → 16、水の画素 0.829 → 0.757）。MapLibre 側の後始末なので 06 へ申し送る
+    //    これは本タスクの変更の前（BASE）からあり、足し直しを外して測っても同じ件数（実測 175〜258 件。
+    //    実行ごとに揺れる）が出た。2D だけの喪失と復帰では 1 件も出ない（3D の地形の経路に限る）。復帰の後の
+    //    描画そのものは正しい（地形タイルのズーム 16 → 16、水の画素 0.829 → 0.757）。MapLibre 側の後始末な
+    //    ので 06 へ申し送る
+    // 3. Chrome は自分自身の出す警告が多すぎるとき "too many errors, no more errors will be reported" を
+    //    出し、以後のこのページの GL の警告は一切コンソールに出なくなる（打ち切り）。つまりこの 1 行を許す
+    //    ことは、それ以降の警告全部を見えなくすることも兼ねている。console.error と pageerror はこの打ち切
+    //    りの影響を受けず、引き続き厳格（上の expect(errors).toEqual([]) がそのまま効く）
     const allowedWarning = (text: string): boolean =>
       text.includes(`Custom layer with id '${VIEW3D_LAYER_IDS.water}'`) ||
       text.includes('object does not belong to this context') ||
       text.includes('too many errors, no more errors will be reported')
+    const ignoredWarnings = warnings.filter(allowedWarning)
     expect(warnings.filter((text) => !allowedWarning(text))).toEqual([])
+    // 許した件数（2 の実測 175〜258）に大幅な余裕を持たせた上限。ちょうどの数を固定すると実行ごとの揺れで
+    // 落ちるので、桁が変わるような自己回帰（例: 自前のコードが失ったコンテキストの GL 資源に触れ、2 と同じ
+    // 文言を出す）を捉えるための緩い天井であって、期待値ではない
+    expect(ignoredWarnings.length).toBeLessThan(400)
   })
 })
