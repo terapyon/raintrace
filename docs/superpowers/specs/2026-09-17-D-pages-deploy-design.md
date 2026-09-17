@@ -90,23 +90,27 @@
 
 | 段 | トリガ | デプロイ（ビルドは 3 段とも `pnpm build`） | URL | 検索 |
 |---|---|---|---|---|
-| PR のプレビュー | PR（同じリポジトリのブランチ。フォークは Secrets が無いので従来どおり除外） | `wrangler pages deploy dist --project-name raintrace --branch pr-<n> --commit-hash <sha> --commit-message "PR #<n> <sha7>"` | `pr-<n>.raintrace.pages.dev`（PR の最新を指す別名）と、deployment ごとの `<hash>.raintrace.pages.dev` | noindex（Pages の既定） |
-| `main` | `main` への push（必須ジョブの成功が前提） | `wrangler pages deploy dist --project-name raintrace --branch main --commit-hash <sha>` | `main.raintrace.pages.dev`（独自ドメインなし） | noindex（Pages の既定） |
+| PR のプレビュー | PR（同じリポジトリのブランチ。フォークは Secrets が無いので従来どおり除外） | `wrangler pages deploy dist --project-name raintrace --branch pr-<n> --commit-hash <sha> --commit-message "PR #<n> <sha7>"` | `pr-<n>.raintrace.pages.dev`（PR の最新を指す別名）と、deployment ごとの `<hash>.raintrace.pages.dev` | noindex（`_headers` の `:alias.:project` の規則。Pages の既定でも付く） |
+| `main` | `main` への push（必須ジョブの成功が前提） | `wrangler pages deploy dist --project-name raintrace --branch main --commit-hash <sha>` | `main.raintrace.pages.dev`（独自ドメインなし） | noindex（`_headers` の `:alias.:project` の規則。Pages の既定でも付く） |
 | 本番 | `v*` のタグの push（必須ジョブの成功が前提） | `wrangler pages deploy dist --project-name raintrace --branch production --commit-hash <sha> --commit-message <tag>` | `raintrace.terapyon.net`、`raintrace.pages.dev` | 独自ドメインは索引される。`raintrace.pages.dev` は `_headers` で noindex（R-D6） |
 
 - ブランチの別名は英小文字にされ、英数字以外はハイフンになる（<https://developers.cloudflare.com/pages/configuration/preview-deployments/>）。`pr-<n>`・`main` はそのままの形で残る。**未確認**: 別名の長さの上限（どちらも短いので影響しない見込み）
-- **noindex**: プレビューの deployment（`pr-<n>`・`main` を含む）には Pages が `X-Robots-Tag: noindex` を付ける（同上）。本番の deployment には付かないので、`public/_headers` に次を足し、`raintrace.pages.dev` だけを noindex にする（R-D6。絶対 URL の規則は <https://developers.cloudflare.com/pages/configuration/headers/>）
+- **noindex**: プレビューの deployment（`pr-<n>`・`main` を含む）には Pages が `X-Robots-Tag: noindex` を付ける（同上）が、本番の deployment には付かない。Pages の既定に頼らず、`*.pages.dev` のすべてを自分の `_headers` で noindex にする（R-D6。絶対 URL の規則は <https://developers.cloudflare.com/pages/configuration/headers/>）
 
   ```
   https://:project.pages.dev/*
     X-Robots-Tag: noindex
+
+  https://:alias.:project.pages.dev/*
+    X-Robots-Tag: noindex
   ```
 
-  `:project` はピリオドを含まないので、`main.raintrace.pages.dev` などの別名には当たらない（当たらなくても Pages の既定で noindex）。**独自ドメイン `raintrace.terapyon.net` には当たらず、索引されるまま**にする
+  1 つ目は `raintrace.pages.dev`（本番）に、2 つ目は `main.`・`pr-<n>.`・`<hash>.` の別名に当たる（placeholder はピリオドを含まない）。**独自ドメイン `raintrace.terapyon.net` にはどちらも当たらず、索引されるまま**にする。両方を §5.2 の 6 で確かめる
 - `CLOUDFLARE_ENV=staging` は要らなくなる（ビルドは 3 段とも同じ）
-- ジョブのサマリには、`wrangler pages deploy` の出力から `https://…pages.dev` の URL を拾って出す（いまの `grep -Eo` と同じ形）。**未確認**: 出力の文言（deployment の URL と別名の URL の両方が出るか）。計画の最初の Task で手元の実行から確かめる
+- ジョブのサマリには、`wrangler pages deploy` の出力から `https://…pages.dev` の URL を拾って出す（いまの `grep -Eo` と同じ形）。**未確認**: 出力の文言（deployment の URL と別名の URL の両方が出るか）。§5.1 の手順 3 の手元の試しで確かめる
 - プレビューの deployment は数の上限が無い（<https://developers.cloudflare.com/pages/platform/limits/>）。PR を閉じても消さない（いまの Workers のプレビューと同じ）
-- PR のプレビューと本番が同じ project に入るので、`--branch production` を誤って PR や `main` のジョブに書くと本番が置き換わる。production branch の名前は、本番のジョブにだけ書く（§4.7）
+- PR のプレビューと本番が同じ project に入るので、`--branch production` を誤って PR や `main` のジョブに書くと本番が置き換わる。文字列 1 つの区別に頼らないよう、§4.7 の守り（ジョブの `env` で名前を組み立て、プレビューと `main` のジョブで `production` を拒む）を置く
+- 3 段とも `--commit-dirty=true` を付ける（`dist/` は Git の管理外なので、作業ツリーは常に dirty とみなされ、付けないと警告が出る）。表のコマンドでは省いた
 
 ### 4.3 独自ドメイン（`raintrace.terapyon.net`）
 
@@ -131,7 +135,7 @@
 | 既定の `Cache-Control` | — | `public, max-age=0, must-revalidate`、`ETag` を常に付ける（<https://developers.cloudflare.com/pages/configuration/serving-pages/>） | `/assets/*` は `_headers` が上書きする。`index.html` は既定のまま（RB-1 の意図どおり） |
 | SPA のフォールバック | `not_found_handling: "single-page-application"` を明示 | 最上位に `404.html` が無ければ SPA とみなし、すべてのパスを `/` に合わせる（同上） | `dist/` に `404.html` は無い。設定は要らない。今後 `public/404.html` を置かないこと（E2E で確かめる。§6） |
 | `.html` の扱い | 既定の `html_handling` | `/index.html` などは拡張子の無い形へリダイレクトする（同上） | 入口は `/` だけなので影響しない |
-| 配信から外すファイル | `.assetsignore` | `.assetsignore` は使わない（Workers 側の仕組み。移行ガイドの比較表）。**`wrangler pages deploy` はディレクトリの全ファイルを上げる**（workers-sdk の issue #14500: <https://github.com/cloudflare/workers-sdk/issues/14500>） | `dist/` から配信しないファイルを無くす（§4.5）。**未確認**: ドット始まりのディレクトリ（`.vite/`）が上がるか。上がる前提で扱う |
+| 配信から外すファイル | `.assetsignore` | `.assetsignore` は使わない（Workers 側の仕組み。移行ガイドの比較表）。**`wrangler pages deploy` はディレクトリの全ファイルを上げる**（workers-sdk の issue #14500: <https://github.com/cloudflare/workers-sdk/issues/14500>）。wrangler 4.127.1 のコードでは、外すのは `_headers`・`_redirects`・`_worker.js`・`.git`・`node_modules`・`.DS_Store` だけ（レビュー役が確認、2026-09-17） | **`.vite/` は上がる**。`dist/` から配信しないファイルを無くす（§4.5、R-D4） |
 | 上限 | — | Free で 20,000 ファイル、1 ファイル 25 MiB（<https://developers.cloudflare.com/pages/platform/limits/>） | いまは約 15 ファイル・最大 0.96 MB で十分に内側 |
 | Functions | — | `_headers` は Functions の応答には効かない | Functions は使わない（`functions/`・`_worker.js` を置かない） |
 
@@ -144,7 +148,7 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 | 案 | 内容 | 利点 | 欠点 |
 |---|---|---|---|
 | (a) plugin を残す | `vite preview` は今のまま Workers の Static Assets の規則で配信。デプロイだけ Pages | 変更が最小。06 の計測の配信も変わらない | E2E が確かめるのは**配信先と違う製品**の規則（SPA の判定・`.assetsignore`・既定のヘッダーが異なる）。Workers の形の `wrangler.jsonc` が残り、`wrangler pages deploy` は「`pages_build_output_dir` が無いので手元の開発にだけ使う」旨の警告を出す（<https://developers.cloudflare.com/pages/functions/wrangler-configuration/>）。plugin が `dist/wrangler.json`・`dist/.assetsignore` を出し続けるので、アップロードの前に消す手順が要る |
-| **(b) `wrangler pages dev` に替える（採用）** | plugin と Workers の設定を外し、`pnpm preview` を `wrangler pages dev dist` にする | E2E が**配信先と同じ製品**のローカルの実装（workerd）で `_headers`・SPA の判定を確かめる。設定が 1 つの製品にそろい、`dist/` に Workers 用の出力が混ざらない | `wrangler pages dev` が `_headers` を手元で適用するかを、ドキュメントでは確かめられなかった（**未確認**）。`--strictPort` に当たるフラグがあるか**未確認**。R01-8 の裁定と tech-spec §3.1 を改める |
+| **(b) `wrangler pages dev` に替える（採用）** | plugin と Workers の設定を外し、`pnpm preview` を `wrangler pages dev dist` にする | E2E が**配信先と同じ製品**のローカルの実装（workerd）で `_headers`・SPA の判定を確かめる。設定が 1 つの製品にそろい、`dist/` に Workers 用の出力が混ざらない | `wrangler pages dev` が `_headers` を手元で適用するかは、ドキュメントには書かれていない。wrangler 4.127.1 のコードでは Miniflare が `_headers` を読む（レビュー役が確認、2026-09-17）。実際の応答で効くかは計画の最初の Task で確かめる。`--strictPort` は無く `--port` だけなので、包むスクリプトが要る（§4.6）。R01-8 の裁定と tech-spec §3.1 を改める |
 | (c) ヘッダーを Vite で付ける | `_headers` を 1 か所の定義から生成し、`vite preview` の `preview.headers` にも渡す | wrangler に依存しない | `_headers` のパスの照合を自前で再現することになり、Pages の実際の規則との違いを検査できない |
 
 あわせて、**デプロイの後に実際の URL の応答を検査する**（§5.2）。E2E は手元の実装で規則を、デプロイ後の検査は本物の応答を確かめる。
@@ -152,17 +156,30 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 (b) の具体:
 
 - `vite.config.ts` から `cloudflare()` を外す。`chunkModulesReport` と Worker のチャンクの収集は plugin に依存しない（Vite の `worker.plugins` と `generateBundle`）ので、そのまま動く見込み
-- `package.json`: `@cloudflare/vite-plugin` を devDependencies から外す。`wrangler` は `pages deploy`・`pages dev` に使うので残す。`preview` を `wrangler pages dev dist` に、`deploy:production` を `pnpm build && wrangler pages deploy dist --project-name raintrace --branch production` にする
+- `package.json`: `@cloudflare/vite-plugin` を devDependencies から外す。`wrangler` は `pages deploy`・`pages dev` に使うので残す。`preview` を `wrangler pages dev dist` を包むスクリプト（`--strictPort` を受けて捨てる。§4.6）に、`deploy:production` を `deploy:production:manual`（`pnpm build && wrangler pages deploy dist --project-name raintrace --branch production --commit-dirty=true`。緊急用、§4.7）にする
 - `wrangler.jsonc`: 消す。Pages の設定ファイル（`pages_build_output_dir`）にもしない。Functions を使わないので `compatibility_date` も要らない。`pages dev` が compatibility date を求める場合は、CLI のフラグで渡す
 - `public/.assetsignore`: 消す（Pages は読まない）
-- **`dist/.vite/`（R-D4）**: ビルドの後に `dist/` の外（例: `build-info/`、gitignore する）へ移す。E2E もデプロイも同じ `dist/` を扱い、「配信しない」を E2E で確かめ続けられる。`scripts/check-bundle-size.mjs` の読み先を合わせる。デプロイのジョブだけで消す方法は、E2E が見る `dist/` と上げる `dist/` が食い違うので採らない
+- **`dist/.vite/`（R-D4）**: ビルドの後に `dist/` の外（例: `build-info/`、gitignore する）へ移す。E2E もデプロイも同じ `dist/` を扱い、「配信しない」を E2E で確かめ続けられる。`.gitignore` に `build-info/` を足す。デプロイのジョブだけで消す方法は、E2E が見る `dist/` と上げる `dist/` が食い違うので採らない
+  - `dist/.vite/` を読むもの（読み先を合わせる）: D が直すのは 05 の時点のファイル — `scripts/check-bundle-size.mjs`（`manifest.json`・`chunk-modules.json`）、`vite.config.ts` の `chunkModulesReport` の出力先、`tests/perf/fps.perf.ts`（94 行目で `dist/.vite/manifest.json` を読む）。06 のブランチの読み手（`tests/perf/support.ts` と 06 の計画の約 10 か所）は 06 が直す（§4.6）
+  - 移した後は、E2E の「`/.vite/` を配信しない」は自明に通る。守りとして残すが、本当の守りは §5.2 の 4（本物の応答）である
 - `pnpm-workspace.yaml` の `allowBuilds` は、plugin を外した後の `pnpm install` が求めるものだけにする（workerd・esbuild は wrangler の依存として残る見込み）
 - **`pages dev` が `_headers` を適用しないと分かった場合**（計画の最初の Task で確かめる）は、その時点で実装を止め、(a) に切り替えるかをユーザーに上げる（R-D3 の条件）
 
-### 4.6 06 の計測との関係
+### 4.6 06 との重なり
 
-- `playwright.perf.config.ts`（06、ポート 4175）は `pnpm preview --port 4175 --strictPort` を呼ぶ。スクリプト名 `preview` と引数の形を保てば、06 のブランチの設定を変えずに済む。`--strictPort` を `pages dev` が受け付けない場合は、`preview` のスクリプトの側で吸収する（例: `node scripts/preview.mjs` が `--strictPort` を受けて捨てる）
-- 配信の仕組みが変わっても、fps・step の所要時間など 06 の計測値は描画と Worker の処理で決まり、静的配信の実装には依存しない見込み。ただし 06 の計測の途中で配信を差し替えない（R-D7）
+D と 06（`feat/06-performance`）は、どちらも 05 の上に積まれ、次の 5 点で重なる。
+
+| # | 重なり | D が直すもの | 06 が直すもの |
+|---|---|---|---|
+| 1 | `dist/.vite/` を読むもの | 05 の時点の `scripts/check-bundle-size.mjs`・`vite.config.ts` の出力先・`tests/perf/fps.perf.ts`（§4.5） | 06 の `tests/perf/support.ts`（74 行目。06 が `fps.perf.ts` から移した読み込み）、06 の計画の約 10 か所（`grep -c perfHook dist/.vite/manifest.json`、Task 30 の Step 2 など）、06 が `vite.config.ts` の chunk-modules の出力に足したもの |
+| 2 | `.gitignore` | `build-info/` を足す | `.cache/` を足す |
+| 3 | overview の §3・§6 の同じ表 | §3 の D の行、§6 の R-D の行と R01-3・R01-8 の追記 | §6 の R05-6・R06 の行 |
+| 4 | tech-spec | §3.1・§3.2・§3.4・§12.3 | §14（節は違うが同じファイル） |
+| 5 | `pnpm preview` が動かすもの | `wrangler pages dev dist` にし、`--strictPort` を受けて捨てる包み（例: `node scripts/preview.mjs`。`pages dev` に `--strictPort` は無い）を置く | 06 の `playwright.perf.config.ts` は `pnpm preview --port 4175 --strictPort` のまま変えずに済む |
+
+- **D は 05 の時点のファイルだけを直す。** 06 は D のマージ後、マイルストーンの区切り（M3 か M4 の後）で D の上にリベースし、上の 1〜2 を 1 コミットで合わせる（3・4 は節や行が違うので、リベースの衝突の解消で足りる見込み）
+- リベース後に isolate の 1 変種を 1 回回して、配信の実体の差で fps が変わっていないことを確かめる（R06-4 の前後同条件を守るため）。fps・step の所要時間は描画と Worker の処理で決まり、静的配信の実装には依存しない見込みだが、見込みに頼らず測る
+- **M4 の前後の計測の途中ではリベースしない**（R-D7）
 
 ### 4.7 CI の書き換え
 
@@ -172,8 +189,16 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 - `deploy-preview`（PR）: `CLOUDFLARE_ENV` を外し、`pnpm exec wrangler pages deploy dist --project-name "${PAGES_PROJECT}" --branch "pr-${PR_NUMBER}" --commit-hash "${GITHUB_SHA}" --commit-message "PR #${PR_NUMBER} ${GITHUB_SHA::7}"`。サマリに URL を出す。続けて §5.2 の検査を `https://pr-${PR_NUMBER}.raintrace.pages.dev` に当てる
   - `pull_request` の `GITHUB_SHA` はマージコミットの SHA。いまと同じ扱い（表示用）なので変えない
 - `deploy-staging` → **`deploy-main` に改名**: `wrangler pages deploy dist --project-name "${PAGES_PROJECT}" --branch main --commit-hash "${GITHUB_SHA}"`、続けて検査を `https://main.raintrace.pages.dev` に。ステージングではなくなるので、`environment: staging` を外す
-- `deploy-production`（タグ）: `wrangler pages deploy dist --project-name "${PAGES_PROJECT}" --branch production --commit-hash "${GITHUB_SHA}" --commit-message "${GITHUB_REF_NAME}"`、続けて検査を `https://raintrace.pages.dev` と（独自ドメインが Active になった後は）`https://raintrace.terapyon.net` に。`environment: production` は残す
-- `--branch production` は `deploy-production` にだけ書く（§4.2 の注意）
+- `deploy-production`（タグ）: `wrangler pages deploy dist --project-name "${PAGES_PROJECT}" --branch production --commit-hash "${GITHUB_SHA}" --commit-message "${GITHUB_REF_NAME}"`、続けて検査を `https://raintrace.pages.dev` と、リポジトリの変数 `vars.PRODUCTION_URL`（独自ドメインが Active になった後にユーザーが `https://raintrace.terapyon.net` を登録する）が**設定されているときだけ**その URL に当てる（§5.2）。`environment: production` は残す
+- 3 ジョブとも `--commit-dirty=true` を付け（§4.2）、ワークフローの `env` に `WRANGLER_SEND_METRICS: false` を置く
+- **本番を取り違えない守り**（§4.2 の注意）:
+  - ブランチ名はジョブの `env` の `PAGES_BRANCH` で組み立て、コマンドは `--branch "${PAGES_BRANCH}"` に統一する。`production` を書くのは `deploy-production` の `env`（`PAGES_BRANCH: production`）だけ。`deploy-preview` は `PAGES_BRANCH: pr-${{ github.event.number }}`、`deploy-main` は `PAGES_BRANCH: main`
+  - `deploy-preview` と `deploy-main` のデプロイの直前に、1 行の検査 `[ "$PAGES_BRANCH" != production ]` を置く（一致したら失敗して上げない）
+  - `package.json` の `deploy:production`（CI を通らない本番への経路）は **`deploy:production:manual` に改名**し、README に「CI が使えないときの緊急用。通常のリリースは `v*` のタグ」と書く。消さないのは、CI の障害時に本番を出す手段を残すため
+- **未裁定（R-D9、ユーザーの判断）**: GitHub の environment `production` に承認者（ユーザー）を必須にするか。いまは `v*` のタグの push だけが本番への関門
+  - 付ける利点: タグの push の誤り（打ち間違い・古いコミットへのタグ）でも、承認の一手で止められる。本番への経路が CI のジョブ 1 つに集まる
+  - 付ける欠点: リリースのたびに GitHub の画面で承認の操作が要る（1 人のリポジトリでは、タグを打った本人が承認するので二重の手間）。承認を待つ間、ジョブが保留になる
+  - 付けない場合: タグの push が唯一の関門のまま。上の `PAGES_BRANCH` の守りで、PR と `main` のジョブからの取り違えは防げる
 - 第三者の Action（`cloudflare/wrangler-action`）は使わない（spec 01 §4.7。ドキュメントの例は Action を使うが、`pnpm exec wrangler` で同じことができる）
 - Secrets の名前（`CLOUDFLARE_API_TOKEN`・`CLOUDFLARE_ACCOUNT_ID`）とリポジトリの単位に置くことは変えない
 - `concurrency`・`permissions: contents: read` も変えない
@@ -215,12 +240,12 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 | # | 誰が | 作業 | この時点の配信 |
 |---|---|---|---|
 | 1 | ユーザー | Pages の project `raintrace` を作る（§4.1、production branch は `production`）。表示された `pages.dev` のサブドメインを実装役に伝える | Workers のみ |
-| 2 | ユーザー | トークンに Pages の Edit を足す（§4.8） | Workers のみ |
-| 3 | 実装役 | D を実装する（§4.5・§4.7）。手元で E2E を通す。`wrangler pages deploy` を手元から一度 `--branch d-trial`（プレビュー）で上げて出力と応答を確かめる（`wrangler login` はユーザーの手元。実装役が行えない場合はユーザーに依頼） | Workers と Pages（試し） |
+| 2 | ユーザー | トークンに Pages の Edit を足す（§4.8）。移行の間は **Workers と Pages の両方の権限**を持たせる（01〜05 の PR が Workers に上げ続けるため） | Workers のみ |
+| 3 | 実装役 | D を実装する（§4.5・§4.7）。手元で E2E を通す。`wrangler pages deploy` を手元から一度 `--branch d-trial`（プレビュー）で上げて、出力の文言（§4.2 の未確認: deployment と別名の URL が出るか）と応答を確かめる（`wrangler login` はユーザーの手元。実装役が行えない場合はユーザーに依頼）。別名 `d-trial.raintrace.pages.dev` は消せずに残るが、noindex のプレビューなので害は無い | Workers と Pages（試し） |
 | 4 | ユーザー | D を push して PR を作る。PR の `deploy-preview` が Pages に上がり、検査が通る | Workers（01〜05 の PR）と Pages（D の PR） |
 | 5 | ユーザー | 01〜05、D の順にマージする（R-D7）。01〜05 のマージの時点では、古いワークフローが Workers のステージングに上げる。D のマージで `deploy-main` が `main.raintrace.pages.dev` に上がる | `main` は Pages |
 | 6 | ユーザー | `v*` のタグを push し、本番を上げる。`raintrace.pages.dev` で確かめる | 本番は Pages |
-| 7 | ユーザー | 独自ドメインを付ける（§4.3。ダッシュボードが先、value-domain の CNAME が後）。Active になったら §5.2 の検査を当てる | 本番は `raintrace.terapyon.net` |
+| 7 | ユーザー | 独自ドメインを付ける（§4.3。ダッシュボードが先、value-domain の CNAME が後）。Active になったら §5.2 の検査を当て、リポジトリの変数 `PRODUCTION_URL` に `https://raintrace.terapyon.net` を登録する（以後のタグで検査される） | 本番は `raintrace.terapyon.net` |
 | 8 | ユーザー | 旧 Workers を消し、トークンを絞る（§4.9） | Pages のみ |
 
 - README・spec に `workers.dev` の URL を載せている箇所は、D の中で Pages の URL に改める（利用者向けに公開した URL ではないので、転送は置かない）
@@ -234,14 +259,15 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 3. `index.html` が参照する `/assets/*.js` の 1 つの `cache-control` が `max-age=31536000` と `immutable` を含む
 4. `/.vite/manifest.json` の本文が `"isEntry"` を含まない（ビルドの情報を配信していない）
 5. 存在しないパス（例: `/no-such-path`）が 200 で `index.html` を返す（SPA のフォールバック）
-6. `*.pages.dev`（PR・`main`・`raintrace.pages.dev`）は `x-robots-tag` に `noindex` を含む。**`raintrace.terapyon.net` は `noindex` を含まない**（R-D6）
+6. `*.pages.dev` は `x-robots-tag` に `noindex` を含む。`_headers` の 2 つの規則をそれぞれ確かめる: `https://:project.pages.dev/*` は `raintrace.pages.dev`（本番のジョブ）で、`https://:alias.:project.pages.dev/*` は `pr-<n>.`・`main.` の別名（プレビューと `main` のジョブ）で。**`raintrace.terapyon.net` は `noindex` を含まない**（R-D6）
 
+- 本番の独自ドメインへの検査は、リポジトリの変数 `vars.PRODUCTION_URL` が設定されているときだけ行う。ドメインが Active になる前にタグを push しても、ジョブが赤にならない（§5.1 の手順 7 で登録する）
 - 反映の遅れに備え、数回の再試行（例: 5 秒おきに 6 回）を入れる
 - デプロイのジョブは必須のチェックではない（`deploy-preview` は × のまま）ので、検査の失敗はマージを妨げないが、ジョブの赤で気づける
 
 ## 6. テスト
 
-- **E2E**（`pnpm test:e2e`、Chromium、ポート 4173）: 配信が `wrangler pages dev` に替わっても、`smoke.spec.ts` の 3 件（CSP・`Cache-Control`・`/.vite/` を配信しない）とそれ以外の全件が通る。テストの中身は変えない。`/.vite/` のテストのコメント（`not_found_handling`）だけを Pages の規則に合わせて直す
+- **E2E**（`pnpm test:e2e`、Chromium、ポート 4173）: 配信が `wrangler pages dev` に替わっても、`smoke.spec.ts` の 3 件（CSP・`Cache-Control`・`/.vite/` を配信しない）とそれ以外の全件が通る。テストの中身は変えない。`/.vite/` のテストのコメント（`not_found_handling`）だけを Pages の規則に合わせて直す。`/.vite/` のテストは R-D4 の後は自明に通る（`dist/` に無いので）。`public/` に誤って置いた場合などの守りとして残すが、**本当の守りは §5.2 の 4**（デプロイした応答）である
 - **E2E に 1 件足す**: 存在しないパス（`/no-such-path`）を開いても地図の画面が出る（SPA の判定。`404.html` を誤って置いたときに気づく）
 - **単体**: 変更なし（アプリのコードに触れない）。`scripts/check-deployed-headers.mjs` は小さいので単体テストを持たず、PR のプレビューでの実行を確かめとする
 - **ビルド**: `pnpm build` の後に `dist/` に `wrangler.json`・`.assetsignore`・`.vite/` が無く、`pnpm size` が移した先の情報を読んで通る
@@ -270,11 +296,11 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 | overview §6 R01-8 | 裁定の欄に「spec D で外した（`wrangler pages dev` に替えた、2026-09-17）」を追記 |
 | overview §6 | R-D1〜R-D8 の行を足す。§7 に T15（tech-spec §3・§12.3） |
 | spec 01 | 当時の設計の記録として本文を書き換えず、冒頭の Status に「デプロイは spec D で Pages に移した」旨の 1 行を足す |
-| README | `pnpm preview`（`wrangler pages dev`）と `pnpm deploy:production` の説明 |
+| README | `pnpm preview`（`wrangler pages dev`）と `pnpm deploy:production:manual`（CI が使えないときの緊急用。通常のリリースは `v*` のタグ）の説明 |
 
 ## 9. 裁定が必要な論点
 
-> 裁定（2026-09-17）: R-D1 は変更（ステージングを廃止し、project を 1 つにする。R01-3 の変更）。R-D2 は R-D1 により不要。R-D3〜R-D8 は推奨どおり承認。DNS は Route 53 ではなく value-domain.com（ユーザーの記憶違いを訂正）。本文は裁定を反映済み。
+> 裁定（2026-09-17）: R-D1 は変更（ステージングを廃止し、project を 1 つにする。R01-3 の変更）。R-D2 は R-D1 により不要。R-D3〜R-D8 は推奨どおり承認。R-D9（レビューで加えた論点）は未裁定。DNS は Route 53 ではなく value-domain.com（ユーザーの記憶違いを訂正）。本文は裁定を反映済み。
 
 | ID | 論点 | 推奨 | 理由 | 裁定 |
 |---|---|---|---|---|
@@ -284,5 +310,6 @@ Pages に移ると、`@cloudflare/vite-plugin` と `wrangler.jsonc`（Workers �
 | R-D4 | `dist/.vite/` の置き場所 | ビルドの後に `dist/` の外（`build-info/`）へ移し、`pnpm size` の読み先を合わせる | Pages は `.assetsignore` を読まず、ディレクトリの全ファイルを上げる。E2E とデプロイが同じ `dist/` を扱える | 承認（2026-09-17） |
 | R-D5 | 旧 Workers を消す時期 | 01〜05 と D がマージされ、本番と独自ドメインで §5.2 の検査が通った後（§5.1 の手順 8） | それまでは 01〜05 の PR のワークフローが `raintrace-staging` の Worker にプレビューを上げる | 承認（2026-09-17）: 対象は `raintrace`・`raintrace-staging` |
 | R-D6 | `workers.dev`・`pages.dev` の URL を残すか | `workers.dev` は Worker ごと消す（転送は置かない）。`pages.dev` は消せないので残し、`_headers` で `X-Robots-Tag: noindex` を付ける | `workers.dev` は開発者しか使っておらず、残すと古い版が並ぶ。Pages は本番の deployment に noindex を付けない | 承認（2026-09-17）: `*.pages.dev` は noindex、本番の独自ドメインは索引されるまま |
-| R-D7 | この spec の実装をどこに積むか | 05（`b3a8916`）の上に積み、PR の base は `feat/05-3d-rendering`。05 の直後・06 より前にマージし、06 は D の上に載せ替える。06 の計測の最中は D をマージしない | 独自ドメインを 01〜05 の main へのマージ待ちにしない。06 と重なるのは `pnpm preview` の呼び方だけ | 承認（2026-09-17） |
+| R-D7 | この spec の実装をどこに積むか | 05（`b3a8916`）の上に積み、PR の base は `feat/05-3d-rendering`。05 の直後・06 より前にマージし、06 は D の上に載せ替える。06 の計測の最中は D をマージしない | 独自ドメインを 01〜05 の main へのマージ待ちにしない。06 との重なり（`dist/.vite/` の読み手・`.gitignore`・overview の表・tech-spec・`pnpm preview`）は §4.6 のとおり、D は 05 の時点のファイルだけを直し、06 がリベースで合わせる | 承認（2026-09-17）。レビュー（2026-09-17）の指摘で、06 との重なりを 5 点に改め、06 のリベースの時期と直す範囲を §4.6 に書いた |
 | R-D8 | 記録の更新 | tech-spec §3.4・§12.3 などと overview の R01-3・R01-8 を、実装の中で改める（§8） | 配信先と R01-3 の流れの変更を、決定の記録に残す | 承認（2026-09-17） |
+| R-D9 | GitHub の environment `production` に承認者（ユーザー）を必須にするか | 推奨しない（ユーザーの判断に委ねる。利点・欠点は §4.7） | 1 人のリポジトリでは、タグを打った本人が承認することになり手間が二重になる。PR と `main` のジョブからの取り違えは `PAGES_BRANCH` の守りで防げる。一方、タグの打ち間違いを止める一手が欲しいなら付ける価値がある | **未裁定** |
