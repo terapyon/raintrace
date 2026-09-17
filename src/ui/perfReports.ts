@@ -28,7 +28,7 @@ export interface StepsReport {
   stepsPerSecond: number
   final: DisplayStats | null
   stepTimes: StepTimeSummary & { series: TimedStepSnapshot[] }
-  longTasks: LongTaskSummary
+  longTasks: LongTaskSummary & { entries: LongTaskSample[] }
   /** 止めた後 IDLE_WINDOW_MS の間の地図の render の回数（spec 06 §5「止まっている間の再描画」） */
   idleRenders: number
   idleWindowMs: number

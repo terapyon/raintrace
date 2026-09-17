@@ -62,6 +62,8 @@ interface Report {
   waterBuildMs: number[]
   tiles: { loaded: boolean; waitMs: number }
   result: FpsResult
+  /** 計測時の地形の状態（perfSteps.runStepsProbe と同じ形。spec 06 M4 Task 13a のレビュー裁定） */
+  terrain: { demLevel: number; cellSizeM: number; invalidRatio: number } | null
   /** 計測の窓の長いタスク（spec 06 §3） */
   longTasks: LongTaskSummary
   /** 計測の窓の 1 step の所要時間（水面ありのときだけ値がある） */

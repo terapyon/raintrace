@@ -150,6 +150,7 @@ export async function installPerfHook(
     // 計測の窓（fpsProbe のウォームアップの 1 秒を除く。D15 と同じ）の長いタスクと、
     // Worker が送った 1 step の所要時間
     const windowStart = runStart + result.warmupMs
+    const summary = store.getState().summary
     const report = {
       params,
       view3d,
@@ -161,6 +162,15 @@ export async function installPerfHook(
       waterBuildMs,
       tiles,
       result,
+      // perfSteps.runStepsProbe と同じ形（レビュー裁定 m4。fps の結果から DEM の水準を直接読めるようにする）
+      terrain:
+        summary === null
+          ? null
+          : {
+              demLevel: summary.demLevel,
+              cellSizeM: summary.cellSizeM,
+              invalidRatio: summary.invalidRatio,
+            },
       longTasks: summarizeLongTasks(longTasks.entries, longTasks.supported, windowStart, runEnd),
       stepTimes: summarizeStepSeries(stepTimes.series, windowStart, runEnd + 1500),
     }

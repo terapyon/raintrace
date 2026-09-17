@@ -7,6 +7,7 @@ import type { SettingsStore } from '../state/settingsStore'
 import type { SimulationStore } from '../state/simulationStore'
 import {
   type LongTaskCollector,
+  type LongTaskSample,
   type StepTimeListener,
   summarizeLongTasks,
   summarizeStepSeries,
@@ -24,6 +25,15 @@ export const IDLE_WINDOW_MS = 2000
 const STEPS_PER_SECOND_AT_1X = 60
 /** Worker の要約は 1 秒ごとに届くので、窓の終わりを延ばす */
 const SNAPSHOT_LAG_MS = 1500
+
+/** [fromMs, toMs) に始まった長いタスクの一覧（開始と長さだけ。LoadReport.longTasks.entries と同じ形。spec 06 M4 Task 13a） */
+export function stepLongTaskEntries(
+  entries: readonly LongTaskSample[],
+  fromMs: number,
+  toMs: number,
+): LongTaskSample[] {
+  return entries.filter((entry) => entry.startMs >= fromMs && entry.startMs < toMs)
+}
 
 export function minutesAt1x(steps: number): number {
   return steps / STEPS_PER_SECOND_AT_1X / 60
@@ -153,7 +163,10 @@ export async function runStepsProbe(
       ...summarizeStepSeries(stepTimes.series, start, end + SNAPSHOT_LAG_MS),
       series: stepTimes.series.filter((s) => s.atMs >= start && s.atMs < end + SNAPSHOT_LAG_MS),
     },
-    longTasks: summarizeLongTasks(longTasks.entries, longTasks.supported, start, end),
+    longTasks: {
+      ...summarizeLongTasks(longTasks.entries, longTasks.supported, start, end),
+      entries: stepLongTaskEntries(longTasks.entries, start, end),
+    },
     idleRenders,
     idleWindowMs: IDLE_WINDOW_MS,
   }
