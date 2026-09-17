@@ -41,8 +41,10 @@ const TERRAINS: [string, Terrain][] = [
 ]
 
 describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', () => {
-  // この 30,000ms は it.each の 3 つすべてに効く。必要なのは入れ子の窪地だけ（平衡まで約 54,000 step
-  // かかり、カバレッジの計測（pnpm test:coverage）の v8 の計測のオーバーヘッドで既定の 5,000ms を超える）
+  // この 120,000ms は it.each の 3 つすべてに効く。必要なのは入れ子の窪地だけ（平衡まで約 54,000 step
+  // かかり、カバレッジの計測（pnpm test:coverage）の v8 の計測のオーバーヘッドで既定の 5,000ms を超える）。
+  // GitHub Actions のランナーではこのファイルが 17〜32 秒かかり（2026-09-17 の CI）、30,000ms では
+  // 入れ子の窪地が時間切れで落ちることがあったので、ランナーのばらつきを見込んで 4 倍にした
   it.each(TERRAINS)(
     '%s: 十分な水を入れて平衡させた水面が F と一致する',
     (_, t) => {
@@ -90,6 +92,6 @@ describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', ()
       expect(checked).toBeGreaterThan(0)
       expect(checkedOutside).toBeGreaterThan(0)
     },
-    30_000,
+    120_000,
   )
 })
