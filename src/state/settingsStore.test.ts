@@ -57,6 +57,10 @@ describe('settingsStore（tech-spec §8.3）', () => {
       '矢印の表示が真偽値でない',
       { ...base, display: { ...DEFAULT_SETTINGS.display, showFlowVectors: 'yes' } },
     ],
+    [
+      '矢印の間隔が候補にも 5 にも無い',
+      { ...base, display: { ...DEFAULT_SETTINGS.display, flowVectorSpacingM: 15 } },
+    ],
     ['ベースマップが候補に無い', { ...base, map: { basemap: 'satellite', theme: 'system' } }],
     ['免責の了解が日時でない', { ...base, disclaimerAcknowledgedAt: 'yesterday' }],
     ['配列', []],
@@ -69,6 +73,20 @@ describe('settingsStore（tech-spec §8.3）', () => {
   it('JSON として読めない値も既定値に戻す', () => {
     const store = createSettingsStore(memoryStorage({ [SETTINGS_KEY]: '{' }))
     expect(store.getState()).toMatchObject(DEFAULT_SETTINGS)
+  })
+
+  it('矢印の間隔の保存値が 5（外れた選択肢）なら 10 として読み、他の表示の設定はそのまま保つ（R06-11 の移行）', () => {
+    const storage = memoryStorage({
+      [SETTINGS_KEY]: JSON.stringify({
+        ...DEFAULT_SETTINGS,
+        display: { ...DEFAULT_SETTINGS.display, flowVectorSpacingM: 5 },
+      }),
+    })
+    const store = createSettingsStore(storage)
+    expect(store.getState().display).toEqual({
+      ...DEFAULT_SETTINGS.display,
+      flowVectorSpacingM: 10,
+    })
   })
 
   it('範囲を小さくすると、半径を範囲の半分に収める（保存値が常に正しい形になる）', () => {

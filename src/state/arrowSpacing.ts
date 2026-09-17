@@ -1,6 +1,6 @@
 import type { RangeSizeM } from './persistedSettings'
 
-/** 選べる矢印の間隔（5・10・20 m）の基準の範囲（spec 05 §3.3。1 辺の本数を 500 m の既定にそろえる） */
+/** 選べる矢印の間隔（10・20 m。5 は R06-11 の裁定で外した）の基準の範囲（spec 05 §3.3。1 辺の本数を 500 m の既定にそろえる） */
 export const ARROW_REFERENCE_SIZE_M = 500
 
 /**

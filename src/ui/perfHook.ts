@@ -6,6 +6,7 @@
  */
 import { runFpsProbe } from '../map/fpsProbe'
 import type { TileTimeSample } from '../map/view3d/options'
+import { clampArrowSpacing } from '../state/persistedSettings'
 import type { SettingsStore } from '../state/settingsStore'
 import {
   listenStepTimes,
@@ -56,8 +57,10 @@ export async function installPerfHook(
     verticalExaggeration: params.exaggeration,
     // arrows=0: 水の流れの矢印を止める（spec 06 §5.1、計画で決めたこと 8）。Worker は flowVectors() を呼ばない
     ...(params.arrows ? {} : { showFlowVectors: false }),
-    // arrowsM=5・10・20: 矢印の間隔の設定（1000 m の実効はその 2 倍）。省けば設定を触らない（spec 06 §5.1）
-    ...(params.arrowsM === null ? {} : { flowVectorSpacingM: params.arrowsM }),
+    // arrowsM=5・10・20: 矢印の間隔の設定。5 は clampArrowSpacing で 10 に丸める（R06-11 の裁定 (a2):
+    // 全範囲で矢印の 1 辺の本数の上限を 50 にする。ARROW_SPACINGS はもう 5 を含まない）。
+    // 省けば設定を触らない（spec 06 §5.1）
+    ...(params.arrowsM === null ? {} : { flowVectorSpacingM: clampArrowSpacing(params.arrowsM) }),
   })
   /** 結果を <html data-*> と画面に出す */
   const publish = (key: 'stepsResult' | 'loadResult', report: unknown): void => {

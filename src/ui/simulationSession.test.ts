@@ -377,16 +377,16 @@ describe('SimulationSession: 水の流れの矢印の設定', () => {
 
   it('設定の矢印の表示と間隔の変更を Worker に送る', () => {
     const { worker, settings } = setup()
-    settings.getState().setDisplay({ showFlowVectors: false, flowVectorSpacingM: 5 })
-    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: false, spacingM: 5 })
+    settings.getState().setDisplay({ showFlowVectors: false, flowVectorSpacingM: 20 })
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: false, spacingM: 20 })
   })
 
   it('範囲 1000 m では、選んだ間隔の 2 倍を Worker に送る（spec 05 §3.3）', () => {
     const { worker, settings } = setup()
     settings.getState().setAreaSize(1000)
     expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: true, spacingM: 20 })
-    settings.getState().setDisplay({ flowVectorSpacingM: 5 })
-    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: true, spacingM: 10 })
+    settings.getState().setDisplay({ flowVectorSpacingM: 20 })
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: true, spacingM: 40 })
   })
 })
 

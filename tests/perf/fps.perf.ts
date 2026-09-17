@@ -159,7 +159,8 @@ const SETS: Record<string, SetDef> = {
       },
       // 矢印の本数と fps の関係（M2 の準備で追加）。1000 m の実効の間隔は設定の 2 倍、既定（10 m）は実効 20 m・2,500 本
       {
-        label: '水面あり・矢印 5 m（1000 m で実効 10 m・10,000 本）',
+        label:
+          '水面あり・矢印 5 m（arrowsM=5。R06-11 の前は実効 10 m・10,000 本、後は 10 に丸められ 2,500 本）',
         water: '1',
         extra: { arrowsM: '5' },
       },
@@ -179,7 +180,8 @@ const SETS: Record<string, SetDef> = {
     variants: [
       { label: '水面あり・depthEvery=1（既定の矢印間隔）', water: '1', extra: { depthEvery: '1' } },
       {
-        label: '水面あり・矢印 5 m（500 m で実効 5 m・10,000 本）',
+        label:
+          '水面あり・矢印 5 m（arrowsM=5。R06-11 の前は実効 5 m・10,000 本、後は 10 に丸められ 2,500 本）',
         water: '1',
         extra: { arrowsM: '5' },
       },

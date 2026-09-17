@@ -96,7 +96,7 @@ test('表示のスイッチと矢印の間隔を切り替えてもエラーが�
     await page.getByLabel(label).click()
     await page.getByLabel(label).click()
   }
-  for (const spacing of ['5 m', '20 m', '10 m']) {
+  for (const spacing of ['20 m', '10 m']) {
     await page.getByRole('button', { name: spacing }).click()
   }
   expect(errors).toEqual([])
