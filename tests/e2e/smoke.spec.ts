@@ -66,9 +66,22 @@ test('WebGL 2 が使えないと、非対応の画面が出る', async ({ page }
 })
 
 test('ビルドの情報（dist/.vite/）は配信しない', async ({ request }) => {
-  // not_found_handling が single-page-application なので、無いファイルには index.html が返る
+  // ビルドの情報は build-info/ に移すので dist に無い（spec D R-D4）。無いパスには Pages の SPA の判定で
+  // index.html が返る。public/ に誤って置いたときの守りとして残す。本当の守りはデプロイの後の応答の検査
+  // （scripts/check-deployed-headers.mjs）
   const response = await request.get('/.vite/manifest.json')
   expect(await response.text()).not.toContain('"isEntry"')
+})
+
+test('存在しないパスを開いても地図の画面が出る（SPA のフォールバック。dist/404.html を置くと壊れる）', async ({
+  page,
+  gsiTiles,
+}) => {
+  const response = await page.goto('/no-such-path')
+  expect(response?.status()).toBe(200)
+  await expect(page.locator(mapLoaded)).toBeAttached()
+  // gsiTiles（auto fixture）が地理院への要求を差し替えているので、本物の GSI には届かない
+  await expect.poll(() => gsiTiles.pale).toBeGreaterThan(0)
 })
 
 test('/assets/* は長期キャッシュされ、index.html はキャッシュされない（裁定 RB-1）', async ({

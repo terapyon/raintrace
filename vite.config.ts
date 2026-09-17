@@ -1,6 +1,5 @@
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
-import { cloudflare } from '@cloudflare/vite-plugin'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 
@@ -96,7 +95,7 @@ function moveBuildInfoOutOfDist(): Plugin {
 export default defineConfig(({ mode }) => ({
   // 計測用のフック（src/ui/perfHook.ts）は vite build --mode perf のときだけ入れる（spec 05 の計画で決めたこと 20）
   define: { __RAINTRACE_PERF__: JSON.stringify(mode === 'perf') },
-  plugins: [react(), cloudflare(), chunkModulesReport(), moveBuildInfoOutOfDist()],
+  plugins: [react(), chunkModulesReport(), moveBuildInfoOutOfDist()],
   // Worker は { type: 'module' } で起動するので ES モジュールとして出力する
   worker: { format: 'es', plugins: () => [workerChunkModulesCollector()] },
   build: {

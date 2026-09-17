@@ -4,9 +4,9 @@ minimumReleaseAgeStrict: true
 # ビルドスクリプトの実行を許すパッケージ。追加するときは理由を PR に書く（tech-spec §13.3）
 # false: スクリプトを実行しない。pnpm 12 は未決のものがあると install を失敗させるため、明示する
 allowBuilds:
-  # wrangler・vite の依存。スクリプトを実行しなくても pnpm build と pnpm preview（workerd）が
-  # 動くことを実測で確認した（2026-09-10）。どちらも実行ファイルをプラットフォーム別の
-  # optionalDependencies で受け取り、postinstall は主に検証を行う
+  # wrangler の依存（esbuild は vite も使う）。スクリプトを実行しなくても pnpm build と
+  # pnpm preview（wrangler pages dev、workerd）が動くことを実測で確認した（2026-09-10、spec D で再確認）。
+  # どちらも実行ファイルをプラットフォーム別の optionalDependencies で受け取り、postinstall は主に検証を行う
   esbuild: false
   # postinstall で git フックを入れるパッケージ。許可せず、package.json の prepare（lefthook install）で
   # フックを入れる。ルートのプロジェクト自身のライフサイクルスクリプトは実行されるため（tech-spec §13.3）

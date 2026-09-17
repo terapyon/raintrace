@@ -6,3 +6,12 @@
 # Vite の出力はファイル名にハッシュが付くので、長く保存してよい（裁定 RB-1）
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# *.pages.dev は索引させない（spec D §4.2、R-D6）。1 つ目は raintrace.pages.dev（本番の deployment）、
+# 2 つ目は main.・pr-<番号>.・<hash>. の別名に当たる（placeholder はピリオドを含まない）。
+# 独自ドメイン raintrace.terapyon.net にはどちらも当たらず、索引される
+https://:project.pages.dev/*
+  X-Robots-Tag: noindex
+
+https://:alias.:project.pages.dev/*
+  X-Robots-Tag: noindex

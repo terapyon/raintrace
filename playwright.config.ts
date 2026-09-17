@@ -7,7 +7,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: { baseURL: `http://localhost:${port}` },
-  // 本番ビルドを vite preview（workerd）で配信する。ビルドは pnpm test:e2e が先に行う
+  // 本番ビルドを wrangler pages dev（Cloudflare Pages のローカルの実装、workerd）で配信する（spec D）。
+  // pnpm preview は scripts/preview.mjs で、--strictPort を受けて捨て、使用中のポートでは失敗する。ビルドは pnpm test:e2e が先に行う
   webServer: {
     command: `pnpm preview --port ${port} --strictPort`,
     url: `http://localhost:${port}`,

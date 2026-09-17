@@ -14,6 +14,7 @@ import {
   packagesIn,
   sharedModules,
 } from './lib/bundleBudget.mjs'
+import { forbiddenDistEntries } from './lib/distContents.mjs'
 
 const dist = 'dist'
 /** ビルドの情報は dist の外に置く（vite.config.ts の moveBuildInfoOutOfDist。spec D R-D4） */
@@ -34,6 +35,8 @@ const files = readdirSync(join(dist, 'assets'))
 const initial = initialFiles(manifest)
 const result = evaluateBudget(files, initial)
 const violations = [...result.violations]
+// Pages は dist の全ファイルを上げるので、配信しないものが混ざっていたら失敗する（spec D §4.5）
+violations.push(...forbiddenDistEntries(readdirSync(dist)))
 
 console.log('| チャンク | gzip (KB) | 初期ロード |')
 console.log('|---|---:|:---:|')
