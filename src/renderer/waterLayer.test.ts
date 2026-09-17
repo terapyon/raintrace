@@ -13,8 +13,10 @@ import {
   patchesToReveal,
   resolveDepthData,
   shouldUploadDepth,
+  UPLOAD_BUDGET_BYTES,
   type WaterLayerOptions,
 } from './waterLayer'
+import { gridPatches, patchBytes } from './waterMesh'
 import { WATER_FRAGMENT, WATER_VERTEX } from './waterShaders'
 import type { WaterLut } from './waterTextures'
 
@@ -278,5 +280,20 @@ describe('patchesToReveal（1 フレームに見せる区画の数。spec 06 §5
 
   it('残りが無ければ 0', () => {
     expect(patchesToReveal([3], 1, 7)).toBe(0)
+  })
+
+  it('実際の区画の大きさと UPLOAD_BUDGET_BYTES では、1000 m（N = 1031）は 3 フレーム（7・8・10 区画）、500 m（N = 515）は 1 フレーム（9 区画）で見せ終える（端の区画は小さい）', () => {
+    const frames = (n: number): number[] => {
+      const bytes = gridPatches(n).map(patchBytes)
+      const out: number[] = []
+      for (let revealed = 0; revealed < bytes.length; ) {
+        const count = patchesToReveal(bytes, revealed, UPLOAD_BUDGET_BYTES)
+        out.push(count)
+        revealed += count
+      }
+      return out
+    }
+    expect(frames(1031)).toEqual([7, 8, 10])
+    expect(frames(515)).toEqual([9])
   })
 })

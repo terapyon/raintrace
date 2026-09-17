@@ -150,7 +150,10 @@ export function buildUniforms(
   }
 }
 
-/** 1 フレームに GPU へ上げる区画のバイト数の目安（観測 約 2.35 ms/MB で 約 19 ms。spec 06 §5.2、Task 17a） */
+/**
+ * 1 フレームに GPU へ上げる区画のバイト数の目安（観測 約 2.35 ms/MB で 約 19 ms。spec 06 §5.2、Task 17a）。
+ * 端の区画は小さいので、1000 m は 3 フレーム（7・8・10 区画）、500 m は 1 フレーム（9 区画）で見せ終える
+ */
 export const UPLOAD_BUDGET_BYTES = 8 * 1024 * 1024
 
 /** 見せていない先頭の区画から、合計が budget を超えない数（残りがあれば、1 区画が budget を超えても少なくとも 1） */
@@ -173,7 +176,10 @@ export function patchesToReveal(
  * compileAsync の待ちの上限（ms）。トレースで観測したリンクは 60〜240 ms。待ちが決着しないまま残る狭い競合
  * （コンテキストの喪失から three の 10 ms ごとの確かめより先に復帰が届くと、three が WebGLProperties を
  * 作り直し、確かめが例外で止まって Promise が決着しない。Task 17a (i) のレビューの Minor 1）でも、資源を
- * 解放し、描く側に戻す（リンクが本当に終わっていなければ、three が最初の描画で同期で待つ）
+ * 解放し、描く側に戻す（リンクが本当に終わっていなければ、three が最初の描画で同期で待つ）。
+ * 交換条件: 捨てた層で本当のリンクが 5 秒を超えて続くと、上限で解放した後に three の 10 ms ごとの確かめが
+ * setTimeout の中で TypeError を投げ得る（捕まらない例外がコンソールに 1 件。資源は解放済みで、確かめの
+ * ループはそこで止まり、描画には影響しない）
  */
 export const COMPILE_TIMEOUT_MS = 5000
 
