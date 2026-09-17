@@ -83,6 +83,8 @@ export class View3d {
   private readonly onContextLost = (): void => {
     this.water?.dispose()
     this.water = null
+    // removeWater と同じく、計測の受け口に水面が無くなったことを伝える（着手前の確かめ N14）
+    this.options.onWaterDebug?.(null)
   }
 
   constructor(controller: MapController, init: View3dInit) {
@@ -299,6 +301,7 @@ export class View3d {
     // 04 の重ね描き（標高・窪地・2D の水深）の上、範囲の枠と矢印の下に置く（矢印は水面の後。spec 05 §3.3）
     map.addLayer(water.layer, this.beforeId(VIEW3D_LAYER_IDS.water))
     this.water = water
+    this.options.onWaterDebug?.((debug) => water.setDebug(debug))
     this.waterBuilds++
     map.getContainer().dataset.waterBuilds = String(this.waterBuilds)
   }
@@ -309,6 +312,7 @@ export class View3d {
     if (map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) map.removeLayer(VIEW3D_LAYER_IDS.water)
     this.water?.dispose()
     this.water = null
+    this.options.onWaterDebug?.(null)
   }
 
   /** 3D の視点（spec 05 §3.4、計画で決めたこと 4）: 範囲を中心に pitch 60、ズームは zoomFor3dView */

@@ -10,6 +10,8 @@ import {
   CELL_ATTRIBUTE,
   COMPILE_TIMEOUT_MS,
   createCompileGate,
+  debugDepthTest,
+  debugUniform,
   patchesToReveal,
   resolveDepthData,
   shouldUploadDepth,
@@ -295,5 +297,19 @@ describe('patchesToReveal（1 フレームに見せる区画の数。spec 06 §5
     }
     expect(frames(1031)).toEqual([7, 8, 10])
     expect(frames(515)).toEqual([9])
+  })
+})
+
+describe('計測用の setDebug の値（probe=water。spec 06 §3）', () => {
+  it('off は [0, 持ち上げ]、mask・mask-nodepth は [1, 持ち上げ]', () => {
+    expect(debugUniform({ mode: 'off', liftM: 0 })).toEqual([0, 0])
+    expect(debugUniform({ mode: 'mask', liftM: 0.1 })).toEqual([1, 0.1])
+    expect(debugUniform({ mode: 'mask-nodepth', liftM: 0 })).toEqual([1, 0])
+  })
+
+  it('深度テストを切るのは mask-nodepth だけ', () => {
+    expect(debugDepthTest('off')).toBe(true)
+    expect(debugDepthTest('mask')).toBe(true)
+    expect(debugDepthTest('mask-nodepth')).toBe(false)
   })
 })

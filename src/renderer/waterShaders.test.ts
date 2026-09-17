@@ -6,7 +6,7 @@ describe('水面のシェーダ（spec 05 §3.1）', () => {
   it('頂点シェーダ: texelFetch で標高と水深を読み、(標高 + 水深) × 垂直強調を高さにする', () => {
     expect(WATER_VERTEX).toContain('texelFetch(u_elevation, cell, 0)')
     expect(WATER_VERTEX).toContain('texelFetch(u_depth, cell, 0)')
-    expect(WATER_VERTEX).toContain('(z + (d >= u_minDepth ? d : 0.0)) * u_exaggeration')
+    expect(WATER_VERTEX).toContain('(z + (d >= u_minDepth ? d : 0.0) + lift) * u_exaggeration')
     expect(WATER_VERTEX).toContain('u_matrix * vec4(a_cell + 0.5, h, 1.0)')
   })
 
@@ -19,5 +19,15 @@ describe('水面のシェーダ（spec 05 §3.1）', () => {
   it('#version を付けない（three の RawShaderMaterial が glslVersion: GLSL3 で付ける）', () => {
     expect(WATER_VERTEX).not.toContain('#version')
     expect(WATER_FRAGMENT).not.toContain('#version')
+  })
+
+  it('計測用（probe=water）: u_debug.x が 1 なら判定用の不透明のマゼンタで描き、u_debug.y だけ持ち上げる（spec 06 §3）', () => {
+    expect(WATER_VERTEX).toContain('float lift = u_debug.x > 0.5 ? u_debug.y : 0.0;')
+    expect(WATER_FRAGMENT).toContain('if (u_debug.x > 0.5) {')
+    expect(WATER_FRAGMENT).toContain('fragColor = vec4(1.0, 0.0, 1.0, 1.0);')
+    // 1 cm 未満を捨てる判定は、判定用の色より先（footprint は 1 cm 以上の水面）
+    expect(WATER_FRAGMENT.indexOf('discard')).toBeLessThan(
+      WATER_FRAGMENT.indexOf('u_debug.x > 0.5'),
+    )
   })
 })

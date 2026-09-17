@@ -1,5 +1,8 @@
+import type { WaterDebug } from '../../renderer/waterLayer'
 import type { Basemap } from '../basemapStyle'
 import type { DemSourceKind } from './demSource'
+
+export type { WaterDebug }
 
 /** hillshade（計画で決めたこと 12）。auto は淡色・標準で付け、写真では付けない */
 export type HillshadeOption = 'auto' | 'on' | 'off'
@@ -37,6 +40,11 @@ export interface View3dOptions {
   onPrepareTime: ((ms: number) => void) | null
   /** 計測用。水面のメッシュとテクスチャの作成の時間（ms。Task 8） */
   onWaterBuildTime: ((ms: number) => void) | null
+  /**
+   * 計測用（probe=water。spec 06 §3）。水面を作ったときに setDebug を、外したときに null を渡す。
+   * 省略は受け口なし
+   */
+  onWaterDebug?: (setDebug: ((debug: WaterDebug) => void) | null) => void
 }
 
 export const DEFAULT_VIEW3D_OPTIONS: View3dOptions = {

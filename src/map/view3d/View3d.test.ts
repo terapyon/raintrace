@@ -11,6 +11,7 @@ import { View3d } from './View3d'
 function createHarness(): {
   controller: MapController
   render: () => void
+  emit: (event: string) => void
   setLoaded: (value: boolean) => void
   getContainer: ReturnType<typeof vi.fn>
 } {
@@ -36,7 +37,18 @@ function createHarness(): {
     if (handler === undefined) throw new Error('render ハンドラが登録されていません')
     handler()
   }
-  return { controller, render, setLoaded: (value: boolean) => (loaded = value), getContainer }
+  const emit = (event: string): void => {
+    const handler = handlers.get(event)
+    if (handler === undefined) throw new Error(`${event} ハンドラが登録されていません`)
+    handler()
+  }
+  return {
+    controller,
+    render,
+    emit,
+    setLoaded: (value: boolean) => (loaded = value),
+    getContainer,
+  }
 }
 
 describe('View3d.afterRender（R1: スタイルの読み込み中は境界の判定を待つ）', () => {
@@ -149,5 +161,48 @@ describe('View3d.dispose（横断レビュー m4: コンテキスト喪失の間
     expect(water.dispose).toHaveBeenCalledTimes(1)
     expect(internals.water).toBeNull()
     expect(terrainDispose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('View3d の onWaterDebug（計測用の受け口。spec 06 §3、着手前の確かめ N14）', () => {
+  function setup(): {
+    view: View3d
+    emit: (event: string) => void
+    onWaterDebug: ReturnType<typeof vi.fn>
+    water: { dispose: ReturnType<typeof vi.fn> }
+    internals: { water: unknown }
+  } {
+    const { controller, emit } = createHarness()
+    Object.assign(controller.map as unknown as Record<string, unknown>, {
+      getLayer: () => undefined,
+      removeLayer: vi.fn(),
+    })
+    const onWaterDebug = vi.fn()
+    const view = new View3d(controller, {
+      options: { ...DEFAULT_VIEW3D_OPTIONS, onWaterDebug },
+      basemap: 'pale',
+      exaggeration: 1,
+      palette: 'stepped',
+      onRendering: () => {},
+    })
+    const internals = view as unknown as { water: unknown }
+    const water = { dispose: vi.fn() }
+    internals.water = water
+    return { view, emit, onWaterDebug, water, internals }
+  }
+
+  it('コンテキスト喪失で水面を捨てたら null を渡す（removeWater と同じ）', () => {
+    const { emit, onWaterDebug, water, internals } = setup()
+    emit('webglcontextlost')
+    expect(water.dispose).toHaveBeenCalledTimes(1)
+    expect(internals.water).toBeNull()
+    expect(onWaterDebug).toHaveBeenCalledWith(null)
+  })
+
+  it('dispose（removeWater）でも null を渡す', () => {
+    const { view, onWaterDebug, water } = setup()
+    view.dispose()
+    expect(water.dispose).toHaveBeenCalledTimes(1)
+    expect(onWaterDebug).toHaveBeenCalledWith(null)
   })
 })

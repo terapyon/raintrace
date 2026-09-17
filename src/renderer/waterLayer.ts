@@ -24,6 +24,7 @@ import {
   RGBAFormat,
   Scene,
   UnsignedByteType,
+  Vector2,
   WebGLRenderer,
 } from 'three'
 import { type GridPlacement, gridModelMatrix, multiplyMat4 } from './matrix'
@@ -37,6 +38,25 @@ const POLYGON_OFFSET_UNITS = -4
 
 /** 頂点の格子座標の attribute 名（waterShaders.ts の a_cell と 1 対 1。waterLayer.test.ts が突き合わせる） */
 export const CELL_ATTRIBUTE = 'a_cell'
+
+/** 計測用の描き方（probe=water。spec 06 §3）。mask: 判定用の色で描く。mask-nodepth: さらに深度テストを切る */
+export type WaterDebugMode = 'off' | 'mask' | 'mask-nodepth'
+
+export interface WaterDebug {
+  mode: WaterDebugMode
+  /** 水面を持ち上げる高さ（m。垂直強調の前）。地形が正当に隠す分と沈み込みを分けるのに使う（計画で決めたこと 15） */
+  liftM: number
+}
+
+/** u_debug の値（x: 0 = 通常・1 = 判定用の色、y: 持ち上げ） */
+export function debugUniform(debug: WaterDebug): [number, number] {
+  return [debug.mode === 'off' ? 0 : 1, debug.liftM]
+}
+
+/** 深度テストを使うか（footprint を数える mask-nodepth だけ切る） */
+export function debugDepthTest(mode: WaterDebugMode): boolean {
+  return mode !== 'mask-nodepth'
+}
 
 export interface WaterLayerOptions {
   id: string
@@ -70,6 +90,8 @@ export interface WaterLayer {
   /** 垂直強調（地形の setTerrain と同じ値。spec 05 §3.2） */
   setExaggeration(value: number): void
   setLut(lut: WaterLut): void
+  /** 計測用（probe=water）。通常の描画では呼ばない */
+  setDebug(debug: WaterDebug): void
   /** three の資源を捨てる（onRemove・コンテキスト喪失）。2 回呼んでもよい */
   dispose(): void
 }
@@ -110,6 +132,7 @@ export interface WaterUniforms {
   u_maxIndex: { value: number }
   u_epsilon: { value: number }
   u_alpha: { value: number }
+  u_debug: { value: Vector2 }
 }
 
 /**
@@ -147,6 +170,7 @@ export function buildUniforms(
     u_maxIndex: { value: options.lut.maxIndex },
     u_epsilon: { value: options.lut.epsilonM },
     u_alpha: { value: options.lut.alpha },
+    u_debug: { value: new Vector2(0, 0) },
   }
 }
 
@@ -404,6 +428,18 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
       uniforms.u_epsilon.value = next.epsilonM
       uniforms.u_alpha.value = next.alpha
       uniforms.u_minDepth.value = next.minDepthM
+      map.triggerRepaint()
+    },
+    setDebug(debug) {
+      if (gate.disposed()) return
+      const [mode, lift] = debugUniform(debug)
+      // uniform なので、プログラムのリンクをやり直さない（通常の描画は u_debug = (0, 0) のまま）
+      uniforms.u_debug.value.set(mode, lift)
+      // すべての区画の Mesh が 1 つのマテリアルを共有するので、深度の設定もここ 1 か所で全区画に効く。
+      // depthTest・depthWrite は描画の状態で、three はプログラムを作り直さない
+      const depth = debugDepthTest(debug.mode)
+      material.depthTest = depth
+      material.depthWrite = depth
       map.triggerRepaint()
     },
     dispose,
