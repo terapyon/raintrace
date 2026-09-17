@@ -4349,9 +4349,117 @@ git commit -m "地形の標高・窪地の RGBA をセルごとの配列を作�
 - どちらも Worker とメッセージの形を変えない（安価の内）。変えるなら安価の外（spec 06 §5.2）なので別の spec
 - 前後は Task 16 と同じコマンドで測る
 
-- [ ] **Step 1: プロファイルを取り、計画を書き足してレビュー役に送る**
+- [x] **Step 1: プロファイルを取り、計画を書き足してレビュー役に送る**
 
 計測用のビルドで 1000 m と 500 m の `probe=load` を開き、Chrome の Performance（`page.tracing` でもよい）で読み込みの終わりの長いタスクの内訳を取り、`.handoff/06-perf/fixes/17-profile.md` に書く（500 m は 04 が記録した React・Emotion の再描画〈計 約 95 ms〉を候補に含めて見る）。内訳に合う候補をこの Task の下に具体的な Files・Interfaces・Step（テストを含む）として書き、コントローラーに送る。承認の後に実装し、1 コミットにする。
+
+**Step 1 の結果（2026-09-17、`.handoff/06-perf/fixes/17-profile.md`）:** 読み込みの終わりの長いタスクは 3 ラン（綾瀬・渋谷 1000 m、綾瀬 500 m）とも 1 つで、Worker の `terrain` の応答の中で `TerrainSession.load` の続き（`TerrainOverlay.addAll`・`WaterOverlay.show`・React の commit）が全部走っている。トレースの下の内訳（綾瀬 1000 m／渋谷 1000 m／綾瀬 500 m、ms）: `addAll` 88.5／82.3／51.8（うち `elevationRgba` 42.9／45.5／17.9、`addCanvasLayer` ×2 15.7／10.9／7.0、`ensureArrowImage` 11.5／13.3／13.1、`depressionRgba` 8.9／6.6／5.2）、`WaterOverlay.show` の `ensureArrowImage` 5.5／7.8／9.7、React の commit 9.9／8.9／13.1、GC 7.3／3.0／< 3。候補 (b)（React）は小さいので採らない。候補 (a) を「標高」「窪地と残り」の 2 段で採り、`ensureArrowImage` の `getImageData`（GPU の canvas からの同期の読み戻し）を `willReadFrequently: true` で消す (c) を足す。段に分けると、同じタスクで先に足される 2D の水深・矢印（`WaterOverlay`）と 3D の hillshade・水面（`View3d`）の `beforeId` がまだ無い地形のレイヤーを指せず一番上に積まれるので、**重なりの順を固定の並びから決める**。
+
+**Files（Step 2 以降）:**
+- Create: `src/map/layerIds.ts`（`TERRAIN_LAYER_IDS`・`WATER_LAYER_IDS` を移し、重なりの順 `OVERLAY_LAYER_ORDER` と `beforeLayerId` を置く）
+- Create: `src/map/layerIds.test.ts`
+- Modify: `src/map/TerrainOverlay.ts`（`addAll` を 2 段に分け、`showTerrain` からは別々のタスクで呼ぶ。`TERRAIN_LAYER_IDS` は `./layerIds` から再エクスポート）
+- Modify: `src/map/WaterOverlay.ts`（`WATER_LAYER_IDS` を `./layerIds` から再エクスポート。`beforeId` を `beforeLayerId` で決める）
+- Modify: `src/map/view3d/View3d.ts`（hillshade・水面の `beforeId` を `beforeLayerId` で決める）
+- Modify: `src/map/arrowImage.ts`（`getContext('2d', { willReadFrequently: true })`）
+- Modify: `src/map/MapController.ts`（E2E 用の印 `data-overlay-order`: 今のスタイルの実際の重なり順〈`map.getLayersOrder()`〉のうち `OVERLAY_LAYER_ORDER` にある ID）
+- Modify: `tests/e2e/simulation.spec.ts`・`tests/e2e/view3d.spec.ts`（重なり順を確かめる）
+- Modify: `docs/perf/<実行日>-fixes.md`
+
+**Interfaces:**
+- Consumes: なし（Worker・`src/shared/protocol.ts`・`SimulationEngine` は変えない。R06-4 の安価の内）
+- Produces:
+
+```ts
+// src/map/layerIds.ts（map の中の純粋なモジュール。maplibre-gl を import しない）
+export const TERRAIN_LAYER_IDS = { /* 今の TerrainOverlay.ts の値のまま */ } as const
+export const WATER_LAYER_IDS = { water: 'water-depth', arrows: 'water-arrows' } as const
+/** 重ね描きのレイヤーの下から上への並び（04 の重ね描き・spec 05 §3.3・§3.6 の今の並びを写したもの） */
+export const OVERLAY_LAYER_ORDER: readonly string[] = [
+  VIEW3D_LAYER_IDS.hillshade,
+  TERRAIN_LAYER_IDS.elevation,
+  TERRAIN_LAYER_IDS.depressions,
+  WATER_LAYER_IDS.water,
+  VIEW3D_LAYER_IDS.water,
+  TERRAIN_LAYER_IDS.outline,
+  TERRAIN_LAYER_IDS.flow,
+  WATER_LAYER_IDS.arrows,
+  TERRAIN_LAYER_IDS.markers,
+]
+/**
+ * id を OVERLAY_LAYER_ORDER どおりに置くための addLayer の beforeId: 並びで id より上のレイヤーのうち、
+ * 今ある（has が true）一番下のもの。無ければ undefined（一番上に積む）。並びに無い id は例外
+ */
+export function beforeLayerId(id: string, has: (id: string) => boolean): string | undefined
+```
+
+- `TerrainOverlay` の外から見た振る舞い: `data-range-shown` は段 2 の終わりに立つ（今と同じく「全部のレイヤーを足した」印）。`restore`（ベースマップの切り替え）は今と同じく同期で全部を足す
+
+- [ ] **Step 2: 前を測る（Task 16 と同じコマンド）**
+
+Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_LOAD=1 RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/17-before pnpm perf:fps tests/perf/fps.perf.ts -g クリック`（前後に `snap.sh` で `machine.txt` を取る。16-after と同じ手順）
+Expected: 1 件成功。「長いタスク 読み込み」「長いタスク 3D」「2D の表示」を控える
+
+- [ ] **Step 3: 重なり順の道具のテストを書く（失敗を確かめる）**
+
+`src/map/layerIds.test.ts`:
+- `OVERLAY_LAYER_ORDER` は `TERRAIN_LAYER_IDS`・`WATER_LAYER_IDS`・`VIEW3D_LAYER_IDS` の値をちょうど 1 回ずつ含む
+- 何も無ければ `undefined`
+- 2D で段に分けた順（水深・矢印が先、地形が後）: 水深（`water-depth`）と矢印（`water-arrows`）だけがあるとき、標高・窪地の `beforeId` は `water-depth`、枠（`terrain-outline`）・流向（`terrain-flow`）は `water-arrows`、最低点（`terrain-markers`）は `undefined`
+- 3D: 地形が 1 つも無いときの hillshade は `undefined`、標高があれば `terrain-elevation`。水面（`water-3d`）は枠があれば `terrain-outline`、枠が無く矢印だけあれば `water-arrows`
+- 並びに無い id は例外
+
+Run: `pnpm vitest run src/map/layerIds.test.ts`
+Expected: FAIL（`./layerIds` が無い）
+
+- [ ] **Step 4: `layerIds.ts` を作り、ID の置き場所を移す**
+
+`TERRAIN_LAYER_IDS`（`TerrainOverlay.ts`）と `WATER_LAYER_IDS`（`WaterOverlay.ts`）の定義を `layerIds.ts` に移し、両ファイルは `export { TERRAIN_LAYER_IDS } from './layerIds'`・`export { WATER_LAYER_IDS } from './layerIds'` で再エクスポートする（`MapController`・`View3d`・E2E の import を変えない。`TerrainOverlay` ⇄ `WaterOverlay` の import も `./layerIds` に替え、循環を作らない）。`beforeLayerId` は並びの中の id の位置から上を順に見て、`has` が true の最初のものを返す。
+
+Run: `pnpm vitest run src/map/layerIds.test.ts && pnpm depcheck`
+Expected: PASS
+
+- [ ] **Step 5: 重なり順の印と E2E を足す（今の実装で通ることを確かめる）**
+
+`MapController.writeOverlayLayers` で、`data-overlay-layers` と同じ差分の判定に `this.map.getLayersOrder().filter((id) => OVERLAY_LAYER_ORDER.includes(id)).join(',')` を足し、`dataset.overlayOrder` に書く（MapLibre 6.6.0 の公開 API `Map.getLayersOrder`。内部には頼らない）。
+- `tests/e2e/simulation.spec.ts`: 地形が出て水深・矢印のレイヤーが揃った後の `data-overlay-order` が `terrain-elevation,terrain-depressions,water-depth,terrain-outline,terrain-flow,water-arrows,terrain-markers`（`OVERLAY_LAYER_ORDER` から今ある ID を抜いた並び）と一致する
+- `tests/e2e/view3d.spec.ts`: 3D に切り替えて水面ができた後、`terrain-3d-hillshade` が先頭で、`water-3d` が `water-depth` と `terrain-outline` の間
+
+Run: `pnpm build && pnpm exec playwright test --project=chromium tests/e2e/simulation.spec.ts tests/e2e/view3d.spec.ts`
+Expected: PASS（段に分ける前の同期の実装で、並びが `OVERLAY_LAYER_ORDER` と一致することの基準）
+
+- [ ] **Step 6: 段に分け、`beforeId` を並びから決め、矢印の画像の読み戻しを消す**
+
+`src/map/TerrainOverlay.ts`:
+- `addAll` を `addElevationLayer()`（`elevationRgba` と標高の canvas のレイヤー）と `addRemainingLayers()`（窪地の canvas・枠・矢印の画像・流向・最低点・`setDisplay(display)`・`dataset.rangeShown = 'true'`）に分ける。`addAll` は両方を続けて呼ぶ（`restore` が使う）
+- `addCanvasLayer`・枠・流向・最低点の `map.addLayer` の第 2 引数に `beforeLayerId(id, (other) => this.map.getLayer(other) !== undefined)` を渡す
+- `showTerrain` の `whenMapLoaded` の中は `removeLayers()`・`this.terrain = terrain`・`fitBounds` の後、`this.later(generation, () => { this.addElevationLayer(); this.later(generation, () => this.addRemainingLayers()) })` にする。`later` は `setTimeout(() => this.whenMapLoaded(() => { if (generation === this.generation && this.terrain !== null) run() }), 0)`（読み込みの取り消し〈`clearTerrain`・次の `showTerrain`〉と、段の間のベースマップの切り替え〈`whenMapLoaded` が読み込みを待つ〉と両立させる）
+- `restore` の先頭で `this.generation++` する（段の途中でベースマップを切り替えたら、`addAll` が全部を足し、待っている段は捨てる。二重の `addLayer` を起こさない）
+- `setDisplay` の「地形のレイヤーがあるか」の判定を、最後に足す `TERRAIN_LAYER_IDS.markers` で見る（段 1 と段 2 の間に表示の設定が変わっても、まだ無い窪地・流向のレイヤーに `setLayoutProperty` しない。覚えた設定は段 2 の終わりの `setDisplay(display)` が適用する）
+
+`src/map/WaterOverlay.ts` の `before(TERRAIN_LAYER_IDS.outline)`・`before(TERRAIN_LAYER_IDS.markers)` を `beforeLayerId(WATER_LAYER_IDS.water, has)`・`beforeLayerId(WATER_LAYER_IDS.arrows, has)` に、`src/map/view3d/View3d.ts` の `hillshadeBeforeId` と `addWater` の `before` を `beforeLayerId(VIEW3D_LAYER_IDS.hillshade, has)`・`beforeLayerId(VIEW3D_LAYER_IDS.water, has)` に替える。
+
+`src/map/arrowImage.ts`: `canvas.getContext('2d', { willReadFrequently: true })`（CPU の canvas にして `getImageData` の GPU からの読み戻しを無くす。24 × 24 の矢印の縁のアンチエイリアスの値がわずかに変わる。`17-profile.md`）。
+
+Run: `pnpm vitest run src/map && pnpm build && pnpm exec playwright test --project=chromium tests/e2e/simulation.spec.ts tests/e2e/view3d.spec.ts tests/e2e/dem.spec.ts`
+Expected: PASS（Step 5 の重なり順を含む。`dem.spec.ts` の「範囲を消す」も通る）
+
+- [ ] **Step 7: 後を測る**
+
+Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_LOAD=1 RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/17-after pnpm perf:fps tests/perf/fps.perf.ts -g クリック`（前後に `snap.sh`）
+Expected: 1000 m・500 m の「長いタスク 読み込み」の最大（中央値）が 50 ms 以下（見込み: 段 1 が 1000 m で 約 35〜40 ms）。「2D の表示」は段の分だけ遅れてよい（見込み +1〜2 タスク、数十 ms）。**50 ms を超えて残れば**、残りの内訳を記録し、M6（Task 29）で 1000 m の行の裁定と合わせてユーザーに送る（さらに `elevationRgba` を行で分けるのは計画し直しの対象）
+
+- [ ] **Step 8: 記録し、ゲートを通してコミットする**
+
+`docs/perf/<実行日>-fixes.md` に「## Task 17: 地形の重ね描きを 2 段に分ける」として、前後の中央値（3 地点 × 500・1000 m の長いタスク 読み込み・2D の表示）と `17-profile.md` の内訳の要約を書く。
+
+Run: `pnpm build && pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage && pnpm exec playwright test --project=chromium && pnpm size`
+Expected: すべて成功。`pnpm size` の初期ロードは 427.5 KB のまま（±0.1 KB 程度の増減は記録する）
+
+```bash
+git add src/map/ tests/e2e/ docs/perf/
+git commit -m "地形の重ね描きを標高と残りの 2 つのタスクに分け、重なり順を固定の並びから決める。矢印の画像の読み戻しを CPU の canvas にする（1000 m の読み込みの終わりの長いタスクを減らす。spec 06 §5.2）"
+```
 
 ---
 
@@ -4361,12 +4469,105 @@ git commit -m "地形の標高・窪地の RGBA をセルごとの配列を作�
 
 **計画し直す理由:** 候補（View3d・three のチャンクの読み込みとシェーダのコンパイル〈動的 import、約 130 KB gzip〉、`ensureRange` の標高のコピーと `fillInvalidNearest`〈準備 18〜21 ms〉、`waterBuild`〈20 ms。約 212 万三角形の索引バッファ〈Uint32 ≈ 25 MB〉の生成を含むかは未確認〉、最初の描画の同期の GPU 転送〈標高・深度の float テクスチャ 4.25 MB × 2、頂点・索引バッファ。`bufferData`・`texImage2D` は同期で、`onRenderTime` の平均 0.4 ms には最初のフレームの跳ね上がりが隠れている〉、MapLibre の `setTerrain` と hillshade のソース、React の再描画）のどれが支配的かを、プロファイルで確かめてからでないと分ける場所が決まらない。
 
-- [ ] **Step 1: プロファイルを取り、裁定の枠を決める**
+- [x] **Step 1: プロファイルを取り、裁定の枠を決める**
 
 `page.tracing`（Playwright）で計測用のビルドの `probe=load`・`mode=3d` を、1000 m は綾瀬・渋谷を 1 回ずつ、500 m は 1 回プロファイルし、`.handoff/06-perf/fixes/17a-profile.md` に内訳を書く。
 
 - 上の候補のどれか 1 つが支配的で、複数フレームに分けられる見込みがあれば（例: メッシュの生成と転送を別のタスクにする、地形が出た 1 フレーム後に水面を作る）、安価な M4 の Task としてこの下に具体的な Files・Interfaces・Step（テストを含む）を書き、コントローラーに送る。承認の後に実装し、1 コミットにする
 - そうでなければ実装は行わず、内訳を `docs/perf/<実行日>-fixes.md` に記録するだけにし、M6（Task 29）で「利用者が選んで入る 3D の切り替えに一度きりのブロックを許すか」を 1000 m の行の裁定と合わせてユーザーに送る（spec 06 §5.2、`.superpowers/sdd/2026-09-17-06-performance/m2-report.md` の「計画に無い残り」）
+
+**Step 1 の結果（2026-09-17、`.handoff/06-perf/fixes/17a-profile.md`）:** 条件は満たす（`16-after/load.json` の 3D の長いタスク: 1000 m 綾瀬 200・90・97、渋谷 89・89・106 ms）。3 ラン（綾瀬・渋谷 1000 m、綾瀬 500 m）とも、3D の長いタスクは 1 つで、**水面の Custom Layer の最初の描画のフレーム**。トレースの下の内訳（綾瀬 1000 m／渋谷 1000 m／綾瀬 500 m、ms。タスク 164／319／166）: three のプログラムのリンクの同期の待ち（`getUniforms` → `onFirstUse`）60.3／211.6／106.7、索引・頂点バッファの一括の `bufferData`（1000 m で 25.4 MB + 8.5 MB）76.4／80.3／約 10、MapLibre の配置 12.1／11.6／18.8、MapLibre の自前のシェーダ < 3／< 3／14.1。チャンクの読み込み・`fillInvalidNearest`・`waterBuild`・`setTerrain`・React はこのタスクに入っていない（別のタスクで 50 ms 未満）。実行環境で `KHR_parallel_shader_compile` が使えることを確かめた。**2 つの支配的な寄与を、Worker・メッセージの形を変えずに複数のフレームに分けられる**ので、記録だけにせず次を行う。
+
+**Files（Step 2 以降）:**
+- Modify: `src/renderer/waterMesh.ts`（格子を区画に分ける。`gridVertices`・`gridIndices` は区画版に置き換え、旧版はテストの基準の写しに移す）
+- Modify: `src/renderer/waterMesh.test.ts`
+- Modify: `src/renderer/waterLayer.ts`（`onAdd` で `compileAsync`、区画のメッシュを数フレームに分けて見せる）
+- Modify: `src/renderer/waterLayer.test.ts`
+- Modify: `docs/perf/<実行日>-fixes.md`
+
+**Interfaces:**
+- Consumes: Task 17 の後の `View3d`（変えない。`createWaterLayer` の引数・戻り値の形も変えない）
+- Produces:
+
+```ts
+// src/renderer/waterMesh.ts
+/** 1 区画の一辺のセル数。頂点は (255 + 1)² = 65,536 個までなので Uint16 の索引に収まる */
+export const PATCH_CELLS = 255
+export interface GridPatch { col0: number; row0: number; cols: number; rows: number }
+/** N × N 頂点の格子のセル（N − 1）²を、行優先（北から、西から）に patchCells 四方の区画に分ける */
+export function gridPatches(n: number, patchCells?: number): GridPatch[]
+/** 区画の頂点（(cols + 1) × (rows + 1) 個、格子全体の (列, 行)。行優先） */
+export function patchVertices(patch: GridPatch): Float32Array
+/** 区画の三角形 (a, d, b)(b, d, e)。頂点番号は区画の中の行優先 */
+export function patchIndices(patch: GridPatch): Uint16Array
+/** 区画の頂点と索引のバイト数（転送の量の見積もり） */
+export function patchBytes(patch: GridPatch): number
+
+// src/renderer/waterLayer.ts
+/** 1 フレームに GPU へ上げる区画のバイト数の目安（観測 約 2.35 ms/MB で 約 19 ms） */
+export const UPLOAD_BUDGET_BYTES = 8 * 1024 * 1024
+/** 見せていない先頭の区画から、合計が budget を超えない数（残りがあれば少なくとも 1） */
+export function patchesToReveal(bytes: readonly number[], revealed: number, budget: number): number
+```
+
+1000 m（N = 1031）は 5 × 5 = 25 区画（1 区画 約 1.3 MB）で、8 MB の目安なら 5 フレームで全部を見せる。500 m（N = 515）は 3 × 3 = 9 区画で 2 フレーム。水面の見た目（色・高さ・重なり）は変えない。**振る舞いの変化**: 3D に切り替えた直後、水面はシェーダのリンクが終わるまで（トレースで 60〜210 ms）描かれず、その後の数フレームで区画ごとに現れる（読み込み直後は水深 0 なので見えるものは無い。再生中に 3D に切り替えたときだけ目に見える）。承認の可否をレビュー役に問う点。
+
+- [ ] **Step 2: 前を測る（Task 16 と同じコマンド。Task 17 のコミットの後）**
+
+Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_LOAD=1 RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/17a-before pnpm perf:fps tests/perf/fps.perf.ts -g クリック`（前後に `snap.sh`）
+Expected: 1 件成功。「長いタスク 3D」「最初の 3D のフレーム」「水面の作成」を控える
+
+- [ ] **Step 3: 区画と見せる数のテストを書く（失敗を確かめる）**
+
+`src/renderer/waterMesh.test.ts`（今の `gridVertices`・`gridIndices` の実装をテストの中に「旧版の写し」として置く）:
+- `gridPatches(7, 3)` は 2 × 2 = 4 区画（`{col0:0,row0:0,cols:3,rows:3}`・`{3,0,3,3}`・`{0,3,3,3}`・`{3,3,3,3}`）、`gridPatches(8, 3)` は端の区画が 1 セル（3 × 3 = 9 区画）
+- 旧版と同じ三角形の集合: n = 8・patchCells = 3 で、各区画の索引を区画の頂点の (列, 行) を通して格子全体の頂点番号に直し、三角形（3 つ組）を並べ替えたものが旧版の `gridIndices(8)` を 3 つ組にして並べ替えたものと一致する（向き〈a, d, b〉も含めて一致）
+- `gridPatches(1031)` は 25 区画、三角形の合計は 2 × 1030²、各区画の頂点数は 65,536 以下、`patchIndices` の最大は頂点数 − 1。`gridPatches(515)` は 9 区画
+
+`src/renderer/waterLayer.test.ts`:
+- `patchesToReveal([3, 3, 3], 0, 7)` は 2、`([3, 3, 3], 2, 7)` は 1、`([10, 1], 0, 7)` は 1（1 区画が目安を超えても 1 つは進める）、`([3], 1, 7)` は 0
+
+Run: `pnpm vitest run src/renderer`
+Expected: FAIL（`gridPatches`・`patchesToReveal` が無い）
+
+- [ ] **Step 4: 区画を実装する**
+
+`waterMesh.ts` に上の関数を足し、`gridVertices`・`gridIndices` を消す（src からの参照が無くなる。旧版はテストの写しだけ）。`patchIndices` は区画の中の頂点番号 `r × (cols + 1) + c` で `(a, d, b)(b, d, e)` を並べる。
+
+Run: `pnpm vitest run src/renderer/waterMesh.test.ts`
+Expected: PASS
+
+- [ ] **Step 5: シェーダのリンクを非同期にし、区画を数フレームに分けて見せる**
+
+`src/renderer/waterLayer.ts` の `createWaterLayer`:
+- 1 つの `BufferGeometry`・`Mesh` の代わりに、`gridPatches(n)` の区画ごとに `Mesh`（`material` は共有、`frustumCulled = false`、`visible = false`）を `scene` に足す。区画の `BufferGeometry`（`CELL_ATTRIBUTE` に `patchVertices`、索引に `patchIndices`）は**見せる直前に作る**（`waterBuild` の 1000 m 約 19 ms の配列の生成も分かれる）。区画ごとの見積もり `patchBytes` は最初に配列にしておく
+- `onAdd`: `renderer` を作った後に `renderer.compileAsync(scene, camera).then(() => { if (disposed) return; programReady = true; map.triggerRepaint() })`。`compile` は見えないメッシュも辿る（three 0.185.1 の `compile` は `scene.traverse`）ので、区画を見せる前にプログラムができる。`KHR_parallel_shader_compile` が無い環境では three が 10 ms 後にすぐ完了とみなし、最初の描画で今と同じく待つ（振る舞いは今と同じ）
+- `render`: `renderer === null || !programReady` なら何もしない（`onRenderTime` も呼ばない）。見せていない区画があれば `patchesToReveal(bytes, revealed, UPLOAD_BUDGET_BYTES)` 個の区画のジオメトリを作って `visible = true` にし、描いた後に `map.triggerRepaint()` で次のフレームを頼む
+- `dispose`: 作った区画のジオメトリをすべて `dispose` する（作っていない区画は何もしない）
+
+Run: `pnpm vitest run src/renderer && pnpm build && pnpm exec playwright test --project=chromium tests/e2e/view3d.spec.ts`
+Expected: PASS（水面が冠水とともに色づく E2E〈`waterColoredFraction`〉、ベースマップの切り替え・コンテキストの喪失からの水面の作り直しを含む）
+
+- [ ] **Step 6: 後を測り、トレースで内訳を確かめる**
+
+Run（バックグラウンド）: `pnpm build:perf && RAINTRACE_LOAD=1 RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/17a-after pnpm perf:fps tests/perf/fps.perf.ts -g クリック`（前後に `snap.sh`）
+Expected: 1000 m・500 m の「長いタスク 3D」の最大（中央値）が 50 ms 以下（見込み: MapLibre の配置と自前のシェーダの 約 15〜35 ms が残る）。あわせて Step 1 と同じトレース（綾瀬 1000 m を 1 回）で、`onFirstUse` と `createBuffer` が 1 フレームに 20 ms を超えて出ないことを確かめ、`.handoff/06-perf/fixes/17a-after/profile.md` に書く。**50 ms を超えて残れば**残りの内訳を記録し、M6（Task 29）で「利用者が選んで入る 3D の切り替えに一度きりのブロックを許すか」をユーザーに送る
+
+描画の回数が 1 → 25（1000 m）になるので、fps が落ちていないことも確かめる:
+Run（バックグラウンド、上の後に）: `RAINTRACE_FPS_SET=water-sites RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai RAINTRACE_FPS_OUT_DIR=.handoff/06-perf/fixes/17a-after pnpm perf:fps tests/perf/fps.perf.ts -g 測り直し`
+Expected: セルごとの中央値が M2 の `water-sites` の記録（`docs/perf/2026-09-17.md` の fps の表）から 1 fps 以上下がらない。下がれば記録してレビュー役に送る（`PATCH_CELLS` を大きくする余地はない〈Uint16 の上限〉ので、区画の描画をまとめる別案は計画し直しの対象）
+
+- [ ] **Step 7: 記録し、ゲートを通してコミットする**
+
+`docs/perf/<実行日>-fixes.md` に「## Task 17a: 水面の最初の描画を複数のフレームに分ける」として、前後の中央値（3 地点 × 500・1000 m の長いタスク 3D・最初の 3D のフレーム・水面の作成）、`water-sites` の fps、`17a-profile.md` の内訳の要約を書く。
+
+Run: `pnpm build && pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage && pnpm exec playwright test --project=chromium && pnpm size`
+Expected: すべて成功。初期ロードは 427.5 KB のまま（renderer は遅延のチャンク）
+
+```bash
+git add src/renderer/ docs/perf/
+git commit -m "水面のシェーダのリンクを非同期にし、格子を 255 セル四方の区画に分けて数フレームで転送する（3D の切り替えの最初の描画の長いタスクを減らす。spec 06 §5.2）"
+```
 
 ---
 
