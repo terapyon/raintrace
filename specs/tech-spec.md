@@ -25,7 +25,7 @@ base-spec が候補や例として挙げている事項（ホスティング先�
 | 領域 | 採用技術 | 備考 |
 |---|---|---|
 | 言語 | TypeScript | strict + 追加フラグ（§10） |
-| ビルド | Vite | `@cloudflare/vite-plugin` 併用 |
+| ビルド | Vite | ビルドの情報は `build-info/`（配信する `dist/` の外。実装 spec D） |
 | UI フレームワーク | React | SPA、SSR なし |
 | UI コンポーネント | MUI (`@mui/material`) + Emotion | §9 |
 | 地図 | MapLibre GL JS | 命令的ラッパーで React から分離（§5.3） |
@@ -37,7 +37,7 @@ base-spec が候補や例として挙げている事項（ホスティング先�
 | Lint / Format | Biome | §12.1 |
 | 依存方向検査 | dependency-cruiser | §4.2 |
 | パッケージマネージャ | pnpm | クールダウン機能のため必須（§13） |
-| ホスティング | Cloudflare Workers (Static Assets) | §3 |
+| ホスティング | Cloudflare Pages（Direct Upload） | §3 |
 | CI | GitHub Actions | §12.3 |
 | バックエンド | なし | §7.1 |
 | 永続化 | localStorage / IndexedDB | §8 |
@@ -49,7 +49,7 @@ base-spec が候補や例として挙げている事項（ホスティング先�
 | react-map-gl | MapLibre Custom WebGL Layer に Three.js を差し込む設計（base-spec §28）と宣言的モデルの相性が悪い。依存を1つ増やして MapLibre のバージョン追従が遅れる |
 | react-three-fiber | 同上。Custom Layer 内では Three.js を直接扱う方が単純 |
 | Next.js / React Router (framework mode) / TanStack Start | 単一画面・完全クライアント処理のため SSR とサーバルーティングの恩恵がない。ビルドの複雑さのみが増える |
-| Cloudflare Pages | Cloudflare は新規プロジェクトについて Workers Static Assets を推奨方針としている |
+| Cloudflare Workers（Static Assets） | 独自ドメインを付ける方法（Custom Domains・Routes）がどちらも Cloudflare 上の有効なゾーンを要し、DNS を外部（value-domain.com）に置いたままでは付けられない。01〜05 は Workers で配信し、実装 spec D（2026-09-17）で Pages に移した |
 | ESLint + typescript-eslint + Prettier | 依存パッケージが数十個増え、サプライチェーン方針（§13）と整合しない。型認識ルールが必要になった時点で再検討する |
 | SharedArrayBuffer | Transferable で性能要件を満たせるため、COOP/COEP を運用する負担に見合わない（§7.3） |
 | WebGPU | 初期対応ブラウザを狭める。将来の選択肢として構造だけ確保する（base-spec §26） |
@@ -72,19 +72,21 @@ base-spec が候補や例として挙げている事項（ホスティング先�
 
 ## 3.1 決定
 
-Vite でビルドした React SPA を、`@cloudflare/vite-plugin` 経由で **Cloudflare Workers の Static Assets** として配信する。
+Vite でビルドした React SPA を、**Cloudflare Pages**（Direct Upload。CI から `wrangler pages deploy` で上げる）で配信する。手元の `pnpm preview` は `wrangler pages dev`（Pages のローカルの実装、workerd）で `dist/` を配信し、E2E はこれに対して回す（実装 spec D、2026-09-17。01〜05 は `@cloudflare/vite-plugin` 経由の Workers の Static Assets だった）。
 
 ```
-src/            React SPA（クライアントのみ）
-worker/         将来サーバ処理が必要になった場合の配置場所（初期は空）
-wrangler.jsonc  assets 設定
-dist/           ビルド成果物
+src/              React SPA（クライアントのみ）
+public/_headers   レスポンスヘッダ（§7.7）
+scripts/preview.mjs  pnpm preview（wrangler pages dev dist）
+dist/             ビルド成果物。配信するファイルだけを置く（Pages はディレクトリの全ファイルを上げる）
+build-info/       ビルドの情報（Vite のマニフェスト・チャンクのモジュール一覧。gitignore）
 ```
 
 ## 3.2 この形態を選ぶ理由
 
 - SSR が不要（単一画面、初期 HTML に載せられる意味のある内容がない）
-- 将来バックエンドが必要になった場合、同一リポジトリ・同一 Worker に API ルートを後付けできる。基本仕様の「バックエンドが必要になったらその時に選定する」方針と整合する
+- 将来バックエンドが必要になった場合は、その時点で Pages Functions か別の Worker を選ぶ。基本仕様の「バックエンドが必要になったらその時に選定する」方針と整合する
+- 独自ドメイン（サブドメイン）を外部 DNS の CNAME で付けられる。Workers はゾーンを Cloudflare に置く必要がある（実装 spec D §3.2）
 - ビルド構成が最も単純で、依存が最小
 
 ## 3.3 ルーティング
@@ -111,13 +113,19 @@ URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）
 
 ## 3.4 デプロイ
 
-| 環境 | トリガ | 手段 |
-|---|---|---|
-| プレビュー | Pull Request（ブランチごと） | ステージング用の Worker に `wrangler versions upload --preview-alias` でバージョンを上げ、プレビュー URL を発行する（本番の Worker には触れない） |
-| ステージング | `main` への push | `CLOUDFLARE_ENV=staging` でビルドし、ステージング用の Worker（`raintrace-staging`）へ `wrangler deploy`。`@cloudflare/vite-plugin` は環境をビルド時に決めるため、デプロイ時の `--env` は使わない |
-| 本番 | `v*` のタグの push（タグ付きリリース） | 本番の Worker（`raintrace`）へ `wrangler deploy` |
+Pages の project は `raintrace` の 1 つ（production branch は `production`。Git に同名のブランチは作らない）。ビルドは 3 段とも `pnpm build` で、`wrangler pages deploy dist --branch <名前>` の名前で段を分ける。ステージングの環境は置かない（実装 spec D R-D1、R01-3 の変更）。
 
-Cloudflare API トークンは GitHub Actions Secrets に保持する。トークンは Workers のデプロイ権限のみを持つ最小権限とする。
+| 段 | トリガ | `--branch` | URL |
+|---|---|---|---|
+| プレビュー | Pull Request（同じリポジトリのブランチ） | `pr-<番号>` | `pr-<番号>.raintrace.pages.dev`（noindex） |
+| `main` | `main` への push（必須ジョブの成功が前提） | `main` | `main.raintrace.pages.dev`（noindex。独自ドメインなし） |
+| 本番 | `v*` のタグの push（必須ジョブの成功が前提） | `production` | `raintrace.terapyon.net`（value-domain.com の DNS の CNAME）、`raintrace.pages.dev`（noindex） |
+
+- ブランチ名はジョブの `env` の `PAGES_BRANCH` で組み立て、`production` はタグのジョブにだけ書く。プレビューと `main` のジョブは `production` を拒む。CI を通らない本番への経路は緊急用の `pnpm deploy:production:manual` だけ
+- 上げた後に `scripts/check-deployed-headers.mjs` で本物の応答（CSP・`Cache-Control`・ビルドの情報を配信しないこと・SPA のフォールバック・noindex）を検査する。独自ドメインはリポジトリの変数 `PRODUCTION_URL` があるときだけ
+- `*.pages.dev` は `_headers` で `X-Robots-Tag: noindex` にし、独自ドメインだけを索引させる
+
+Cloudflare API トークンは GitHub Actions Secrets に保持する。トークンは Account の Cloudflare Pages: Edit のみを持つ最小権限とする（旧 Workers を消すまでの移行の間は Workers の権限も持つ。実装 spec D §4.8）。
 
 ---
 
@@ -188,7 +196,6 @@ raintrace/
       perfHook.ts・perfParams.ts  計測用のフック（`pnpm build:perf` のときだけビルドに入る）
       components/
     main.tsx
-  worker/                 Cloudflare Worker（初期は静的配信のみ。src/workers/ の Web Worker とは別物）
   tests/
     e2e/                  Playwright
     perf/                 実 GPU の headless の fps の計測と撮影（`pnpm perf:fps`。実装 spec 05 §4.4）
@@ -206,7 +213,7 @@ raintrace/
   vite.config.ts
   playwright.config.ts
   playwright.perf.config.ts  計測用（ポート 4175。E2E とは別に回す）
-  wrangler.jsonc
+  scripts/preview.mjs     pnpm preview（wrangler pages dev。実装 spec D）
 ```
 
 ## 4.2 レイヤー境界の強制（決定）
@@ -630,7 +637,7 @@ x >  2^23  →  h = (x - 2^24) * u
 
 `SharedArrayBuffer` を使うには、ページに `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy` を付けて cross-origin isolation を有効にする必要がある。
 
-技術的には可能である。Cloudflare Workers の Static Assets は `_headers` ファイルでこれらのヘッダを付けられる。また COEP の下でも、CORS モードで取得して ACAO の検査を通るリソースは読み込める。MapLibre はタイルを `fetch()` の CORS モードで取得し、GSI は `access-control-allow-origin: *` を返すので、地図と DEM の取得は壊れない。
+技術的には可能である。Cloudflare Pages は `_headers` ファイルでこれらのヘッダを付けられる。また COEP の下でも、CORS モードで取得して ACAO の検査を通るリソースは読み込める。MapLibre はタイルを `fetch()` の CORS モードで取得し、GSI は `access-control-allow-origin: *` を返すので、地図と DEM の取得は壊れない。
 
 それでも採用しないのは、§5.2 の Transferable ダブルバッファで性能要件を満たせるためである。cross-origin isolation を有効にすると、`crossorigin` 属性なしで第三者のリソース（Web フォントの `<link>` など）を埋め込めなくなる制約と、ヘッダ設定を維持し続ける負担を負う。得られるものに対して、運用の負担が見合わない。
 
@@ -686,15 +693,16 @@ cellSizeM = 2π × 6378137 × cos(φ0) / (256 × 2^z)
 
 ## 7.7 レスポンスヘッダと CSP（決定）
 
-Cloudflare の Static Assets の `_headers` で、CSP などのレスポンスヘッダを付ける（2026-09-10 裁定）。
+Cloudflare Pages の `_headers` で、CSP などのレスポンスヘッダを付ける（2026-09-10 裁定。配信先は実装 spec D で Workers の Static Assets から Pages に移した）。
 
 - 読み込みを許すのは、自サイトと地理院タイル（`https://cyberjapandata.gsi.go.jp`）のみとする。`img-src` と `connect-src` に地理院を加える
 - `style-src 'unsafe-inline'` は Emotion のために必要である
 - MapLibre の内部の Worker は `setWorkerUrl()` で同一オリジンのファイルから起動するので、`worker-src` に `blob:` は要らない（実装 spec 01 の E2E で、`worker-src 'self'` のまま CSP 違反が 0 件であることを確認した）
 - フォントは外部から読まず、システムフォントを使う。外部のフォントを読むと許可するオリジンが増え、利用者のアクセスが外部に伝わる（base-spec §52）
 - Rust WASM を導入する場合（§6.4）は、`script-src` に `'wasm-unsafe-eval'` を加える
-- 具体的なポリシーと、`vite preview` での扱いは実装 spec 01 §4.8 で定める
+- 具体的なポリシーは実装 spec 01 §4.8 で定める。手元では `pnpm preview`（`wrangler pages dev`）が同じ `_headers` を適用し、E2E で確かめる（実装 spec D §4.5）
 - `/assets/*` は `Cache-Control: public, max-age=31536000, immutable` で配信する（2026-09-11 裁定 RB-1）。Vite の出力ファイル名にはコンテンツハッシュが付くため、内容が変われば URL も変わる。`index.html` はハッシュを持たないのでこのルールの対象外とし、従来どおり毎回検証させる
+- `*.pages.dev`（本番の `raintrace.pages.dev` と、`main.`・`pr-<番号>.` などの別名）には `X-Robots-Tag: noindex` を付ける。独自ドメインには付けない（実装 spec D R-D6）
 
 ---
 
@@ -1024,10 +1032,10 @@ pre-commit で重い検査を行わない。型検査とテストは pre-push �
 |---|---|
 | `quality` | `biome ci`、`tsc -b`（全 project reference）、`depcruise` |
 | `test` | `vitest run --coverage`（閾値検査を含む） |
-| `build` | `vite build` + バンドルサイズ検査（§14.2） |
+| `build` | `vite build` + バンドルサイズ検査（§14.2）。`dist/` に配信しないもの（`.vite`・`404.html` など）が無いことも検査する |
 | `e2e` | `playwright test` |
 | `audit` | `pnpm audit --audit-level=high`。PR では警告のみで、マージはブロックしない。週次のスケジュール実行でも走らせ、検出したものは Issue として起票する（§12.4、§13.9） |
-| `deploy` | PR でプレビュー、`main` への push でステージング、`v*` のタグの push で本番（§3.4）。ステージングと本番は必須ジョブの成功が前提 |
+| `deploy-preview`・`deploy-main`・`deploy-production` | PR で `pr-<番号>.raintrace.pages.dev`、`main` への push で `main.raintrace.pages.dev`、`v*` のタグの push で本番（§3.4）。`main` と本番は必須ジョブの成功が前提。上げた後に応答を検査する（`scripts/check-deployed-headers.mjs`） |
 
 ### 共通設定
 
@@ -1105,7 +1113,7 @@ pnpm 11 以降は、グローバル設定を `~/.config/pnpm/config.yaml` から
 
 ビルドスクリプトの実行が必要な依存パッケージは、`pnpm-workspace.yaml` の `allowBuilds` に明示的に列挙する。これはインストール時の任意コード実行という最大の攻撃経路を既定で塞ぐものであり、本プロジェクトはこの既定を維持する。`allowBuilds` への追加は、ビルドが必要な理由を Pull Request の説明に書いたうえで行う。
 
-pre-commit フックの lefthook（§12.2）は postinstall でフックを導入するパッケージだが、スクリプトの実行は許可しない（pnpm 12 は許可するかどうかが未決のパッケージがあると install を失敗させるので、`allowBuilds` に `false` で明記する）。代わりに本プロジェクト自身の `package.json` に `"prepare": "lefthook install"` を置く。ルートプロジェクト自身のライフサイクルスクリプトは実行されるためである。Biome はビルドスクリプトを持たない。wrangler と vite の依存の esbuild と workerd も `false` で明記している（スクリプトを実行しなくても build と preview が動くことを、実装 spec 01 で確認した）。
+pre-commit フックの lefthook（§12.2）は postinstall でフックを導入するパッケージだが、スクリプトの実行は許可しない（pnpm 12 は許可するかどうかが未決のパッケージがあると install を失敗させるので、`allowBuilds` に `false` で明記する）。代わりに本プロジェクト自身の `package.json` に `"prepare": "lefthook install"` を置く。ルートプロジェクト自身のライフサイクルスクリプトは実行されるためである。Biome はビルドスクリプトを持たない。wrangler の依存の esbuild と workerd（esbuild は vite も使う）も `false` で明記している（スクリプトを実行しなくても build と preview〈`wrangler pages dev`〉が動くことを、実装 spec 01 と D で確認した）。
 
 ## 13.4 GitHub Actions のピン留め
 
@@ -1367,7 +1375,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 
 実装時に参照すべき決定を再掲する。
 
-1. **Vite + React SPA を Cloudflare Workers の Static Assets として配信**する。バックエンドは持たない（§3、§7.1）
+1. **Vite + React SPA を Cloudflare Pages（Direct Upload）で配信**する。バックエンドは持たない（§3、§7.1）
 2. **単一 package.json 構成**とし、レイヤー境界は dependency-cruiser で CI 強制する（§4）
 3. **250,000 セルの TypedArray を React に載せない**。Worker / Renderer / React の三層に分離する（§5.1）
 4. **Worker との受け渡しは Transferable ダブルバッファ**。SharedArrayBuffer は使わない（§5.2、§7.3）
@@ -1396,7 +1404,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 | §43 モジュール構成 | §4.1 | `dem/` を純粋化し、`shared/`・`bridge/` を追加 |
 | §44〜§46 API | §6.2 | `SimulationEngine` として型を確定 |
 | §49 epsilon | §6.6 | 用途別に3種類の許容誤差を定義 |
-| §51 ホスティング候補 | §3 | Cloudflare Workers（Static Assets） |
+| §51 ホスティング候補 | §3 | Cloudflare Pages（Direct Upload。01〜05 は Workers の Static Assets、実装 spec D で移行） |
 | §55 Phase 5 の Worker・TypedArray・Active Cells | §6.7 | Worker・TypedArray は Phase 1、Active Cells は Phase 3 |
 | §60 技術スタック候補 | §1 | React・MUI・Zustand などを追加して確定 |
 | §55 Phase 1 の「3D terrain」 | 実装 spec 02・S・05 | Phase 1 は 2D 表示までとし、3D はスパイク S と実装 spec 05 に移す |

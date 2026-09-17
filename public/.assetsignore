@@ -1,3 +1,0 @@
-# Cloudflare の Static Assets として配信しないファイル。@cloudflare/vite-plugin は自分の項目をここに足す。
-# .vite/ はビルドの情報（マニフェスト、チャンクのモジュール一覧）で、配信する必要が無い
-.vite

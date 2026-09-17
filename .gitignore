@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# ビルドの情報（Vite のマニフェストと chunk-modules.json）。dist の外に置く（spec D R-D4）
+build-info/
 coverage/
 .wrangler/
 test-results/
