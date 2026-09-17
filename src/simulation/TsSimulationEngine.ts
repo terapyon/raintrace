@@ -5,6 +5,7 @@ import { SPILL_TOLERANCE_M } from './constants.ts'
 import {
   computeFlowVectors,
   createScratch,
+  type FlowVectors,
   type Scratch,
   solveStep,
   type TerrainArrays,
@@ -47,6 +48,8 @@ export class TsSimulationEngine implements SimulationEngine {
   private totalWater = 0
   private outflowWater = 0
   private readonly scratch: Scratch = createScratch()
+  /** flowVectors の出力（使い回す。loadTerrain で捨てる。spec 06 §5.2） */
+  private flow: FlowVectors | undefined = undefined
 
   constructor(options: EngineOptions = {}) {
     this.scanMode = options.scanMode ?? 'bbox'
@@ -73,6 +76,7 @@ export class TsSimulationEngine implements SimulationEngine {
     }
     this.depressions = []
     this.notified = new Uint8Array(0)
+    this.flow = undefined
     this.resetCounters()
   }
 
@@ -140,7 +144,8 @@ export class TsSimulationEngine implements SimulationEngine {
 
   flowVectors(): { x: Float32Array; y: Float32Array } {
     const { terrain, grid } = this.require()
-    return computeFlowVectors(terrain, grid.current, grid, this.scratch)
+    this.flow = computeFlowVectors(terrain, grid.current, grid, this.scratch, this.flow)
+    return this.flow
   }
 
   /** まだ通知していない窪地のうち、最低点の水面標高が spill 標高 − 1cm に達したもの（§3.7） */

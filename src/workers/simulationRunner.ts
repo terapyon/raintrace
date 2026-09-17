@@ -245,7 +245,7 @@ export class SimulationRunner {
     }
     this.arrowsDirty = false
     this.arrowsAt = now
-    // flowVectors() は呼ぶたびに 2 × N² を確保する（03 の申し送り P3）。表示されていて frame を送るときだけ呼ぶ
+    // flowVectors() はエンジンが使い回す配列を返す（spec 06 §5.2）。表示されていて frame を送るときだけ呼ぶ
     const v = this.engine.flowVectors()
     return thinFlowArrows(
       v.x,

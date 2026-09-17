@@ -155,19 +155,38 @@ export function solveStep(
   return { outflowDepth, flowed }
 }
 
+/** 流れのベクトル（x は東が正、y は南が正。m／step） */
+export interface FlowVectors {
+  x: Float32Array
+  y: Float32Array
+}
+
 /**
  * 現在の W に §3.2 の式を当てはめたときの各セルの流出を、流出先の方向の単位ベクトルで
- * 重み付けして足したもの（m／step）。水は動かさない。濡れていないセルは 0
+ * 重み付けして足したもの（m／step）。水は動かさない。濡れていないセルは 0。
+ * out を渡すと（大きさが合えば）それを 0 で埋めて書き、返す。1000 m で 2 × 1031² × 4 バイト = 8.5 MB を
+ * 矢印の計算のたび（最短 100 ms ごと）に確保しないため（spec 06 §5.2）
  */
 export function computeFlowVectors(
   t: TerrainArrays,
   w: Float64Array,
   win: ScanWindow,
   s: Scratch,
-): { x: Float32Array; y: Float32Array } {
+  out?: FlowVectors,
+): FlowVectors {
   const { width, height } = t
-  const vx = new Float32Array(width * height)
-  const vy = new Float32Array(width * height)
+  const n = width * height
+  let vx: Float32Array
+  let vy: Float32Array
+  if (out !== undefined && out.x.length === n && out.y.length === n) {
+    vx = out.x
+    vy = out.y
+    vx.fill(0)
+    vy.fill(0)
+  } else {
+    vx = new Float32Array(n)
+    vy = new Float32Array(n)
+  }
   const { g } = s
   for (let y = win.y0; y < win.y1; y++) {
     for (let x = win.x0; x < win.x1; x++) {
@@ -188,5 +207,5 @@ export function computeFlowVectors(
       vy[i] = sy
     }
   }
-  return { x: vx, y: vy }
+  return out !== undefined && vx === out.x ? out : { x: vx, y: vy }
 }

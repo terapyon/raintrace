@@ -110,4 +110,31 @@ describe('computeFlowVectors（spec 03 §3.9）', () => {
     expect(v.y[8]).toBe(0)
     expect(Array.from(w)).toEqual(Array.from(before))
   })
+
+  it('出力の配列を渡すと、それに書いて返す。前の値は 0 に戻す（使い回し。spec 06 §5.2）', () => {
+    const t = flat(5, 3)
+    for (let i = 0; i < 15; i++) t.elevation[i] = 4 - (i % 5)
+    const w = new Float64Array(15)
+    w[7] = 0.1
+    const out = { x: new Float32Array(15).fill(9), y: new Float32Array(15).fill(9) }
+    const v = computeFlowVectors(t, w, { x0: 0, y0: 0, x1: 5, y1: 3 }, createScratch(), out)
+    expect(v).toBe(out)
+    const fresh = computeFlowVectors(t, w, { x0: 0, y0: 0, x1: 5, y1: 3 }, createScratch())
+    expect(Array.from(v.x)).toEqual(Array.from(fresh.x))
+    expect(Array.from(v.y)).toEqual(Array.from(fresh.y))
+  })
+
+  it('出力の配列の大きさが合わなければ、新しく確保する', () => {
+    const w = new Float64Array(9)
+    const out = { x: new Float32Array(4), y: new Float32Array(4) }
+    const v = computeFlowVectors(
+      flat(3, 3),
+      w,
+      { x0: 0, y0: 0, x1: 3, y1: 3 },
+      createScratch(),
+      out,
+    )
+    expect(v).not.toBe(out)
+    expect(v.x.length).toBe(9)
+  })
 })
