@@ -27,7 +27,7 @@ import {
   WebGLRenderer,
 } from 'three'
 import { type GridPlacement, gridModelMatrix, multiplyMat4 } from './matrix'
-import { gridIndices, gridVertices } from './waterMesh'
+import { gridPatches, patchBytes, patchIndices, patchVertices } from './waterMesh'
 import { WATER_FRAGMENT, WATER_VERTEX } from './waterShaders'
 import { packLutRgba, type WaterLut } from './waterTextures'
 
@@ -56,6 +56,11 @@ export interface WaterLayerOptions {
   depthUploadEvery: number
   /** 計測用。render の CPU の時間（ms） */
   onRenderTime: ((ms: number) => void) | null
+  /**
+   * すべての区画を初めて描いたフレームで 1 回呼ぶ（E2E・計測の印 data-water-ready。「水面が見えた」時刻）。
+   * プログラムのリンクの待ちと、区画を数フレームに分けて見せる間は呼ばない（Task 17a のレビュー R1）
+   */
+  onShown: (() => void) | null
 }
 
 export interface WaterLayer {
@@ -145,6 +150,33 @@ export function buildUniforms(
   }
 }
 
+/** 1 フレームに GPU へ上げる区画のバイト数の目安（観測 約 2.35 ms/MB で 約 19 ms。spec 06 §5.2、Task 17a） */
+export const UPLOAD_BUDGET_BYTES = 8 * 1024 * 1024
+
+/** 見せていない先頭の区画から、合計が budget を超えない数（残りがあれば、1 区画が budget を超えても少なくとも 1） */
+export function patchesToReveal(
+  bytes: readonly number[],
+  revealed: number,
+  budget: number,
+): number {
+  let count = 0
+  let total = 0
+  for (let i = revealed; i < bytes.length; i++) {
+    total += bytes[i] as number
+    if (count > 0 && total > budget) break
+    count++
+  }
+  return count
+}
+
+/**
+ * compileAsync の待ちの上限（ms）。トレースで観測したリンクは 60〜240 ms。待ちが決着しないまま残る狭い競合
+ * （コンテキストの喪失から three の 10 ms ごとの確かめより先に復帰が届くと、three が WebGLProperties を
+ * 作り直し、確かめが例外で止まって Promise が決着しない。Task 17a (i) のレビューの Minor 1）でも、資源を
+ * 解放し、描く側に戻す（リンクが本当に終わっていなければ、three が最初の描画で同期で待つ）
+ */
+export const COMPILE_TIMEOUT_MS = 5000
+
 /** シェーダのプログラムの非同期のリンクの待ちと、資源の解放の順（GL を使わないので waterLayer.test.ts が確かめる） */
 export interface CompileGate {
   /** compileAsync の Promise を渡す（onAdd で 1 回）。dispose の後は何もしない */
@@ -152,7 +184,7 @@ export interface CompileGate {
   /** プログラムができて、まだ捨てていないか。false の間 render は何も描かない */
   ready(): boolean
   disposed(): boolean
-  /** 捨てる。待ちの途中なら、待ちが終わってから release を呼ぶ。2 回目からは何もしない */
+  /** 捨てる。待ちの途中なら、待ちが終わってから（または上限の時間で）release を呼ぶ。2 回目からは何もしない */
   dispose(): void
 }
 
@@ -163,14 +195,25 @@ export interface CompileGate {
  * 終わるまで release を遅らせ、終わっても描かない（onReady を呼ばない）。
  * コンテキストの喪失の後も待ちは終わる（KHR_parallel_shader_compile の仕様で、喪失の後の
  * COMPLETION_STATUS_KHR は true を返す）。compileAsync は reject しないが、もし reject されたら、
- * 描く側に戻す（three が最初の描画で同期にリンクを待つ、Task 17a の前と同じ振る舞い）
+ * 描く側に戻す（three が最初の描画で同期にリンクを待つ、Task 17a の前と同じ振る舞い）。
+ * 決着しないまま timeoutMs が過ぎたときも同じに扱う（COMPILE_TIMEOUT_MS の注。待ちの途中で dispose して
+ * いれば、ここで release する）
  */
-export function createCompileGate(release: () => void, onReady: () => void): CompileGate {
+export function createCompileGate(
+  release: () => void,
+  onReady: () => void,
+  timeoutMs: number = COMPILE_TIMEOUT_MS,
+): CompileGate {
   let pending = false
   let programReady = false
   let isDisposed = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+  // 解決・reject・上限の時間のうち最初の 1 回だけ
   const settle = (): void => {
+    if (!pending) return
     pending = false
+    if (timer !== null) clearTimeout(timer)
+    timer = null
     if (isDisposed) {
       release()
       return
@@ -182,6 +225,7 @@ export function createCompileGate(release: () => void, onReady: () => void): Com
     start(compiled) {
       if (isDisposed || pending || programReady) return
       pending = true
+      timer = setTimeout(settle, timeoutMs)
       compiled.then(settle, settle)
     },
     ready: () => programReady && !isDisposed,
@@ -200,9 +244,6 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
   const elevationTexture = floatTexture(options.elevation, n)
   const depthTexture = floatTexture(zeros, n)
   let lut = lutTexture(options.lut)
-  const geometry = new BufferGeometry()
-  geometry.setAttribute(CELL_ATTRIBUTE, new BufferAttribute(gridVertices(n), 2))
-  geometry.setIndex(new BufferAttribute(gridIndices(n), 1))
   const model = gridModelMatrix(options.placement, options.metersToMercator)
   const uniforms = buildUniforms(elevationTexture, depthTexture, lut, options)
   const material = new RawShaderMaterial({
@@ -222,17 +263,47 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
     polygonOffsetFactor: POLYGON_OFFSET_FACTOR,
     polygonOffsetUnits: POLYGON_OFFSET_UNITS,
   })
-  const mesh = new Mesh(geometry, material)
-  // 位置は u_matrix で決まり、three のカメラは使わない
-  mesh.frustumCulled = false
+  // 格子を区画に分け、区画ごとに Mesh を置く（spec 06 §5.2、Task 17a）。区画のジオメトリ（頂点・索引の配列）は
+  // 見せる直前に作り、1 フレームに UPLOAD_BUDGET_BYTES までを見せる（最初の描画で bufferData が上がる）。
+  // 見せる前の Mesh は空のジオメトリで visible = false。compile（compileAsync）は scene.traverse で見えない
+  // Mesh のマテリアルも辿る（three 0.185.1 の WebGLRenderer.compile）ので、見せる前にプログラムができる
+  const patches = gridPatches(n)
+  const bytes = patches.map(patchBytes)
   const scene = new Scene()
-  scene.add(mesh)
+  // 見せる前の区画が共有する空のジオメトリ（GPU には何も上げない）
+  const empty = new BufferGeometry()
+  const meshes = patches.map(() => {
+    const mesh = new Mesh(empty, material)
+    // 位置は u_matrix で決まり、three のカメラは使わない
+    mesh.frustumCulled = false
+    mesh.visible = false
+    scene.add(mesh)
+    return mesh
+  })
+  let revealed = 0
+  let shown = false
   const camera = new Camera()
   let renderer: WebGLRenderer | null = null
   let depthUpdates = 0
 
+  /** 次の区画の数だけジオメトリを作って見せる（描く直前に呼ぶ） */
+  const revealPatches = (): void => {
+    const end = revealed + patchesToReveal(bytes, revealed, UPLOAD_BUDGET_BYTES)
+    for (; revealed < end; revealed++) {
+      const patch = patches[revealed] as (typeof patches)[number]
+      const mesh = meshes[revealed] as (typeof meshes)[number]
+      const geometry = new BufferGeometry()
+      geometry.setAttribute(CELL_ATTRIBUTE, new BufferAttribute(patchVertices(patch), 2))
+      geometry.setIndex(new BufferAttribute(patchIndices(patch), 1))
+      mesh.geometry = geometry
+      mesh.visible = true
+    }
+  }
+
   const release = (): void => {
-    geometry.dispose()
+    // 作った区画のジオメトリと、見せていない区画の空のジオメトリを捨てる
+    for (const mesh of meshes) if (mesh.geometry !== empty) mesh.geometry.dispose()
+    empty.dispose()
     material.dispose()
     elevationTexture.dispose()
     depthTexture.dispose()
@@ -279,8 +350,16 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
       // MapLibre が canvas の大きさを変えても古い viewport のままにならないよう、毎回合わせる
       renderer.resetState()
       renderer.setViewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
+      if (revealed < patches.length) revealPatches()
       renderer.render(scene, camera)
       options.onRenderTime?.(performance.now() - start)
+      if (revealed < patches.length) {
+        // 残りの区画は次のフレームで見せる（水深が変わらなくても描画を頼む）
+        map.triggerRepaint()
+      } else if (!shown) {
+        shown = true
+        options.onShown?.()
+      }
     },
     onRemove() {
       dispose()

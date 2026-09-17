@@ -68,6 +68,11 @@ export class View3d {
   private readonly marks = { mapZoom: '', mapPitch: '', drawnTileZoom: '' }
   /** 水面を作った回数（E2E の印 data-water-builds。計画で決めたこと 21） */
   private waterBuilds = 0
+  /**
+   * 水面のすべての区画を初めて描いた回数（E2E・計測の印 data-water-ready）。水面は作った後、シェーダのリンクを
+   * 待ち、区画を数フレームに分けて見せる（spec 06 §5.2、Task 17a）ので、「水面が見えた」はこちらで待つ
+   */
+  private waterShown = 0
   private readonly onRender = (): void => this.afterRender()
   private readonly onMoveEnd = (): void => this.afterMove()
   /**
@@ -280,6 +285,12 @@ export class View3d {
       exaggeration: this.exaggeration,
       depthUploadEvery: this.options.depthUploadEvery ?? 1,
       onRenderTime: this.options.onRenderTime,
+      onShown: () => {
+        // 作り直しの後に古い層から届いても数えない（dispose の後の render は来ないが、念のため）
+        if (this.water !== water) return
+        this.waterShown++
+        map.getContainer().dataset.waterReady = String(this.waterShown)
+      },
     })
     water.setWater(this.depth)
     // メッシュ（1000 m で約 212 万枚、index 25 MB）とテクスチャの作成の時間。GPU への転送（最初の texSubImage2D 等）は

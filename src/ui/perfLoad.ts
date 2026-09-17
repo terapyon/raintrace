@@ -54,7 +54,9 @@ export async function runLoadProbe(
     const status = performance.now()
     let waterBuilt: number | null = null
     if (params.water) {
-      await waitForDataset(container, (dataset) => Number(dataset.waterBuilds ?? '0') >= 1)
+      // 水面のすべての区画が描かれるまで（作っただけでは、リンクの待ちと区画を見せる数フレームの前。
+      // Task 17a のレビュー R1）
+      await waitForDataset(container, (dataset) => Number(dataset.waterReady ?? '0') >= 1)
       waterBuilt = performance.now()
     }
     const tiles = await waitTilesLoaded(map)

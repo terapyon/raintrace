@@ -8,7 +8,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildUniforms,
   CELL_ATTRIBUTE,
+  COMPILE_TIMEOUT_MS,
   createCompileGate,
+  patchesToReveal,
   resolveDepthData,
   shouldUploadDepth,
   type WaterLayerOptions,
@@ -199,5 +201,82 @@ describe('createCompileGate（compileAsync の待ちと資源の解放の順。s
     failedLater.reject(new Error('compile'))
     await flush()
     expect(release).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('createCompileGate の上限の時間（Task 17a (i) のレビューの Minor 1: 決着しない待ち）', () => {
+  it('待ちが決着しないまま上限の時間が過ぎると、描く側に戻す（ready・onReady 1 回）。後から解決しても 2 回目はない', async () => {
+    vi.useFakeTimers()
+    try {
+      const release = vi.fn()
+      const onReady = vi.fn()
+      const gate = createCompileGate(release, onReady, 100)
+      const compiled = deferred()
+      gate.start(compiled.promise)
+      vi.advanceTimersByTime(99)
+      expect(gate.ready()).toBe(false)
+      vi.advanceTimersByTime(1)
+      expect(gate.ready()).toBe(true)
+      expect(onReady).toHaveBeenCalledTimes(1)
+      compiled.resolve()
+      await vi.runAllTimersAsync()
+      expect(onReady).toHaveBeenCalledTimes(1)
+      expect(release).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('待ちの途中で dispose し、待ちが決着しない（喪失から 10 ms 以内の復帰）ときも、上限の時間で release を 1 回呼ぶ', async () => {
+    vi.useFakeTimers()
+    try {
+      const release = vi.fn()
+      const onReady = vi.fn()
+      const gate = createCompileGate(release, onReady)
+      gate.start(new Promise(() => {}))
+      gate.dispose()
+      vi.advanceTimersByTime(COMPILE_TIMEOUT_MS - 1)
+      expect(release).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(release).toHaveBeenCalledTimes(1)
+      await vi.runAllTimersAsync()
+      expect(release).toHaveBeenCalledTimes(1)
+      expect(onReady).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('上限の時間より前に解決すれば、上限のタイマーは残らない', async () => {
+    vi.useFakeTimers()
+    try {
+      const gate = createCompileGate(
+        () => {},
+        () => {},
+      )
+      const compiled = deferred()
+      gate.start(compiled.promise)
+      compiled.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(gate.ready()).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('patchesToReveal（1 フレームに見せる区画の数。spec 06 §5.2、Task 17a）', () => {
+  it('見せていない先頭から、合計が目安を超えない数', () => {
+    expect(patchesToReveal([3, 3, 3], 0, 7)).toBe(2)
+    expect(patchesToReveal([3, 3, 3], 2, 7)).toBe(1)
+  })
+
+  it('1 区画が目安を超えても 1 つは進める', () => {
+    expect(patchesToReveal([10, 1], 0, 7)).toBe(1)
+  })
+
+  it('残りが無ければ 0', () => {
+    expect(patchesToReveal([3], 1, 7)).toBe(0)
   })
 })
