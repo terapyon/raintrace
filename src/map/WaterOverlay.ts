@@ -1,11 +1,12 @@
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import type { Corners } from '../dem/gridRange'
 import { ensureArrowImage } from './arrowImage'
-import { TERRAIN_LAYER_IDS } from './TerrainOverlay'
+import { beforeLayerId, WATER_LAYER_IDS } from './layerIds'
 import type { PointCollection } from './terrainFeatures'
 import { WATER_LAYER_OPACITY, type WaterPalette, waterRgba } from './waterColormap'
 
-export const WATER_LAYER_IDS = { water: 'water-depth', arrows: 'water-arrows' } as const
+export { WATER_LAYER_IDS } from './layerIds'
+
 const ARROW_IMAGE = 'water-flow-arrow'
 const EMPTY: PointCollection<{ bearing: number }> = { type: 'FeatureCollection', features: [] }
 
@@ -138,8 +139,9 @@ export class WaterOverlay {
     const target = this.target
     if (target === null) return
     this.removeLayers()
+    // 地形の重ね描きは別のタスクで後から足されることがあるので、今あるレイヤーと固定の並びから決める
     const before = (id: string): string | undefined =>
-      this.map.getLayer(id) !== undefined ? id : undefined
+      beforeLayerId(id, (other) => this.map.getLayer(other) !== undefined)
     // 毎フレーム内容が変わるので animate: true（spec 04 §6.1）
     this.map.addSource(WATER_LAYER_IDS.water, {
       type: 'canvas',
@@ -156,7 +158,7 @@ export class WaterOverlay {
         layout: { visibility: this.depthVisible ? 'visible' : 'none' },
         paint: { 'raster-opacity': WATER_LAYER_OPACITY, 'raster-resampling': 'nearest' },
       },
-      before(TERRAIN_LAYER_IDS.outline),
+      before(WATER_LAYER_IDS.water),
     )
     // 白に濃い青の縁（青い水の上でも見える）
     ensureArrowImage(this.map, ARROW_IMAGE, '#ffffff', '#0d47a1')
@@ -175,7 +177,7 @@ export class WaterOverlay {
           visibility: this.arrowsVisible ? 'visible' : 'none',
         },
       },
-      before(TERRAIN_LAYER_IDS.markers),
+      before(WATER_LAYER_IDS.arrows),
     )
   }
 

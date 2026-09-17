@@ -2,6 +2,7 @@ import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { type Attribution, type Basemap, createGsiStyle } from './basemapStyle'
+import { OVERLAY_LAYER_ORDER } from './layerIds'
 import { TERRAIN_LAYER_IDS } from './TerrainOverlay'
 import { VIEW3D_LAYER_IDS } from './view3d/layerIds'
 import { WATER_LAYER_IDS } from './WaterOverlay'
@@ -41,7 +42,7 @@ export class MapController {
   private awaitingStyle = false
   private readonly waiting: (() => void)[] = []
   private readonly restyleListeners = new Set<() => void>()
-  /** 直前に書いた値（present と visible を | でつないだ値）。変わらなければ書き直さない */
+  /** 直前に書いた値（present・visible・order を | でつないだ値）。変わらなければ書き直さない */
   private lastOverlayLayers = ''
 
   constructor(container: HTMLElement, attribution: Attribution, basemap: Basemap = 'pale') {
@@ -84,6 +85,7 @@ export class MapController {
       const { dataset } = this.map.getContainer()
       dataset.overlayLayers = ''
       dataset.visibleOverlayLayers = ''
+      dataset.overlayOrder = ''
     })
     this.map.on('render', () => this.writeOverlayLayers())
   }
@@ -138,16 +140,20 @@ export class MapController {
 
   /**
    * 今のスタイルに実在する重ね描きのレイヤー ID を data-overlay-layers に、そのうち visibility が none でない
-   * ものを data-visible-overlay-layers に、コンマ区切りで書く（E2E 用のフック。計画で決めたこと 21）
+   * ものを data-visible-overlay-layers に、今のスタイルの実際の重なり順（下から上。Map.getLayersOrder）のうち
+   * 重ね描きのレイヤーを data-overlay-order に、コンマ区切りで書く（E2E 用のフック。計画で決めたこと 21、
+   * spec 06 Task 17）
    */
   private writeOverlayLayers(): void {
     const present = OVERLAY_LAYER_IDS.filter((id) => this.map.getLayer(id) !== undefined)
     const visible = present.filter((id) => this.map.getLayoutProperty(id, 'visibility') !== 'none')
-    const text = `${present.join(',')}|${visible.join(',')}`
+    const order = this.map.getLayersOrder().filter((id) => OVERLAY_LAYER_ORDER.includes(id))
+    const text = `${present.join(',')}|${visible.join(',')}|${order.join(',')}`
     if (text === this.lastOverlayLayers) return
     this.lastOverlayLayers = text
     const { dataset } = this.map.getContainer()
     dataset.overlayLayers = present.join(',')
     dataset.visibleOverlayLayers = visible.join(',')
+    dataset.overlayOrder = order.join(',')
   }
 }

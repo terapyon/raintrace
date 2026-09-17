@@ -11,8 +11,8 @@ import type { DrawnTileZoom } from '../../dem/tileZoom'
 import type { WaterLayer, WaterLayerOptions } from '../../renderer/waterLayer'
 import type { TerrainPayload } from '../../shared/protocol'
 import type { Basemap } from '../basemapStyle'
+import { beforeLayerId } from '../layerIds'
 import type { MapController } from '../MapController'
-import { TERRAIN_LAYER_IDS } from '../TerrainOverlay'
 import { type WaterPalette, waterLutSpec } from '../waterColormap'
 import {
   boundaryDecision,
@@ -213,7 +213,8 @@ export class View3d {
     if (this.terrain !== null) this.terrain3d.setRange(this.ensureRange())
     this.terrain3d.show({
       hillshade: hillshadeEnabled(this.options.hillshade, this.basemap),
-      beforeId: this.hillshadeBeforeId(),
+      // hillshade は 04 の重ね描き（標高の色分け）の下、ベースマップの上に置く
+      beforeId: this.beforeId(VIEW3D_LAYER_IDS.hillshade),
     })
     this.setRendering('3d')
     this.ensureWater()
@@ -232,12 +233,10 @@ export class View3d {
     this.onRendering(rendering)
   }
 
-  /** hillshade は 04 の重ね描き（標高の色分け）の下、ベースマップの上に置く */
-  private hillshadeBeforeId(): string | undefined {
+  /** id を重ね描きの並び（OVERLAY_LAYER_ORDER）どおりに置くための beforeId（地形の重ね描きは後から足されうる） */
+  private beforeId(id: string): string | undefined {
     const { map } = this.controller
-    return map.getLayer(TERRAIN_LAYER_IDS.elevation) !== undefined
-      ? TERRAIN_LAYER_IDS.elevation
-      : undefined
+    return beforeLayerId(id, (other) => map.getLayer(other) !== undefined)
   }
 
   /** 水面の Custom Layer を、無ければ足す。three は初めて要るときに動的 import で読む（spec 05 §3.8） */
@@ -287,9 +286,7 @@ export class View3d {
     // 別で、Task 9 は計測の窓（先頭 1 秒を捨てる）の外に落ちるため測っていない（推測では埋めていない）
     this.options.onWaterBuildTime?.(performance.now() - start)
     // 04 の重ね描き（標高・窪地・2D の水深）の上、範囲の枠と矢印の下に置く（矢印は水面の後。spec 05 §3.3）
-    const before =
-      map.getLayer(TERRAIN_LAYER_IDS.outline) !== undefined ? TERRAIN_LAYER_IDS.outline : undefined
-    map.addLayer(water.layer, before)
+    map.addLayer(water.layer, this.beforeId(VIEW3D_LAYER_IDS.water))
     this.water = water
     this.waterBuilds++
     map.getContainer().dataset.waterBuilds = String(this.waterBuilds)

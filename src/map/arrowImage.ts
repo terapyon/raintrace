@@ -17,7 +17,8 @@ export function ensureArrowImage(
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
-  const context = canvas.getContext('2d')
+  // CPU の canvas にし、下の getImageData の GPU からの同期の読み戻し（1 回 2〜25 ms）を無くす（spec 06 Task 17）
+  const context = canvas.getContext('2d', { willReadFrequently: true })
   if (context === null) return
   context.fillStyle = fill
   context.beginPath()

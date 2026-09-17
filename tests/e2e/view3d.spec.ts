@@ -142,6 +142,21 @@ test.describe('3D の表示（spec 05 §5）', () => {
       { timeout: 30_000 },
     )
     expect(requested.some((url) => /\/assets\/three-/.test(url))).toBe(true)
+    // 重なり順: hillshade が一番下、水面は 2D の水深の上・範囲の枠の下（spec 05 §3.3・§3.6、spec 06 Task 17）
+    await expect(mapEl).toHaveAttribute(
+      'data-overlay-order',
+      [
+        VIEW3D_LAYER_IDS.hillshade,
+        TERRAIN_LAYER_IDS.elevation,
+        TERRAIN_LAYER_IDS.depressions,
+        WATER_LAYER_IDS.water,
+        VIEW3D_LAYER_IDS.water,
+        TERRAIN_LAYER_IDS.outline,
+        TERRAIN_LAYER_IDS.flow,
+        WATER_LAYER_IDS.arrows,
+        TERRAIN_LAYER_IDS.markers,
+      ].join(','),
+    )
     const visible3d = (await mapEl.getAttribute('data-visible-overlay-layers'))?.split(',') ?? []
     expect(visible3d).not.toContain(WATER_LAYER_IDS.water)
     expect(visible3d).toContain(WATER_LAYER_IDS.arrows)
