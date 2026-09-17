@@ -54,6 +54,15 @@ export function DisclaimerDialog({ open, acknowledged, onAcknowledge, onClose }:
             {line}
           </Typography>
         ))}
+        <Typography variant="body2" sx={{ mb: 1 }}>
+          {strings.disclaimer.author}
+        </Typography>
+        <Typography variant="body2" sx={{ mb: 1 }}>
+          {strings.disclaimer.sourceCode.label}
+          <Link href={strings.disclaimer.sourceCode.url} target="_blank" rel="noopener noreferrer">
+            {strings.disclaimer.sourceCode.linkText}
+          </Link>
+        </Typography>
       </DialogContent>
       <DialogActions>
         <Button variant="contained" onClick={acknowledged ? onClose : onAcknowledge}>
