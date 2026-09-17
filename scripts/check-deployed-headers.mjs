@@ -3,6 +3,8 @@
  * 使い方: node scripts/check-deployed-headers.mjs <URL> --noindex | --indexable
  *   --noindex: *.pages.dev（x-robots-tag: noindex を期待）、--indexable: 独自ドメイン（noindex が無いことを期待）
  * 反映の遅れに備え、5 秒おきに 6 回まで試す（レビュー m3: 環境変数で回数・間隔を変えられる。既定は変えない）。
+ * 各 fetch には 15 秒のタイムアウトを付ける（最終レビュー m1: CHECK_DEPLOYED_HEADERS_TIMEOUT_MS で変えられる。既定は変えない）。
+ * タイムアウトも失敗として数え、通常の再試行に乗る
  * / の応答ヘッダーをすべて出す（Pages の既定のヘッダーの記録）
  */
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -10,6 +12,7 @@ import { evaluateDeployment, findAssetScript, MISSING_PATH } from './lib/deploye
 
 const DEFAULT_ATTEMPTS = 6
 const DEFAULT_INTERVAL_MS = 5000
+const DEFAULT_TIMEOUT_MS = 15000
 const USAGE = '使い方: node scripts/check-deployed-headers.mjs <URL> --noindex | --indexable'
 
 /**
@@ -31,6 +34,7 @@ function readPositiveIntEnv(name, fallback) {
 
 const ATTEMPTS = readPositiveIntEnv('CHECK_DEPLOYED_HEADERS_ATTEMPTS', DEFAULT_ATTEMPTS)
 const INTERVAL_MS = readPositiveIntEnv('CHECK_DEPLOYED_HEADERS_INTERVAL_MS', DEFAULT_INTERVAL_MS)
+const TIMEOUT_MS = readPositiveIntEnv('CHECK_DEPLOYED_HEADERS_TIMEOUT_MS', DEFAULT_TIMEOUT_MS)
 
 const [base, flag, ...rest] = process.argv.slice(2)
 if (base === undefined || (flag !== '--noindex' && flag !== '--indexable') || rest.length > 0) {
@@ -47,6 +51,7 @@ async function get(path) {
   const response = await fetch(new URL(path, base), {
     redirect: 'manual',
     headers: { 'cache-control': 'no-cache' },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   })
   return {
     status: response.status,
