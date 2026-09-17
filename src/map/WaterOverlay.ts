@@ -1,4 +1,4 @@
-import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
+import type { CanvasSource, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import type { Corners } from '../dem/gridRange'
 import { ensureArrowImage } from './arrowImage'
 import { beforeLayerId, WATER_LAYER_IDS } from './layerIds'
@@ -10,6 +10,21 @@ export { WATER_LAYER_IDS } from './layerIds'
 const ARROW_IMAGE = 'water-flow-arrow'
 const EMPTY: PointCollection<{ bearing: number }> = { type: 'FeatureCollection', features: [] }
 
+/**
+ * canvas ソースに描いた内容を 1 回だけ転送し、再描画を 1 回頼む（spec 06 §5.2）。MapLibre 6.6.0 の CanvasSource は、
+ * play() で _playing を立てて triggerRepaint し、pause() は _playing の間に prepare()（texture.update）を呼んでから
+ * _playing を下ろす（maplibre-gl-dev.mjs 4601〜4609・4649 行）。_playing を立てたままにしないので、
+ * hasTransition() が偽になり、止まっている間は地図を毎フレーム描き直さない。play・pause は onAdd の load() で
+ * 付くので、まだ読み込まれていないソースでは何もしない（最初の prepare() がそのときの canvas から texture を作る）
+ */
+export function uploadCanvasSource(
+  source: { play?: () => void; pause?: () => void } | undefined,
+): void {
+  if (source?.play === undefined || source.pause === undefined) return
+  source.play()
+  source.pause()
+}
+
 interface Target {
   corners: Corners
   canvas: HTMLCanvasElement
@@ -20,7 +35,7 @@ interface Target {
 
 /**
  * 水深の 2D 表示（spec 04 §6.1、R04-7）と水の流れの矢印（§6.2）。範囲の四隅に合わせた canvas ソースを
- * animate: true で置き、描画フレームごとに最新の水深だけを着色する（届いた frame が多くても 1 回）。
+ * animate: false で置き、描画フレームごとに最新の水深だけを着色して、そのときだけ転送する（届いた frame が多くても 1 回）。
  * 水深の配列は SimulationClient が持つもので、ここでは参照するだけ。client は次の frame で古い方を Worker へ
  * 返す（転送で切り離す）。Reset の後に古い実行の frame が届くと、session は setWater を呼ばないまま client が
  * 前のバッファを返すので、session は reset・start・失敗・異常終了のたびに setWater(null) で参照を外す
@@ -133,6 +148,7 @@ export class WaterOverlay {
     if (this.latest === null) target.rgba.fill(0)
     else waterRgba(this.latest, this.palette, target.rgba)
     target.context.putImageData(target.image, 0, 0)
+    uploadCanvasSource(this.map.getSource<CanvasSource>(WATER_LAYER_IDS.water))
   }
 
   private addLayers(): void {
@@ -142,12 +158,13 @@ export class WaterOverlay {
     // 地形の重ね描きは別のタスクで後から足されることがあるので、今あるレイヤーと固定の並びから決める
     const before = (id: string): string | undefined =>
       beforeLayerId(id, (other) => this.map.getLayer(other) !== undefined)
-    // 毎フレーム内容が変わるので animate: true（spec 04 §6.1）
+    // animate: true は止まっている間も毎フレーム再描画させる（04 の申し送り）。描いたときだけ draw が
+    // uploadCanvasSource で転送する（spec 06 §5.2）
     this.map.addSource(WATER_LAYER_IDS.water, {
       type: 'canvas',
       canvas: target.canvas,
       coordinates: target.corners,
-      animate: true,
+      animate: false,
     })
     // 水は標高・窪地の上、範囲の枠・矢印・最低点の下
     this.map.addLayer(

@@ -19,9 +19,11 @@ export const INITIAL_VIEW = { center: [138.0, 36.0] as [number, number], zoom: 5
 // TerrainOverlay の data-range-shown はレイヤーを足した事実（addAll）を覚えるだけで、
 // setStyle でスタイルごと消えても消されないため、ベースマップの切り替えでレイヤーが戻っているかの
 // 確かめには使えない（Task 13 のレビュー指摘）。
-// idle ではなく render を使う: 水深の canvas ソースは animate: true（毎フレーム内容が変わる前提）なので、
-// 地形を表示した地図はほぼ常に再描画し続け、idle が二度と来ない（実ブラウザで確認済み）。render は
-// その animate: true のせいでどのみち高頻度に来るので、そこに相乗りする（変化が無ければ書かない）
+// idle ではなく render を使う: レイヤー・ソースの追加/削除や setLayoutProperty は MapLibre の
+// Map._update() が必ず triggerRepaint() を呼ぶので（maplibre-gl-dev.mjs 26113〜26118 行）、
+// この関数が数える対象が変わった直後には必ず render が来る。水深の canvas ソースは
+// animate: false（spec 06 §5.2、Task 18）にして、止まっている間は毎フレーム再描画させない
+// （変化が無ければ書かない）
 const OVERLAY_LAYER_IDS = [
   ...Object.values(TERRAIN_LAYER_IDS),
   ...Object.values(WATER_LAYER_IDS),
