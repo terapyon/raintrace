@@ -1,6 +1,10 @@
 import Box from '@mui/material/Box'
+import FormControl from '@mui/material/FormControl'
+import FormHelperText from '@mui/material/FormHelperText'
+import InputLabel from '@mui/material/InputLabel'
+import OutlinedInput from '@mui/material/OutlinedInput'
 import Slider from '@mui/material/Slider'
-import TextField from '@mui/material/TextField'
+import { useId } from 'react'
 import { AMOUNT_MM, RADIUS_MIN_M } from '../../state/persistedSettings'
 import { strings } from '../strings'
 
@@ -16,6 +20,47 @@ interface Props {
   onRadiusChange: (text: string) => void
 }
 
+interface NumberFieldProps {
+  label: string
+  value: string
+  disabled: boolean
+  error: boolean
+  helperText: string | undefined
+  inputMode: 'numeric' | 'decimal'
+  onChange: (text: string) => void
+}
+
+/**
+ * TextField と同じ見た目と関連づけ（label の for、説明文の aria-describedby）の入力欄。TextField は本アプリが
+ * 使わない Select・Menu・Popover の実装まで静的に読み、ui のチャンクを予算の 150 KB から押し上げるので使わない
+ * （tech-spec §14.2、spec 06 §5.2、RB-1 の順序）
+ */
+function NumberField(props: NumberFieldProps) {
+  const { label, value, disabled, error, helperText, inputMode, onChange } = props
+  const id = useId()
+  const helperId = `${id}-helper`
+  return (
+    <FormControl size="small" variant="outlined" disabled={disabled} error={error}>
+      <InputLabel htmlFor={id}>{label}</InputLabel>
+      <OutlinedInput
+        id={id}
+        label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        slotProps={{
+          input: {
+            inputMode,
+            ...(helperText === undefined ? {} : { 'aria-describedby': helperId }),
+          },
+        }}
+      />
+      {helperText === undefined ? null : (
+        <FormHelperText id={helperId}>{helperText}</FormHelperText>
+      )}
+    </FormControl>
+  )
+}
+
 /** 雨量と半径（base-spec §10、spec 04 §9）。入力欄とスライダーは同じ値を持つ */
 export function RainfallControls(props: Props) {
   const { amountText, radiusText, maxRadiusM, amountInvalid, radiusInvalid, disabled } = props
@@ -25,15 +70,14 @@ export function RainfallControls(props: Props) {
   }
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
-      <TextField
+      <NumberField
         label={strings.rainfall.amount}
-        size="small"
         value={amountText}
         disabled={disabled}
         error={amountInvalid}
         helperText={amountInvalid ? strings.rainfall.amountError : undefined}
-        onChange={(event) => props.onAmountChange(event.target.value)}
-        slotProps={{ htmlInput: { inputMode: 'numeric' } }}
+        inputMode="numeric"
+        onChange={props.onAmountChange}
       />
       <Slider
         aria-label={strings.rainfall.amountSlider}
@@ -45,15 +89,14 @@ export function RainfallControls(props: Props) {
         value={sliderValue(amountText, AMOUNT_MM.min, AMOUNT_MM.max)}
         onChange={(_, value) => props.onAmountChange(String(value))}
       />
-      <TextField
+      <NumberField
         label={strings.rainfall.radius}
-        size="small"
         value={radiusText}
         disabled={disabled}
         error={radiusInvalid}
         helperText={radiusInvalid ? strings.rainfall.radiusError(maxRadiusM) : undefined}
-        onChange={(event) => props.onRadiusChange(event.target.value)}
-        slotProps={{ htmlInput: { inputMode: 'decimal' } }}
+        inputMode="decimal"
+        onChange={props.onRadiusChange}
       />
       <Slider
         aria-label={strings.rainfall.radiusSlider}
