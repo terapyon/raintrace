@@ -94,8 +94,8 @@
 | `src/ui/perfParams.ts`（+ test） | URL の新しい項目 | 4・27 |
 | `src/ui/perfWait.ts`（+ test。`perfHook.test.ts` を改名） | 待ちと表示の道具、`placeViewOnLoadedTerrain` | 4 |
 | `src/ui/perfCollectors.ts`（+ test） | 長いタスクと 1 step の所要時間の収集と要約 | 4 |
-| `src/ui/perfReports.ts` | 計測の結果の型（`tests/perf/` が型だけを読む） | 5・27 |
-| `src/ui/perfSteps.ts`（+ test）、`src/ui/perfLoad.ts` | `probe=steps`・`probe=load` | 5 |
+| `src/ui/perfReports.ts` | 計測の結果の型（`tests/perf/` が型だけを読む） | 5・13a・27 |
+| `src/ui/perfSteps.ts`（+ test）、`src/ui/perfLoad.ts` | `probe=steps`・`probe=load` | 5・13a |
 | `src/ui/perfWaterStats.ts`（+ test）、`src/ui/perfWater.ts` | `probe=water`（M5） | 27 |
 | `src/ui/perfHook.ts` | probe の振り分けと fps の追加の値 | 4・5・27 |
 | `src/map/fpsProbe.ts` | fps の結果に `gpuTimerQuery` | 5 |
@@ -118,7 +118,7 @@
 | §1.2 M1（計測の道具） | 1〜7 |
 | §1.2 M2（計測・判定、平衡は暫定） | 8〜10 |
 | §1.2 M3（51 fps の切り分け。M2 の準備で、矢印の本数と fps の関係の確かめに改めた） | 11〜13 |
-| §1.2 M4（安価な改善、平衡の確定） | 14〜25 |
+| §1.2 M4（安価な改善、平衡の確定） | 13a・14〜25（17a を含む） |
 | §1.2 M5（`probe=water`） | 26〜28 |
 | §1.2 M6（締め） | 29・30 |
 | §3 計測の道具の表 | 2（step の所要時間）、3（`depthEvery`）、4（長いタスク・`arrows=0`・`pause=1`）、5（平衡・クリックから表示・3D の最初のフレーム・質量誤差の表示）、26・27（`probe=water`） |
@@ -126,7 +126,7 @@
 | §4.2 自動・手動・基準の機械・記録 | 6（道具）、8・9（実行） |
 | §5 判定の表 | 10（M2 の判定）、25（平衡の確定と M4 の後の表） |
 | §5.1 51 fps の切り分け | 6（組）、11〜13 |
-| §5.2 安価な改善の候補 | 14〜24 |
+| §5.2 安価な改善の候補 | 14〜24（17a を含む） |
 | §6 完了条件 | 29（照合）・30（最終の確認） |
 
 ## マイルストーンの区切り（各マイルストーンの最後に行う）
@@ -3337,7 +3337,113 @@ M4 の完了条件（spec 06 §1.2）: 各項目の前後の数字と tech-spec 
 1. 各 Task の冒頭の **条件** を、Task 10 の判定の表（と Task 13 の結論）に照らす。満たさなければ、その Task は行わず、`docs/perf/<実行日>-fixes.md` の「行わなかった項目」に「条件: …、測った値: …」と 1 行書く（Task 25 のコミットに含める）
 2. 満たすなら、**前**の計測（今の HEAD の `pnpm build:perf`）→ テストを先に書いて直す → **後**の計測（同じコマンド）→ 記録 → ゲート → コミット、の順に行う。前と後は同じ日の同じ機械で続けて測る
 3. 前後の数字は `docs/perf/<実行日>-fixes.md` の Task ごとの節に足し、同じ Task のコミットに含める。ファイルが無ければ最初の Task で作る（見出し `# 06 の安価な改善の前後（spec 06 §5.2、M4）` と、機器が `docs/perf/<M2 の実行日>.md` と同じである旨）
-4. 「計画し直す」の Task（17・21・23・24）は、条件を満たしたら、その Task の枠を具体的な計画にしてレビュー役に送り、承認の後に行う
+4. 「計画し直す」の Task（17・17a・21・23・24）は、条件を満たしたら、その Task の枠を具体的な計画にしてレビュー役に送り、承認の後に行う
+
+### Task 13a: `StepsReport.longTasks` に `entries`（各長いタスクの開始と長さ）を足す（spec 06 §5.2、M2 の修正の裁定）
+
+**条件:** 常に行う（M4 の他の Task の前後の計測より先に行う。M2 で綾瀬 500 m・半径 10 m の再生中に出た 53 ms の長いタスク〈1 件のみ〉が Task 25 の測り直しで再発したとき、再生の始めの直後か平衡の直前かを名指しできるようにする準備）。
+
+**Files:**
+- Modify: `src/ui/perfReports.ts`（`StepsReport.longTasks`）
+- Modify: `src/ui/perfSteps.ts`（`stepLongTaskEntries`、`runStepsProbe`）
+- Modify: `src/ui/perfSteps.test.ts`
+
+**Interfaces:**
+- Consumes: `LongTaskSample`（`perfCollectors.ts`。型は変えない）
+- Produces: `export function stepLongTaskEntries(entries: readonly LongTaskSample[], fromMs: number, toMs: number): LongTaskSample[]`。`StepsReport.longTasks` の型を `LongTaskSummary` から `LongTaskSummary & { entries: LongTaskSample[] }` に広げる（`LoadReport.longTasks.entries` と同じ形。`perfCollectors.summarizeLongTasks` は変えない）
+
+- [ ] **Step 1: 失敗するテストを書く**
+
+`src/ui/perfSteps.test.ts` の末尾に足す:
+
+```ts
+import { summarizeLongTasks } from './perfCollectors'
+import { minutesAt1x, stepLongTaskEntries } from './perfSteps'
+
+describe('stepLongTaskEntries（[from, to) の長いタスクの一覧。LoadReport.longTasks.entries と同じ形。spec 06 M4 Task 13a）', () => {
+  it('窓の外は落とし、窓の中だけ開始と長さで返す', () => {
+    const entries = [
+      { startMs: 0, durationMs: 60 },
+      { startMs: 100, durationMs: 53 },
+      { startMs: 200, durationMs: 70 },
+    ]
+    expect(stepLongTaskEntries(entries, 100, 200)).toEqual([{ startMs: 100, durationMs: 53 }])
+  })
+
+  it('summarizeLongTasks と同じ [from, to) を渡せば、件数が summary.count と一致する（runStepsProbe は両方を同じ start・end で呼ぶ）', () => {
+    const entries = [
+      { startMs: 50, durationMs: 55 },
+      { startMs: 150, durationMs: 60 },
+    ]
+    const filtered = stepLongTaskEntries(entries, 50, 150)
+    expect(filtered).toHaveLength(summarizeLongTasks(entries, true, 50, 150).count)
+  })
+})
+```
+
+（既存の `import { minutesAt1x } from './perfSteps'` はこの 1 行に統合する。）
+
+- [ ] **Step 2: 失敗を確かめる**
+
+Run: `pnpm vitest run src/ui/perfSteps.test.ts`
+Expected: FAIL（`stepLongTaskEntries is not a function` などの解決の失敗）
+
+- [ ] **Step 3: 直す**
+
+`src/ui/perfSteps.ts` の import を次に置き換える:
+
+```ts
+import {
+  type LongTaskCollector,
+  type LongTaskSample,
+  type StepTimeListener,
+  summarizeLongTasks,
+  summarizeStepSeries,
+} from './perfCollectors'
+```
+
+`minutesAt1x` の前に足す:
+
+```ts
+/** [fromMs, toMs) に始まった長いタスクの一覧（開始と長さだけ。LoadReport.longTasks.entries と同じ形。spec 06 M4 Task 13a） */
+export function stepLongTaskEntries(
+  entries: readonly LongTaskSample[],
+  fromMs: number,
+  toMs: number,
+): LongTaskSample[] {
+  return entries.filter((entry) => entry.startMs >= fromMs && entry.startMs < toMs)
+}
+```
+
+`runStepsProbe` の戻り値の `longTasks: summarizeLongTasks(longTasks.entries, longTasks.supported, start, end),` を次に置き換える:
+
+```ts
+    longTasks: {
+      ...summarizeLongTasks(longTasks.entries, longTasks.supported, start, end),
+      entries: stepLongTaskEntries(longTasks.entries, start, end),
+    },
+```
+
+`src/ui/perfReports.ts` の `StepsReport` の `longTasks: LongTaskSummary` を `longTasks: LongTaskSummary & { entries: LongTaskSample[] }` に置き換える（`LongTaskSample` は同じ import 文にすでにある）。
+
+- [ ] **Step 4: テストが通ることを確かめる**
+
+Run: `pnpm vitest run src/ui/`
+Expected: PASS
+
+- [ ] **Step 5: 通常のビルドに計測のコードが無いことを確かめ、ゲートを通してコミットする**
+
+`perfReports.ts`・`perfSteps.ts` は既存の `src/ui/perf*.ts`（計測用のビルドだけに入る）の一部なので、新しい分岐は要らない。
+
+Run: `pnpm build && pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage && pnpm size`
+Expected: すべて成功、初期ロード 427.5 KB（変わらない。`entries` は計測用のビルドの型が広がるだけ）
+
+```bash
+git add src/ui/perfReports.ts src/ui/perfSteps.ts src/ui/perfSteps.test.ts
+git commit -m "StepsReport.longTasks に entries（各長いタスクの開始と長さ）を足す（LoadReport と同じ形。再生中の長いタスクの再発を特定するため。spec 06 §5.2）"
+```
+
+---
 
 ### Task 14: `flowVectors()` の配列を使い回す（spec 06 §5.2、計画で決めたこと 16）
 
@@ -3943,7 +4049,7 @@ git commit -m "地形の標高・窪地の RGBA をセルごとの配列を作�
 
 ### Task 17:（条件つき・計画し直す）地形の重ね描きの組み立てを複数のタスクに分ける
 
-**条件:** Task 16 の後も、1000 m の読み込みの終わりの長いタスクが 50 ms を超える。
+**条件:** Task 16 の後も、1000 m **または 500 m** の読み込みの終わりの長いタスクが 50 ms を超える（500 m の読み込みは M2 で 9 ラン中 5 ラン〈綾瀬 #1・#3、みなとみらい #1・#2・#3。51〜73 ms〉が超えており、04 の記録は 0 件だった。500 m の `elevationRgba` は約 19 ms〈04 の記録〉なので、Task 16 だけでは消えない見込み）。
 
 **計画し直す理由:** 残りの内訳（React・Emotion の再描画、`putImageData`、`texSubImage2D`、GC。04 の記録では React・Emotion が計 約 95 ms）を、Task 16 の後の Chrome の Performance のプロファイルで確かめてからでないと、分ける場所が決まらない。計画し直すときの枠:
 - 候補 (a): `TerrainOverlay.addAll` の標高と窪地の canvas の組み立てを、`setTimeout(0)` で別のタスクに分ける（`generation` の検査を各タスクの頭に置き、読み込みの取り消しと両立させる）
@@ -3953,7 +4059,22 @@ git commit -m "地形の標高・窪地の RGBA をセルごとの配列を作�
 
 - [ ] **Step 1: プロファイルを取り、計画を書き足してレビュー役に送る**
 
-計測用のビルドで 1000 m の `probe=load` を開き、Chrome の Performance（`page.tracing` でもよい）で読み込みの終わりの長いタスクの内訳を取り、`.handoff/06-perf/fixes/17-profile.md` に書く。内訳に合う候補をこの Task の下に具体的な Files・Interfaces・Step（テストを含む）として書き、コントローラーに送る。承認の後に実装し、1 コミットにする。
+計測用のビルドで 1000 m と 500 m の `probe=load` を開き、Chrome の Performance（`page.tracing` でもよい）で読み込みの終わりの長いタスクの内訳を取り、`.handoff/06-perf/fixes/17-profile.md` に書く（500 m は 04 が記録した React・Emotion の再描画〈計 約 95 ms〉を候補に含めて見る）。内訳に合う候補をこの Task の下に具体的な Files・Interfaces・Step（テストを含む）として書き、コントローラーに送る。承認の後に実装し、1 コミットにする。
+
+---
+
+### Task 17a:（条件つき・計画し直す）3D 切替の長いタスクの内訳
+
+**条件:** Task 16 の後も、3D に切り替えの長いタスクが 50 ms を超える（段 1 の 1000 m は M2 で 83〜206 ms、500 m は 0〜85 ms。tech-spec §14.1 の「全操作で 50 ms」を超えており、M2 の判定ではこれに対応する Task が無かった。Task 16 の前後の計測は `-g クリック` で回すので、読み込みの長いタスクと同じランで 3D 切替の長いタスクも一緒に測れる）。
+
+**計画し直す理由:** 候補（View3d・three のチャンクの読み込みとシェーダのコンパイル〈動的 import、約 130 KB gzip〉、`ensureRange` の標高のコピーと `fillInvalidNearest`〈準備 18〜21 ms〉、`waterBuild`〈20 ms。約 212 万三角形の索引バッファ〈Uint32 ≈ 25 MB〉の生成を含むかは未確認〉、最初の描画の同期の GPU 転送〈標高・深度の float テクスチャ 4.25 MB × 2、頂点・索引バッファ。`bufferData`・`texImage2D` は同期で、`onRenderTime` の平均 0.4 ms には最初のフレームの跳ね上がりが隠れている〉、MapLibre の `setTerrain` と hillshade のソース、React の再描画）のどれが支配的かを、プロファイルで確かめてからでないと分ける場所が決まらない。
+
+- [ ] **Step 1: プロファイルを取り、裁定の枠を決める**
+
+`page.tracing`（Playwright）で計測用のビルドの `probe=load`・`mode=3d` を、1000 m は綾瀬・渋谷を 1 回ずつ、500 m は 1 回プロファイルし、`.handoff/06-perf/fixes/17a-profile.md` に内訳を書く。
+
+- 上の候補のどれか 1 つが支配的で、複数フレームに分けられる見込みがあれば（例: メッシュの生成と転送を別のタスクにする、地形が出た 1 フレーム後に水面を作る）、安価な M4 の Task としてこの下に具体的な Files・Interfaces・Step（テストを含む）を書き、コントローラーに送る。承認の後に実装し、1 コミットにする
+- そうでなければ実装は行わず、内訳を `docs/perf/<実行日>-fixes.md` に記録するだけにし、M6（Task 29）で「利用者が選んで入る 3D の切り替えに一度きりのブロックを許すか」を 1000 m の行の裁定と合わせてユーザーに送る（spec 06 §5.2、`.superpowers/sdd/2026-09-17-06-performance/m2-report.md` の「計画に無い残り」）
 
 ---
 
@@ -4240,6 +4361,8 @@ git commit -m "雨量と半径の入力欄を TextField から FormControl・Out
 ### Task 20:（条件つき）範囲の DEM の段を手がかりに、範囲の外のタイルの DEM1A の 404 を省く（spec 06 §5.2、計画で決めたこと 16）
 
 **条件:** Task 10 の「3D を押してから最初の 3D のフレーム」が 3 秒を超え、その主因がタイルの待ち（`load.md` の「最初の 3D のフレーム」と「水面」の差）で、かつ超えた地点の DEM が段 2・3。3 地点はどれも段 1（DEM1A）なので、**M2 の計測だけでは条件を満たさない見込み**。満たさなければ行わず、「行わなかった項目」に書く（段 2・3 の地域では z17 の外のタイルごとに 404 が 1 回起きる事実は、05 の記録のまま残す）。
+
+**M2 の実測での訂正:** みなとみらい 1000 m は段 2 の DEM で走っていた（`docs/perf/2026-09-17.md`）。「3 地点はどれも段 1」は 1000 m では誤りで、この Task を行う場合の前後の計測は `nemuro` に加えてみなとみらい 1000 m でもできる。ただし M2 の「3D を押してから最初の 3D のフレーム」は中央値の最大 0.64 s で 3 秒の内（基準内）なので、条件は満たされていない。**Task 20 は行わない**（「行わなかった項目」に書く）。
 
 **Files:**
 - Modify: `src/dem/terrainTiles.ts`（`RangeElevation.level`、`outsideSources`、`loadOutsideTile`、`generateTerrariumTile`）
