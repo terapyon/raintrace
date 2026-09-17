@@ -61,8 +61,9 @@ const BUILD_INFO_DIR = 'build-info'
  * wrangler pages deploy は dist の全ファイルを上げ、.assetsignore を読まないので、dist には配信するファイルだけを置く。
  * scripts/check-bundle-size.mjs と tests/perf/fps.perf.ts が build-info/ を読む。
  * Vite の Environment API では writeBundle が環境ごとに走りうるので、client の環境だけで動かす
- * （レビュー R1）。それ以外の環境（cloudflare() が作る worker の環境など）には .vite/ が無く、
- * this.error で壊れてしまうため
+ * （レビュー R1）。@cloudflare/vite-plugin を外した今は 'client' 以外の環境を作るものが無いが、
+ * 増えたときに同じ理由（.vite/ はメインの出力先にしか無く、他の環境で動くと this.error で壊れる）
+ * で守れるよう、この guard は残す（spec D で plugin を外した後も維持）
  */
 function moveBuildInfoOutOfDist(): Plugin {
   let root = ''

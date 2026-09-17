@@ -80,7 +80,9 @@ test('存在しないパスを開いても地図の画面が出る（SPA のフ�
   const response = await page.goto('/no-such-path')
   expect(response?.status()).toBe(200)
   await expect(page.locator(mapLoaded)).toBeAttached()
-  // gsiTiles（auto fixture）が地理院への要求を差し替えているので、本物の GSI には届かない
+  // gsiTiles（auto fixture）が地理院への要求を差し替えている。0 より大きいことは、フォールバックで
+  // 返った index.html がタイルを要求し、それが差し替えの応答で満たされたこと（＝地図が実際に動き出した
+  // こと）を示す。本物の GSI に届いていないことの直接の証明ではない
   await expect.poll(() => gsiTiles.pale).toBeGreaterThan(0)
 })
 
