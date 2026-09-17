@@ -32,7 +32,7 @@
   - Worker（`src/workers/`）は simulation・dem・shared と `src/workers/` 以外を import しない
   - 循環 import を作らない（`no-circular`）。エントリから届かないモジュールを作らない（`not-reachable-from-entry`）
 - 大きな配列を React の state・props・context、zustand のストアに載せない（tech-spec §2 原則 2）。転送した ArrayBuffer には転送の後に触れない（tech-spec §5.2）
-- **各 Task の終わりのゲート**: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage`。実行時のコード（`src/` の本番の経路、または E2E の support）を変えた Task では E2E: `pnpm build && pnpm exec playwright test --project=chromium`（ポート 4173。M0 の時点で 41 件）。バンドル: `pnpm build && pnpm size`。M0 の時点のユニットテストは 651 件（Task ごとに増える。全件成功）
+- **各 Task の終わりのゲート**: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage`。実行時のコード（`src/` の本番の経路、または E2E の support）を変えた Task では E2E: `pnpm build && pnpm exec playwright test --project=chromium`（ポート 4173。M0 の時点で 41 件。ブランチ全体の最終は 43 件〈D の SPA のテストと 06 の追加を含む。`docs/perf/2026-09-17-fixes.md` Task 19 のゲートで確認〉）。バンドル: `pnpm build && pnpm size`。M0 の時点のユニットテストは 651 件（Task ごとに増える。全件成功）
 - カバレッジの閾値（`vitest.config.ts`）: `src/simulation/**` 90%、`src/dem/**` 85%、`src/state/**` 80%
 - **計測の実行**: `pnpm build:perf` の後に `pnpm perf:fps …`（`playwright.perf.config.ts`、ポート 4175、実 GPU の headless Chrome〈`--use-gl=angle --use-angle=gl-egl`〉、workers 1）。E2E（4173）と同時に回さない。計測どうしも同時に回さない（CPU・GPU を取り合う）。**10 分を超える計測はバックグラウンドで回して終わりを待つ**（Bash の上限は 10 分）。計測の後は `pnpm build` で `dist` を通常のビルドに戻す
 - **計測の記録**: 要約（表）は `docs/perf/<実行日>*.md` にコミットする（spec 06 §4.2）。`<実行日>` は計測を回した日（`date +%F`）。生の JSON（`deltas`・時系列を含む）は gitignore の `.handoff/06-perf/` に置く。機器の仕様を必ず添える
@@ -5100,7 +5100,7 @@ git commit -m "1000 m の範囲では水深のテクスチャの転送を 2 回�
 
 **計画し直した結果（2026-09-17、head 2a692ba）: Task 24 は行わない。条件を作った全面を濡らす雨では効かないため。記録だけする。500 m 全面の 8 ms と 1000 m の 37〜45 ms は、M6（Task 29）の WASM の spec の判断に渡す。**
 
-- 条件は満たした: Task 15 の後の 500 m・全面を濡らす雨の 1 step の中央値は 3 地点で 8.2〜8.6 ms（`docs/perf/2026-09-17-fixes.md` の Task 15）。M2 の 1000 m 全面は 37〜45 ms
+- 条件は満たした: Task 15 の後の 500 m・全面を濡らす雨の 1 step の中央値は 3 地点で 8.2〜8.6 ms（`docs/perf/2026-09-17-fixes.md` の Task 15、`until=window` 窓 60 秒の値）。M2 の 1000 m 全面は 37〜45 ms。**注記（Task 25 を受けて）**: この 8.2〜8.6 ms は `until=window` の値で、Task 25 の `until=settle`（M2 と同じ条件）では 500 m の中央値は 6.50〜7.90 ms となり 8 ms を超えない。settle の値で見れば条件を満たしていなかったことになるが、ブロック単位の走査の効果そのものが小さい（下の見積もり）という結論は変わらない
 - 確かめ方: `pnpm bench:engine 2000`（512²。半径 10 m 0.022 ms、半径 100 m 5.111 ms）に加え、同じ合成地形を 515²・1031² に広げた使い捨てのスクリプトで、`beginStep`・`solveStep`・`endStep` を別々に計時し（1000 step）、step 0・10・100・500・999 で「外接矩形の中の濡れたセルの割合」と「濡れたセルを含む 16 × 16 ブロックを周囲 1 ブロック広げたときに走査するセルの割合」を数えた。生ログとスクリプトは `.handoff/06-perf/fixes/24-bench.md`・`24-bench/`（gitignore）
 - 時間の内訳（中央値）: 515² 全面は合計 10.22 ms のうち solveStep 9.28・endStep 0.87・beginStep 0.06。1031² 全面は 41.75 ms のうち 37.99・3.47・0.25。外接矩形が全部乾いていても solveStep の読み飛ばしは 515² で 0.74 ms（1 セル約 2.8 ns）にすぎず、時間の約 90% は濡れたセル（1 セル約 39 ns）の `outflowCandidates` と配分そのもの
 - 全面を濡らす雨の走査するブロックは外接矩形の 91〜97%（515²）・86〜94%（1031²）。ブロック単位で減るのは上限でも 515² で 0.06〜0.15 ms（0.6〜1.5%）、1031² で 0.4〜0.9 ms（1〜2%）で、500 m の中央値を 8 ms 未満にできない
@@ -6113,7 +6113,7 @@ git commit -m "06 の締め: spec 06 §6 の照合、tech-spec §14 の最終の
 - [ ] **Step 1: 全部のゲートを通す**
 
 Run: `pnpm install --frozen-lockfile && pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage && pnpm build && pnpm exec playwright test --project=chromium && pnpm size`
-Expected: すべて成功。`git status --short` が空（format が何も変えない）。`pnpm install` が lockfile を変えない（依存を足していない）
+Expected: すべて成功（E2E 43 件。D の SPA のテストと 06 の追加を含む）。`git status --short` が空（format が何も変えない）。`pnpm install` が lockfile を変えない（依存を足していない）
 
 - [ ] **Step 2: 通常のビルドに計測のコードが無いことを確かめる**
 
@@ -6135,6 +6135,7 @@ Expected: `package.json`・`pnpm-lock.yaml`・`src/shared/protocol.ts` に差が
 - spec との差異（計画で決めたこと 1〜18 のうち、spec の文面と違う形にしたもの。例: `probe=water` の持ち上げ比、平衡を 2D だけで測ったこと）
 - 手動の計測（Task 9）の結果の要約と、05 の手動確認の項目 9 を 06 で行ったこと（R06-8）
 - 後回しの項目（spec 06 §2.3）はこの PR に含まないこと（R06-10）
+- **既存挙動の変更**: 必ず次の 3 つを含める（レビュー役の M4 の must-fix）: Task 13b（矢印の間隔の 5 m の選択肢を外した。保存済み・URL の 5 は 10 に丸める）、Task 17a (ii)（3D の水面はプログラム〈シェーダ〉ができた後、区画ごとに数フレームで現れる。読み込み直後は水深 0 なので見えず、再生中に 3D へ切り替えたときだけ目に見える）、Task 19（雨量・半径の入力欄の実装を `TextField` から `FormControl`＋`OutlinedInput` に変更。見た目・ラベル・関連づけは変えていない）
 - 末尾に `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 
 - [ ] **Step 5: M6 の報告を書き、マイルストーンの区切りに進む**
