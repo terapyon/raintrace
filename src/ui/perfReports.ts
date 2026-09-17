@@ -10,6 +10,7 @@ import type {
   TimedStepSnapshot,
 } from './perfCollectors'
 import type { PerfParams } from './perfParams'
+import type { WaterMeasure, WaterVerdict } from './perfWaterStats'
 
 export interface StepsReport {
   params: PerfParams
@@ -57,4 +58,24 @@ export interface LoadReport {
   prepareMs: number[]
   waterBuildMs: number[]
   longTasks: { load: LongTaskSummary; to3d: LongTaskSummary | null; entries: LongTaskSample[] }
+}
+
+export interface WaterProbeRow {
+  requestedZoom: number
+  mapZoom: number
+  mapPitch: number
+  /** 画面の中心で描かれている地形タイルのズーム（実測。data-drawn-tile-zoom） */
+  drawnTileZoom: string
+  /** カメラの高さ − カメラの真下の地形の高さ（m、垂直強調の後）。地形が無ければ null */
+  cameraClearanceM: number | null
+  measure: WaterMeasure
+  verdict: WaterVerdict
+  reason: string
+}
+
+export interface WaterProbeReport {
+  params: PerfParams
+  /** 降雨を止めた時点の step */
+  stoppedAtStep: number | null
+  rows: WaterProbeRow[]
 }

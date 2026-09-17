@@ -10,11 +10,12 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
   it('すべての項目を読む', () => {
     expect(
       parsePerfParams(
-        '?probe=steps&mode=3d&z=16&pitch=85&bearing=10&ex=10&water=0&hillshade=off&ms=5000&fallback=0&settle=20000' +
-          '&arrows=0&arrowsM=5&depthEvery=4&pause=1&until=window&cap=120000&at=35.7623,139.8246',
+        '?probe=water&mode=3d&z=16&pitch=85&bearing=10&ex=10&water=0&hillshade=off&ms=5000&fallback=0&settle=20000' +
+          '&arrows=0&arrowsM=5&depthEvery=4&pause=1&until=window&cap=120000&at=35.7623,139.8246' +
+          '&zs=15.5,16.25&wet=15000',
       ),
     ).toEqual({
-      probe: 'steps',
+      probe: 'water',
       mode: '3d',
       zoom: 16,
       pitch: 85,
@@ -32,6 +33,8 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       until: 'window',
       capMs: 120_000,
       at: { lat: 35.7623, lon: 139.8246 },
+      zooms: [15.5, 16.25],
+      wetMs: 15_000,
     })
   })
 
@@ -55,6 +58,8 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       until: 'settle',
       capMs: 300_000,
       at: null,
+      zooms: [16],
+      wetMs: 20_000,
     })
   })
 })
@@ -75,6 +80,13 @@ describe('arrowsM（spec 06 §5.1）', () => {
     expect(parsePerfParams('?probe=fps&arrowsM=15')?.arrowsM).toBeNull()
     expect(parsePerfParams('?probe=fps&arrowsM=')?.arrowsM).toBeNull()
     expect(parsePerfParams('?probe=fps')?.arrowsM).toBeNull()
+  })
+})
+
+describe('zs（probe=water の視点のズームの並び）', () => {
+  it('範囲の外・数でない値は捨て、何も残らなければ z の 1 つ', () => {
+    expect(parsePerfParams('?probe=water&z=17&zs=15,x,99,16.5')?.zooms).toEqual([15, 16.5])
+    expect(parsePerfParams('?probe=water&z=17&zs=x')?.zooms).toEqual([17])
   })
 })
 

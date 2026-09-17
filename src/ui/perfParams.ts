@@ -10,10 +10,10 @@ import { ARROW_SPACINGS, VERTICAL_EXAGGERATIONS } from '../state/persistedSettin
  */
 const PERF_ARROW_SPACINGS = [5, ...ARROW_SPACINGS] as const
 
-/** fps・view（spec 05 §4.4）、steps・load（spec 06 §3・§4.2） */
-export type PerfProbe = 'fps' | 'view' | 'steps' | 'load'
+/** fps・view（spec 05 §4.4）、steps・load・water（spec 06 §3・§4.2） */
+export type PerfProbe = 'fps' | 'view' | 'steps' | 'load' | 'water'
 
-const PROBES: readonly PerfProbe[] = ['fps', 'view', 'steps', 'load']
+const PROBES: readonly PerfProbe[] = ['fps', 'view', 'steps', 'load', 'water']
 const DEPTH_EVERY = [1, 2, 4, 8] as const
 /** Web Mercator（MapLibre）が扱える緯度の範囲（urlState.ts と同じ） */
 const MERCATOR_LAT_LIMIT = 85.051129
@@ -56,6 +56,10 @@ export interface PerfParams {
   capMs: number
   /** probe=load: 地図の読み込みの後に選ぶ地点（at=緯度,経度。計画で決めたこと 9） */
   at: { lat: number; lon: number } | null
+  /** probe=water: 順に置く地図のズーム（zs=15.5,16。範囲の外・数でない値は捨てる。無ければ [zoom]） */
+  zooms: number[]
+  /** probe=water: 降雨を「最速」で回してから止めるまで（ms。wet=） */
+  wetMs: number
 }
 
 const HILLSHADE_OPTIONS: readonly HillshadeOption[] = ['auto', 'on', 'off']
@@ -85,10 +89,11 @@ export function parsePerfParams(search: string): PerfParams | null {
   }
   const oneOf = <T extends string | number>(list: readonly T[], value: unknown, fallback: T): T =>
     list.includes(value as T) ? (value as T) : fallback
+  const zoom = number('z', 16, 0, 18)
   return {
     probe,
     mode: params.get('mode') === '2d' ? '2d' : '3d',
-    zoom: number('z', 16, 0, 18),
+    zoom,
     // 既定は 3D の視点の pitch（View3d.frame と同じ値。横断レビュー m5）
     pitch: number('pitch', PITCH_3D_DEG, 0, 85),
     bearing: number('bearing', 0, -180, 180),
@@ -109,5 +114,13 @@ export function parsePerfParams(search: string): PerfParams | null {
     until: params.get('until') === 'window' ? 'window' : 'settle',
     capMs: number('cap', 300_000, 1000, 1_800_000),
     at: parseAt(params.get('at')),
+    zooms: (() => {
+      const list = (params.get('zs') ?? '')
+        .split(',')
+        .map((part) => (part.trim() === '' ? Number.NaN : Number(part)))
+        .filter((value) => Number.isFinite(value) && value >= 0 && value <= 18)
+      return list.length === 0 ? [zoom] : list
+    })(),
+    wetMs: number('wet', 20_000, 0, 300_000),
   }
 }

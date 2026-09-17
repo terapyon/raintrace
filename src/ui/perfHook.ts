@@ -5,7 +5,7 @@
  * 結果の JSON は <html data-fps-result> と画面の左上に出す（利用者の画面ではないので strings.ts を使わない）
  */
 import { runFpsProbe } from '../map/fpsProbe'
-import type { TileTimeSample } from '../map/view3d/options'
+import type { TileTimeSample, WaterDebug } from '../map/view3d/options'
 import { clampArrowSpacing } from '../state/persistedSettings'
 import type { SettingsStore } from '../state/settingsStore'
 import {
@@ -26,6 +26,7 @@ import {
   waitFor,
   waitTilesLoaded,
 } from './perfWait'
+import { runWaterProbe } from './perfWater'
 import type { TerrainSession } from './terrainSession'
 
 export async function installPerfHook(
@@ -42,6 +43,8 @@ export async function installPerfHook(
   const tileTimes: TileTimeSample[] = []
   const prepareMs: number[] = []
   const waterBuildMs: number[] = []
+  /** probe=water: 水面の判定用の描き方を切り替える（水面が無ければ null。Task 26 の onWaterDebug） */
+  let setWaterDebug: ((debug: WaterDebug) => void) | null = null
   session.view3d.setOptions({
     hillshade: params.hillshade,
     water: params.water,
@@ -52,6 +55,9 @@ export async function installPerfHook(
     onTileTime: (sample) => tileTimes.push(sample),
     onPrepareTime: (ms) => prepareMs.push(ms),
     onWaterBuildTime: (ms) => waterBuildMs.push(ms),
+    onWaterDebug: (setDebug) => {
+      setWaterDebug = setDebug
+    },
   })
   settings.getState().setDisplay({
     verticalExaggeration: params.exaggeration,
@@ -63,7 +69,7 @@ export async function installPerfHook(
     ...(params.arrowsM === null ? {} : { flowVectorSpacingM: clampArrowSpacing(params.arrowsM) }),
   })
   /** 結果を <html data-*> と画面に出す */
-  const publish = (key: 'stepsResult' | 'loadResult', report: unknown): void => {
+  const publish = (key: 'stepsResult' | 'loadResult' | 'waterResult', report: unknown): void => {
     root.dataset[key] = JSON.stringify(report)
     show(report)
   }
@@ -78,6 +84,10 @@ export async function installPerfHook(
         'loadResult',
         await runLoadProbe(session, params, longTasks, { prepareMs, waterBuildMs }),
       )
+      return
+    }
+    if (params.probe === 'water') {
+      publish('waterResult', await runWaterProbe(session, settings, params, () => setWaterDebug))
       return
     }
     await waitFor(
