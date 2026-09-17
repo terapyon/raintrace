@@ -103,12 +103,12 @@
 | `src/ui/perfHook.ts` | probe の振り分けと fps の追加の値、`clampArrowSpacing`（M4） | 4・5・13b・27 |
 | `src/map/fpsProbe.ts` | fps の結果に `gpuTimerQuery` | 5 |
 | `tests/e2e/support/gsi.ts` | 差し替えの道具の export（計測と共有） | 6 |
-| `tests/perf/support.ts`、`tests/perf/demFixtures.ts`、`tests/perf/steps.perf.ts`、`tests/perf/fps.perf.ts`、`tests/perf/water.perf.ts` | 計測の実行 | 6・27 |
+| `tests/perf/support.ts`、`tests/perf/demFixtures.ts`、`tests/perf/steps.perf.ts`、`tests/perf/fps.perf.ts`、`tests/perf/water.perf.ts` | 計測の実行、`isolate`・`isolate-500` の「矢印 5 m」のラベル（M4） | 6・13b・27 |
 | `playwright.perf.config.ts` | `RAINTRACE_UNCAPPED=1` | 6 |
 | `tests/perf/fixtures/dem-manifest.json`・`README.md`、`.gitignore` | DEM の固定 | 6・7 |
 | `src/simulation/FlowSolver.ts`（+ test）、`src/simulation/TsSimulationEngine.ts`（+ test）、`src/simulation/types.ts` | 近傍の添字、`flowVectors` の使い回し（M4） | 14・15 |
 | `src/map/colormap.ts`（+ test）、`src/map/WaterOverlay.ts`（+ test） | 地形の RGBA、水深の canvas の転送（M4） | 16・18 |
-| `src/state/persistedSettings.ts`（+ test 新規）、`src/state/settingsStore.test.ts`、`src/state/arrowSpacing.ts` | 矢印の間隔の選べる値を `[10, 20]` にし、5 を 10 へ移行する（`clampArrowSpacing`、R06-11、M4） | 13b |
+| `src/state/persistedSettings.ts`（+ test 新規）、`src/state/settingsStore.test.ts`、`src/state/arrowSpacing.ts`、`src/ui/simulationSession.test.ts` | 矢印の間隔の選べる値を `[10, 20]` にし、5 を 10 へ移行する（`clampArrowSpacing`、R06-11、M4） | 13b |
 | `tests/e2e/dem.spec.ts` | 矢印の間隔の E2E から `'5 m'` を外す（M4） | 13b |
 | `src/ui/components/RainfallControls.tsx` | `ui` のチャンク（M4） | 19 |
 | `src/dem/terrainTiles.ts`（+ test）、`src/map/view3d/View3d.ts` | DEM の段の手がかり（M4 条件つき） | 20 |
@@ -3464,14 +3464,16 @@ git commit -m "StepsReport.longTasks に entries（各長いタスクの開始�
 - Modify: `src/state/arrowSpacing.ts`（コメントの「選べる矢印の間隔（5・10・20 m）」を「10・20 m」に。`arrowSpacingForRange` 自体は変えない）
 - Modify: `src/ui/perfParams.ts`（`PERF_ARROW_SPACINGS`）
 - Modify: `src/ui/perfHook.ts`（`clampArrowSpacing` を呼んでから `setDisplay` に渡す）
+- Modify: `src/ui/simulationSession.test.ts`（`flowVectorSpacingM: 5` を使う 2 件を型のため書き換える。振る舞いの意図は変えない。レビュー M1）
 - Modify: `tests/e2e/dem.spec.ts`（矢印の間隔の E2E から `'5 m'` を外す）
+- Modify: `tests/perf/fps.perf.ts`（`isolate`・`isolate-500` の「矢印 5 m」の変種のラベルを、クランプ後の本数が読めるものに直す。レビュー R1）
 - Modify: `docs/perf/<実行日>-fixes.md`（前後の表）
 - Modify: `docs/superpowers/specs/2026-09-10-06-performance-design.md`（§5.1 の結果に前後の数字、§5.2 の候補の行に前後の数字）
-- Modify: `specs/tech-spec.md`（§14.1 の「地図操作時のフレームレート」行の「M4 の対応はユーザーの裁定待ち」を結果に置き換え）
+- Modify: `specs/tech-spec.md`（§14.1 の「地図操作時のフレームレート」行の「M4 の対応はユーザーの裁定待ち」を結果に置き換え。§8.3「バージョニング方針」に矢印の間隔 5 の読み替えの 1 文を足す。レビュー R2）
 - Modify: `docs/superpowers/specs/2026-09-10-05-3d-rendering-design.md`（§3.3 の「選べる間隔（今は 5・10・20 m）」を「今は 10・20 m」に、脚注で R06-11 を参照）
 
 **Interfaces:**
-- Consumes: `ARROW_SPACINGS`・`oneOf`（`persistedSettings.ts`、既存）、Task 11 の `isolate`・`isolate-500`（`tests/perf/fps.perf.ts`。変えない）、Task 13 の結論
+- Consumes: `ARROW_SPACINGS`・`oneOf`（`persistedSettings.ts`、既存）、Task 11 の `isolate`・`isolate-500`（`tests/perf/fps.perf.ts`。組と `extra: { arrowsM: '5' }` は変えない、ラベルだけ直す）、Task 13 の結論
 - Produces: `export function clampArrowSpacing(value: (typeof ARROW_SPACING_INPUTS)[number]): (typeof ARROW_SPACINGS)[number]`（`persistedSettings.ts`）。`PERF_ARROW_SPACINGS`（`perfParams.ts`、ローカル、export しない）
 
 - [ ] **Step 1: 前を測る（今の HEAD。isolate の 1000 m・9 変種と isolate-500 の 500 m・2 変種を 3 回ずつ）**
@@ -3547,18 +3549,46 @@ describe('clampArrowSpacing（R06-11 の裁定 (a2): 矢印の 1 辺の本数の
     ],
 ```
 
+`src/ui/simulationSession.test.ts` の `flowVectorSpacingM: 5` を使う 2 件は、`ARROW_SPACINGS` を `[10, 20]` にすると型検査で落ちる（レビュー M1）。振る舞いの意図（表示の切り替えと 500 m 以外の値、1000 m の倍）を保ったまま、値を選べる値に書き換える。`session.setArrows(true, 5)`（374 行目）は `number` を受ける別の API なので変えない。
+
+380 行目の `it('設定の矢印の表示と間隔の変更を Worker に送る'` を次に置き換える:
+```ts
+  it('設定の矢印の表示と間隔の変更を Worker に送る', () => {
+    const { worker, settings } = setup()
+    settings.getState().setDisplay({ showFlowVectors: false, flowVectorSpacingM: 20 })
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: false, spacingM: 20 })
+  })
+```
+
+388 行目を含む `it('範囲 1000 m では、選んだ間隔の 2 倍を Worker に送る（spec 05 §3.3）'` を次に置き換える:
+```ts
+  it('範囲 1000 m では、選んだ間隔の 2 倍を Worker に送る（spec 05 §3.3）', () => {
+    const { worker, settings } = setup()
+    settings.getState().setAreaSize(1000)
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: true, spacingM: 20 })
+    settings.getState().setDisplay({ flowVectorSpacingM: 20 })
+    expect(worker.posted.at(-1)).toEqual({ type: 'setArrows', visible: true, spacingM: 40 })
+  })
+```
+
 既存の `src/ui/perfParams.test.ts` は変えない。`describe('arrowsM（spec 06 §5.1）'` の 4 つの期待（`arrowsM=5` → `5`、`10` → `10`、`20` → `20`、`15` → `null`）が、この Step の直後（コードを直す前）に失敗する側の役目を果たす（`ARROW_SPACINGS` を `[10, 20]` にした時点で `arrowsM=5` の期待が壊れる）。
 
 - [ ] **Step 3: 失敗を確かめる**
 
-Run: `pnpm vitest run src/state/persistedSettings.test.ts src/state/settingsStore.test.ts src/ui/perfParams.test.ts`
-Expected: FAIL（`clampArrowSpacing` が無い・`ARROW_SPACINGS` が `[10, 20]` でない・5 が 10 に migrate されない。`perfParams.test.ts` はまだ全部 PASS のはず、コードをまだ直していないため）
+Run: `pnpm vitest run src/state/persistedSettings.test.ts src/state/settingsStore.test.ts src/ui/perfParams.test.ts src/ui/simulationSession.test.ts`
+Expected: FAIL（`clampArrowSpacing` が無い・`ARROW_SPACINGS` が `[10, 20]` でない・5 が 10 に migrate されない。`perfParams.test.ts` はまだ全部 PASS のはず、コードをまだ直していないため）。`simulationSession.test.ts` は型の理由で書き換えるが、振る舞いのテストとしては前後とも通る（値を 5 から 20 に変えただけで、Worker に送る仕組みそのものは検査していない）
 
 - [ ] **Step 4: 直す**
 
 `src/state/persistedSettings.ts` の `export const ARROW_SPACINGS = [5, 10, 20] as const` を次に置き換える:
 ```ts
 export const ARROW_SPACINGS = [10, 20] as const
+```
+
+`parsePersistedSettings` の直前の JSDoc の 2 行目（`* （呼び出し側が既定値に戻す。マイグレーションはしない。tech-spec §8.3）`）を次に置き換える（レビュー R2）:
+```ts
+ * （呼び出し側が既定値に戻す。schemaVersion のマイグレーションはしない。外した選択肢の値
+ * （矢印の間隔 5）だけ 10 に読み替える。tech-spec §8.3。R06-11）
 ```
 
 `const oneOf = …` の後、`parsePersistedSettings` の前に足す:
@@ -3632,6 +3662,24 @@ const PERF_ARROW_SPACINGS = [5, ...ARROW_SPACINGS] as const
 
 `tests/e2e/dem.spec.ts` の `for (const spacing of ['5 m', '20 m', '10 m']) {` を `for (const spacing of ['20 m', '10 m']) {` に置き換える（5 m のボタンは無くなる）。
 
+`tests/perf/fps.perf.ts` の `isolate` の変種のラベル（レビュー R1）:
+```ts
+      {
+        label: '水面あり・矢印 5 m（arrowsM=5。R06-11 の前は実効 10 m・10,000 本、後は 10 に丸められ 2,500 本）',
+        water: '1',
+        extra: { arrowsM: '5' },
+      },
+```
+`isolate-500` の変種のラベル:
+```ts
+      {
+        label: '水面あり・矢印 5 m（arrowsM=5。R06-11 の前は実効 5 m・10,000 本、後は 10 に丸められ 2,500 本）',
+        water: '1',
+        extra: { arrowsM: '5' },
+      },
+```
+（`extra: { arrowsM: '5' }` は変えない。ラベルだけ、Step 1・6 の表を読むときに前後どちらの本数かを取り違えないようにする。）
+
 - [ ] **Step 5: テストが通ることを確かめ、ゲートを通す**
 
 Run: `pnpm vitest run src/state/ src/ui/`
@@ -3665,18 +3713,25 @@ Expected: 2 件成功。「矢印 5 m」の行（1000 m・500 m）は `clampArro
 
 - [ ] **Step 7: 記録し、ゲートを通してコミットする**
 
-`docs/perf/<実行日>-fixes.md` に「## Task 13b: 矢印の 1 辺の本数の上限」として、1000 m・500 m それぞれの「矢印 5 m」の行の前後（平均 fps・g2・D15）の表と、既定の行が変わっていないことを書く。
+`docs/perf/<実行日>-fixes.md` に「## Task 13b: 矢印の 1 辺の本数の上限」として、1000 m・500 m それぞれの「矢印 5 m」の行の前後（平均 fps・g2・D15）の表と、既定の行が変わっていないことを書く。1 行加える: 「前の表のこの行（`13b-before`）は 10,000 本、後の表（`13b-after`）は 2,500 本（`clampArrowSpacing(5) === 10` で既定と同じ本数に丸まるため。ラベルは Step 4 で直した）」（レビュー R1）。
 
 `docs/superpowers/specs/2026-09-10-06-performance-design.md` §5.1 の「M4 の対応」の文の末尾（「前後の数字は Task 13b の完了後にこの節へ追記する」）を、実測の前後の数字に置き換える。§5.2 の「矢印の 1 辺の本数を全範囲で 50 に抑える」の行の「注意」列に、コミットと前後の数字（1 行）を足す。
 
-`specs/tech-spec.md` §14.1 の「地図操作時のフレームレート」行の「主因は矢印の symbol の本数で、M4 の対応はユーザーの裁定待ち」を、「主因は矢印の symbol の本数。**R06-11 の裁定 (a2)**: 全範囲で矢印の 1 辺の本数の上限を 50 にする（5 m の選択肢を外す）。M4 の Task 13b で実装し、前後を測った（1000 m <前 fps> → <後 fps>、500 m <前 fps> → <後 fps>）」に置き換える。
+`specs/tech-spec.md` §14.1 の「地図操作時のフレームレート」行の「主因は矢印の symbol の本数で、M4 の対応はユーザーの裁定待ち」を、「主因は矢印の symbol の本数。**R06-11 の裁定 (a2)**: 全範囲で矢印の 1 辺の本数の上限を 50 にする（5 m の選択肢を外す）。M4 の Task 13b で実装し、前後を測った（1000 m <前 fps> → <後 fps>、500 m <前 fps> → <後 fps>）」に置き換える。§8.3 の「バージョニング方針（決定）」の「マイグレーションを書かず、保存値を破棄して既定値にリセットする。」の後に 1 文足す（レビュー R2）:
+```markdown
+schemaVersion のマイグレーションはしない。外した選択肢の値（矢印の間隔 5）だけ 10 に読み替える（R06-11。§3.3・実装 `src/state/persistedSettings.ts` の `clampArrowSpacing`）。
+```
 
 `docs/superpowers/specs/2026-09-10-05-3d-rendering-design.md` §3.3 の「選べる間隔（今は 5・10・20 m）を範囲に応じてどう変えるかと最終の値は、05 の手動確認（1000 m）で決める」を、「選べる間隔は今は 10・20 m（5 m は 06 の R06-11 の裁定〈矢印の 1 辺の本数の上限を全範囲で 50 にする〉で外した）。1000 m の既定の間隔（20 m）は 05 の手動確認で決めた」に置き換える。
+
+**注意（レビューの minor。記録として残す）:**
+- m1: Step 1・6 は `isolate`（9 変種）・`isolate-500`（2 変種）を丸ごと回す。1 変種だけを選ぶ環境変数が `fps.perf.ts` に無いため（受け入れ済み。新しい絞り込みの組は作らない）
+- m2: Task 13b の後、`isolate`・`isolate-500` の「矢印 5 m」の変種は既定（`depthEvery=1`・矢印 20 m）と同じ 2,500 本になる。それでも変種として残すのは、`arrowsM=5` が「選択肢から外れた値がクランプされること」自体の回帰確認になるため。**後続の `isolate` を使う Task（例: Task 22 の transfer 側の計画し直し）でこの表を読むときは、「矢印 5 m」の行が「もう 10,000 本ではなく、既定と同じ 2,500 本」であることを踏まえる**（Task 13b 以前の記録〈`docs/perf/2026-09-17-isolation.md`〉と比べるときは特に注意）
 
 ゲートは `pnpm format && pnpm lint`（文書だけの追記。コードのゲートは Step 5 で通している）。
 
 ```bash
-git add src/state/persistedSettings.ts src/state/persistedSettings.test.ts src/state/settingsStore.test.ts src/state/arrowSpacing.ts src/ui/perfParams.ts src/ui/perfHook.ts tests/e2e/dem.spec.ts docs/perf/ docs/superpowers/specs/2026-09-10-06-performance-design.md docs/superpowers/specs/2026-09-10-05-3d-rendering-design.md specs/tech-spec.md
+git add src/state/persistedSettings.ts src/state/persistedSettings.test.ts src/state/settingsStore.test.ts src/state/arrowSpacing.ts src/ui/perfParams.ts src/ui/perfHook.ts src/ui/simulationSession.test.ts tests/e2e/dem.spec.ts tests/perf/fps.perf.ts docs/perf/ docs/superpowers/specs/2026-09-10-06-performance-design.md docs/superpowers/specs/2026-09-10-05-3d-rendering-design.md specs/tech-spec.md
 git commit -m "矢印の 1 辺の本数の上限を全範囲で 50 にする: 5 m の選択肢を外し（ARROW_SPACINGS を [10, 20] に）、保存値・計測だけの URL の 5 は 10 へ移行する（R06-11 の裁定 (a2)。spec 06 §5.1・§5.2、M4）"
 ```
 
