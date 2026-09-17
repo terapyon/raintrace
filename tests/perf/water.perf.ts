@@ -37,6 +37,11 @@ const DRAWN = [15, 16] as const
 const OFFSETS = [0, -0.25, -0.5] as const
 const outDir = outDirFromEnv(process.env.RAINTRACE_WATER_OUT_DIR, '.handoff/06-perf/water-probe')
 const PAGE_TIMEOUT_MS = 600_000
+/**
+ * 地図の maxZoom（MapController.ts）。perfParams の zs はこれを超える値を捨てる。pitch 85・描かれるタイル 16・
+ * offset 0 は見込みが 18.184 になりこれを超えるので、その組では行が 1 つ少ない（実測で判明。計画の想定外）
+ */
+const MAX_MAP_ZOOM = 18
 
 interface Cell {
   pitch: number
@@ -58,9 +63,15 @@ test('境界 15 と 16 の可視率・ちらつき率（probe=water）', async (
   const cells: Cell[] = []
   for (const pitch of PITCHES) {
     for (const ex of EXAGGERATIONS) {
-      const zooms = DRAWN.flatMap((d) =>
-        OFFSETS.map((o) => (mapZoomForCentreTileZoom(drawnTileZoom(d), pitch) + o).toFixed(3)),
+      const requested = DRAWN.flatMap((d) =>
+        OFFSETS.map((o) => ({
+          drawn: d,
+          zoom: mapZoomForCentreTileZoom(drawnTileZoom(d), pitch) + o,
+        })),
       )
+      // maxZoom を超える要求は perfParams が捨てるので、送る値には含めるが期待する行数からは外す
+      const inRange = requested.filter((r) => r.zoom <= MAX_MAP_ZOOM)
+      const outOfRange = requested.filter((r) => r.zoom > MAX_MAP_ZOOM)
       const url = query({
         lat: SITES.shibuya.lat,
         lon: SITES.shibuya.lon,
@@ -68,7 +79,7 @@ test('境界 15 と 16 の可視率・ちらつき率（probe=water）', async (
         mm: '500',
         r: '50',
         probe: 'water',
-        zs: zooms.join(','),
+        zs: requested.map((r) => r.zoom.toFixed(3)).join(','),
         ex: String(ex),
         pitch: String(pitch),
         wet: '20000',
@@ -81,7 +92,7 @@ test('境界 15 と 16 の可視率・ちらつき率（probe=water）', async (
         await page.goto(url)
         return readReport<WaterProbeReport>(page, 'data-water-result', PAGE_TIMEOUT_MS)
       })
-      expect(report.rows.length).toBe(zooms.length)
+      expect(report.rows.length).toBe(inRange.length)
       reports.push({ pitch, ex, report })
       for (const d of DRAWN) {
         // 実測の描かれるタイルが d で、評価できる最初の行をそのセルの値にする
@@ -91,6 +102,11 @@ test('境界 15 と 16 の可視率・ちらつき率（probe=water）', async (
         const reasons = report.rows
           .filter((r) => r.drawnTileZoom === String(d))
           .map((r) => `z${r.requestedZoom}: ${r.reason}`)
+        for (const r of outOfRange.filter((r) => r.drawn === d)) {
+          reasons.push(
+            `z${r.zoom.toFixed(3)}: 地図の maxZoom ${MAX_MAP_ZOOM} を超える（perfParams が捨てた）`,
+          )
+        }
         cells.push({ pitch, ex, drawn: d, row, reasons })
       }
     }
