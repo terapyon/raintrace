@@ -62,7 +62,9 @@ export async function installPerfHook(
   settings.getState().setDisplay({
     verticalExaggeration: params.exaggeration,
     // arrows=0: 水の流れの矢印を止める（spec 06 §5.1、計画で決めたこと 8）。Worker は flowVectors() を呼ばない
-    ...(params.arrows ? {} : { showFlowVectors: false }),
+    // probe=water は URL に関わらず止める（矢印は深度テストなしで水面の上に描かれ、判定用の色を覆う。
+    // Task 27 のレビュー I1）
+    ...(params.arrows && params.probe !== 'water' ? {} : { showFlowVectors: false }),
     // arrowsM=5・10・20: 矢印の間隔の設定。5 は clampArrowSpacing で 10 に丸める（R06-11 の裁定 (a2):
     // 全範囲で矢印の 1 辺の本数の上限を 50 にする。ARROW_SPACINGS はもう 5 を含まない）。
     // 省けば設定を触らない（spec 06 §5.1）

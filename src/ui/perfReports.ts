@@ -60,6 +60,18 @@ export interface LoadReport {
   longTasks: { load: LongTaskSummary; to3d: LongTaskSummary | null; entries: LongTaskSample[] }
 }
 
+/** probe=water の 1 回の読み（そのフレームのカメラ。Task 27 のレビュー I4） */
+export interface WaterRead {
+  /** footprint・lifted・visible<揺らし>・footprint-end */
+  label: string
+  mapZoom: number
+  mapPitch: number
+  bearing: number
+  /** 地図の中心の標高（transform.elevation、m、垂直強調の後）。MapLibre はフレームごとに読めた地形から決め直す */
+  centerElevationM: number
+  cameraAltitudeM: number
+}
+
 export interface WaterProbeRow {
   requestedZoom: number
   mapZoom: number
@@ -68,6 +80,9 @@ export interface WaterProbeRow {
   drawnTileZoom: string
   /** カメラの高さ − カメラの真下の地形の高さ（m、垂直強調の後）。地形が無ければ null */
   cameraClearanceM: number | null
+  /** 読みの間の centerElevationM の最大 − 最小（m） */
+  cameraDriftM: number
+  reads: WaterRead[]
   measure: WaterMeasure
   verdict: WaterVerdict
   reason: string
@@ -75,6 +90,8 @@ export interface WaterProbeRow {
 
 export interface WaterProbeReport {
   params: PerfParams
+  /** 判定用の色を覆うので隠した重ね描き（範囲の枠・流れの向き・最低点） */
+  hiddenLayers: string[]
   /** 降雨を止めた時点の step */
   stoppedAtStep: number | null
   rows: WaterProbeRow[]

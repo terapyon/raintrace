@@ -14,6 +14,21 @@ export const FLICKER_PASS = 0.01
 /** これより水面の画素が少ない視点は評価しない（05 の Task 13 の落とし穴: カメラが強調した地形の中） */
 export const MIN_FOOTPRINT_PX = 500
 export const MIN_CAMERA_CLEARANCE_M = 1
+/**
+ * 判定に要る最小の標本（Task 27 のレビュー I2）。ちらつき: n 画素で変化 0 のときの真の率の 95% の上限は約 3 / n
+ * （3 の法則）なので、「1% 以下」と言うには 300 画素が要る。持ち上げ比: 2000 画素なら 2% の余裕が 40 画素になり、
+ * 縁のラスタライズや読みの間のずれ（数十画素）より十分大きい
+ */
+export const MIN_INTERIOR_PX = 300
+export const MIN_LIFTED_PX = 2000
+/**
+ * 読みの間の食い違いの許容（footprint に対する割合。Task 27 のレビュー I3・I4）。深度テストなしの footprint は
+ * 深度テストありの見えた画素を画素ごとに含むはずで、最初と最後の footprint は同じはず。超えたら読みごとに
+ * フレームか描画の経路が違う
+ */
+export const MAX_INCONSISTENT_RATIO = 0.005
+/** 読みの間のカメラの中心の標高（transform.elevation）の変化の許容（m）。超えたら地形の読み込みで視点が動いた */
+export const MAX_CAMERA_DRIFT_M = 0.01
 
 /** 判定用の色（マゼンタ）の画素を 1 にしたマスク（RGBA の並び） */
 export function magentaMask(rgba: Uint8Array): Uint8Array {
@@ -55,16 +70,28 @@ export function countMask(mask: Uint8Array): number {
 }
 
 export interface WaterMeasure {
-  /** 深度テストなしの水面の画素（1 cm 以上の水面が画面に占める画素） */
+  /** 深度テストなしの水面の画素（1 cm 以上の水面が画面に占める画素。最初の読み） */
   footprintPx: number
+  /** 最後にもう一度読んだ footprint の画素 */
+  footprintEndPx: number
+  /** 最初と最後の footprint で値が違う画素（XOR）。0 でなければ読みの間に画面が変わった */
+  footprintDriftPx: number
   /** 深度テストありで見えた画素（揺らしの 1 つ目） */
   visiblePx: number
   /** 深度テストありで、水面を LIFT_M 持ち上げたときに見えた画素 */
   liftedPx: number
-  /** spec 06 §3 の定義: 見えた / footprint（地形が正当に隠す分を含む） */
+  /** 見えた ∧ 持ち上げで見えた */
+  visibleAndLiftedPx: number
+  /** 見えた ∧ ¬footprint。深度テストの有無だけの違いなら 0（0 でなければ読みごとに描画が違う） */
+  visibleNotFootprintPx: number
+  /** 見えた ∧ ¬持ち上げで見えた。持ち上げで隠れることは幾何では起きないので、測りの雑音の床 */
+  visibleNotLiftedPx: number
+  /** spec 06 §3 の定義: 見えた / footprint（地形が正当に隠す分を含む。上限で切らない） */
   visibleRatio: number | null
-  /** 見えた / 持ち上げたときに見えた（沈み込みだけを見る。判定に使う） */
+  /** 持ち上げ比: (見えた ∧ 持ち上げで見えた) / 持ち上げで見えた（沈み込みだけを見る。判定に使う） */
   unoccludedRatio: number | null
+  /** 雑音: (見えた ∧ ¬持ち上げで見えた) / 持ち上げで見えた */
+  noiseRatio: number | null
   interiorPx: number
   /** 削った footprint の内側で、揺らしの間に見え方が変わった画素の割合 */
   flickerRatio: number | null
@@ -74,14 +101,28 @@ export function measureWaterMasks(input: {
   width: number
   height: number
   footprint: Uint8Array
+  /** 最後にもう一度読んだ footprint（読みの間のずれを見る） */
+  footprintEnd: Uint8Array
   visible: readonly Uint8Array[]
   lifted: Uint8Array
 }): WaterMeasure {
-  const footprintPx = countMask(input.footprint)
-  const first = input.visible[0] ?? new Uint8Array(input.footprint.length)
+  const { footprint, footprintEnd, lifted } = input
+  const footprintPx = countMask(footprint)
+  const first = input.visible[0] ?? new Uint8Array(footprint.length)
   const visiblePx = countMask(first)
-  const liftedPx = countMask(input.lifted)
-  const interior = erode(input.footprint, input.width, input.height, ERODE_PX)
+  const liftedPx = countMask(lifted)
+  let footprintDriftPx = 0
+  let visibleAndLiftedPx = 0
+  let visibleNotFootprintPx = 0
+  let visibleNotLiftedPx = 0
+  for (let i = 0; i < footprint.length; i++) {
+    if (footprint[i] !== footprintEnd[i]) footprintDriftPx++
+    if (first[i] !== 1) continue
+    if (lifted[i] === 1) visibleAndLiftedPx++
+    else visibleNotLiftedPx++
+    if (footprint[i] !== 1) visibleNotFootprintPx++
+  }
+  const interior = erode(footprint, input.width, input.height, ERODE_PX)
   let interiorPx = 0
   let changed = 0
   for (let i = 0; i < interior.length; i++) {
@@ -91,10 +132,16 @@ export function measureWaterMasks(input: {
   }
   return {
     footprintPx,
+    footprintEndPx: countMask(footprintEnd),
+    footprintDriftPx,
     visiblePx,
     liftedPx,
-    visibleRatio: footprintPx === 0 ? null : Math.min(1, visiblePx / footprintPx),
-    unoccludedRatio: liftedPx === 0 ? null : Math.min(1, visiblePx / liftedPx),
+    visibleAndLiftedPx,
+    visibleNotFootprintPx,
+    visibleNotLiftedPx,
+    visibleRatio: footprintPx === 0 ? null : visiblePx / footprintPx,
+    unoccludedRatio: liftedPx === 0 ? null : visibleAndLiftedPx / liftedPx,
+    noiseRatio: liftedPx === 0 ? null : visibleNotLiftedPx / liftedPx,
     interiorPx,
     flickerRatio: interiorPx === 0 ? null : changed / interiorPx,
   }
@@ -102,29 +149,52 @@ export function measureWaterMasks(input: {
 
 export type WaterVerdict = 'pass' | 'fail' | 'not-evaluable'
 
+/**
+ * 判定。評価できない視点（not-evaluable、表では「判定できず」）を不合格と読まない。
+ * cameraDriftM は読みの間のカメラの中心の標高の変化（最大 − 最小、m）
+ */
 export function judgeWater(
   measure: WaterMeasure,
   cameraClearanceM: number | null,
+  cameraDriftM = 0,
 ): { verdict: WaterVerdict; reason: string } {
+  const notEvaluable = (reason: string) => ({ verdict: 'not-evaluable' as const, reason })
   if (measure.footprintPx < MIN_FOOTPRINT_PX) {
-    return {
-      verdict: 'not-evaluable',
-      reason: `水面が画面にほとんど無い（${measure.footprintPx} px）。カメラが強調した地形の中か、水平線すれすれ`,
-    }
+    return notEvaluable(
+      `水面が画面にほとんど無い（${measure.footprintPx} px）。カメラが強調した地形の中か、水平線すれすれ`,
+    )
   }
   if (cameraClearanceM !== null && cameraClearanceM < MIN_CAMERA_CLEARANCE_M) {
-    return {
-      verdict: 'not-evaluable',
-      reason: `カメラと地面の差が ${cameraClearanceM.toFixed(2)} m`,
-    }
+    return notEvaluable(`カメラと地面の差が ${cameraClearanceM.toFixed(2)} m`)
   }
-  const { unoccludedRatio, flickerRatio } = measure
-  if (unoccludedRatio === null || flickerRatio === null) {
-    return { verdict: 'not-evaluable', reason: '持ち上げた水面か内側の画素が無い' }
+  const tolerancePx = measure.footprintPx * MAX_INCONSISTENT_RATIO
+  if (measure.visibleNotFootprintPx > tolerancePx) {
+    return notEvaluable(
+      `見えた ∧ ¬footprint が ${measure.visibleNotFootprintPx} px（読みごとに描画が違う）`,
+    )
+  }
+  if (measure.footprintDriftPx > tolerancePx) {
+    return notEvaluable(
+      `最初と最後の footprint が ${measure.footprintDriftPx} px 違う（読みの間に画面が変わった）`,
+    )
+  }
+  if (cameraDriftM > MAX_CAMERA_DRIFT_M) {
+    return notEvaluable(`読みの間にカメラの中心の標高が ${cameraDriftM.toFixed(3)} m 変わった`)
+  }
+  if (measure.liftedPx < MIN_LIFTED_PX) {
+    return notEvaluable(`標本が薄い（持ち上げで見えた ${measure.liftedPx} px < ${MIN_LIFTED_PX}）`)
+  }
+  if (measure.interiorPx < MIN_INTERIOR_PX) {
+    return notEvaluable(`標本が薄い（内側 ${measure.interiorPx} px < ${MIN_INTERIOR_PX}）`)
+  }
+  const { unoccludedRatio, flickerRatio, noiseRatio } = measure
+  if (unoccludedRatio === null || flickerRatio === null || noiseRatio === null) {
+    return notEvaluable('持ち上げた水面か内側の画素が無い')
+  }
+  const summary = `持ち上げ比 ${unoccludedRatio.toFixed(4)}・雑音 ${noiseRatio.toFixed(4)}・ちらつき ${(flickerRatio * 100).toFixed(3)}%`
+  if (Math.abs(unoccludedRatio - VISIBLE_PASS) < noiseRatio) {
+    return notEvaluable(`${summary}（閾値との差が雑音より小さい）`)
   }
   const pass = unoccludedRatio >= VISIBLE_PASS && flickerRatio <= FLICKER_PASS
-  return {
-    verdict: pass ? 'pass' : 'fail',
-    reason: `持ち上げ比 ${unoccludedRatio.toFixed(4)}・ちらつき ${(flickerRatio * 100).toFixed(3)}%`,
-  }
+  return { verdict: pass ? 'pass' : 'fail', reason: summary }
 }

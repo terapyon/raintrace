@@ -43,6 +43,8 @@ interface Cell {
   ex: number
   drawn: number
   row: WaterProbeRow | null
+  /** 評価できる行が無いとき、そのタイルの行の理由（判定できず） */
+  reasons: string[]
 }
 
 const ratio = (value: number | null, digits: number): string =>
@@ -72,6 +74,8 @@ test('境界 15 と 16 の可視率・ちらつき率（probe=water）', async (
         wet: '20000',
         settle: '1000',
         fallback: '0',
+        // 矢印は深度テストなしで水面の上に描かれ、判定用の色を覆う（Task 27 のレビュー I1。perfHook も止める）
+        arrows: '0',
       })
       const report = await withFreshPage(browser, baseURL, async (page) => {
         await page.goto(url)
@@ -84,25 +88,47 @@ test('境界 15 と 16 の可視率・ちらつき率（probe=water）', async (
         const row =
           report.rows.find((r) => r.drawnTileZoom === String(d) && r.verdict !== 'not-evaluable') ??
           null
-        cells.push({ pitch, ex, drawn: d, row })
+        const reasons = report.rows
+          .filter((r) => r.drawnTileZoom === String(d))
+          .map((r) => `z${r.requestedZoom}: ${r.reason}`)
+        cells.push({ pitch, ex, drawn: d, row, reasons })
       }
     }
   }
+  const verdictLabel = (row: WaterProbeRow): string =>
+    row.verdict === 'pass' ? '○' : row.verdict === 'fail' ? '×' : '判定できず'
   const lines = [
-    '渋谷・500 m・500 mm・半径 50 m を「最速」で 20 秒回して止めた水面。判定は持ち上げ比 0.98 以上かつちらつき 1% 以下（S と同じ閾値。持ち上げ比 = 見えた画素 / 0.10 m 持ち上げたときに見えた画素）',
+    '渋谷・500 m・500 mm・半径 50 m を「最速」で 20 秒回して止めた水面（矢印・範囲の枠・流れの向き・最低点は隠す）。判定は持ち上げ比 0.98 以上かつちらつき 1% 以下（S と同じ閾値。持ち上げ比 = (見えた ∧ 0.10 m 持ち上げたときに見えた) / 持ち上げたときに見えた）。持ち上げ 2000 px・内側 300 px 未満、閾値との差が雑音（見えた ∧ ¬持ち上げ / 持ち上げ）未満、読みの間の食い違い（見えた ∧ ¬footprint・最初と最後の footprint の違い）が footprint の 0.5% 超、カメラの中心の標高の変化が 0.01 m 超なら「判定できず」',
     '',
-    '| pitch | 倍率 | 描かれるタイル | 地図のズーム（実測 pitch） | footprint (px) | 可視率（見えた / footprint） | 持ち上げ比 | ちらつき | カメラと地面 (m) | 判定 |',
-    '|---:|---:|---:|---|---:|---:|---:|---:|---:|---|',
+    '| pitch | 倍率 | 描かれるタイル | 地図のズーム（実測 pitch） | footprint (px) | 可視率（見えた / footprint） | 持ち上げ比 | 雑音 | ちらつき | カメラと地面 (m) | 判定 |',
+    '|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|',
   ]
-  for (const { pitch, ex, drawn, row } of cells) {
+  for (const { pitch, ex, drawn, row, reasons } of cells) {
     if (row === null) {
-      lines.push(`| ${pitch} | ${ex} | ${drawn} | — | — | — | — | — | — | 評価できる視点が無い |`)
+      lines.push(
+        `| ${pitch} | ${ex} | ${drawn} | — | — | — | — | — | — | — | 判定できず（${reasons.join('／') || '行が無い'}） |`,
+      )
       continue
     }
     const m = row.measure
     lines.push(
-      `| ${pitch} | ${ex} | ${drawn} | ${row.mapZoom.toFixed(3)}（${row.mapPitch.toFixed(1)}） | ${m.footprintPx} | ${ratio(m.visibleRatio, 4)} | ${ratio(m.unoccludedRatio, 4)} | ${m.flickerRatio === null ? '—' : `${(m.flickerRatio * 100).toFixed(3)}%`} | ${ratio(row.cameraClearanceM, 1)} | ${row.verdict === 'pass' ? '○' : '×'}（${row.reason}） |`,
+      `| ${pitch} | ${ex} | ${drawn} | ${row.mapZoom.toFixed(3)}（${row.mapPitch.toFixed(1)}） | ${m.footprintPx} | ${ratio(m.visibleRatio, 4)} | ${ratio(m.unoccludedRatio, 4)} | ${ratio(m.noiseRatio, 4)} | ${m.flickerRatio === null ? '—' : `${(m.flickerRatio * 100).toFixed(3)}%`} | ${ratio(row.cameraClearanceM, 1)} | ${verdictLabel(row)}（${row.reason}） |`,
     )
+  }
+  lines.push(
+    '',
+    '全行（食い違いの数を含む。V = 見えた、L = 持ち上げで見えた、F = footprint、F2 = 最後の footprint）',
+    '',
+    '| pitch | 倍率 | 要求のズーム | 描かれるタイル | F | F2 | F xor F2 | V | L | V∧L | V∧¬F | V∧¬L | 内側 | 標高の変化 (m) | 判定 |',
+    '|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+  )
+  for (const { pitch, ex, report } of reports) {
+    for (const row of report.rows) {
+      const m = row.measure
+      lines.push(
+        `| ${pitch} | ${ex} | ${row.requestedZoom} | ${row.drawnTileZoom} | ${m.footprintPx} | ${m.footprintEndPx} | ${m.footprintDriftPx} | ${m.visiblePx} | ${m.liftedPx} | ${m.visibleAndLiftedPx} | ${m.visibleNotFootprintPx} | ${m.visibleNotLiftedPx} | ${m.interiorPx} | ${row.cameraDriftM.toFixed(3)} | ${verdictLabel(row)}（${row.reason}） |`,
+      )
+    }
   }
   mkdirSync(outDir, { recursive: true })
   writeFileSync(new URL('water.json', outDir), `${JSON.stringify(reports, null, 2)}\n`)

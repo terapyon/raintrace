@@ -6033,15 +6033,17 @@ M6 の完了条件（spec 06 §1.2）: spec 06 §6 を満たす。
 | 頼っているもの | 使っている場所 | 本番か計測だけか | 確かめること |
 |---|---|---|---|
 | `map.terrain.tileManager.getRenderableTiles()` と戻り値の `tileID.canonical`（10017 行） | `src/map/view3d/View3d.ts` の `measuredCentreZoom`（毎 render） | 本番 | (c) の判定の実測。有無と形 |
-| `map.painter.context.gl` | `src/map/fpsProbe.ts`・`src/ui/perfWater.ts` | 計測だけ | GL のコンテキストの取り出し |
-| `map.painter.context.bindFramebuffer.set(null)` と `render` イベントの中の `gl.readPixels` | `src/ui/perfWater.ts` | 計測だけ | render イベントの時点で既定のフレームバッファに描き終えていること |
+| `map.painter.context.gl` | `src/map/fpsProbe.ts`・`src/ui/perfWater.ts` | 計測だけ | GL のコンテキストの取り出し（`drawingBufferWidth`・`readPixels`） |
+| `map.painter.context.bindFramebuffer.set(null)`（16954 行）と `render` イベントの中の `gl.readPixels` | `src/ui/perfWater.ts` | 計測だけ | `render` が `painter.render` の直後に同期で発火し（26187〜26197 行）、その時点で既定のフレームバッファに描き終えていること（合成の前） |
+| 地形が有効な間は `opaquePassCutoff = 0`（19118〜19121 行）で、symbol は深度テストなし（`getDepthModeForSublayer` → `DepthMode.disabled`、19074 行）で水面（custom）の上に描かれる。線・円のレイヤーは custom の後の 2 つ目の地形のパス（22979〜23000 行）で LEQUAL で描かれる | `src/ui/perfWater.ts` が水の矢印（`arrows=0`）・範囲の枠・流れの向き・最低点を隠して読む（Task 27 のレビュー I1・I4） | 計測だけ | 判定用の色を覆うレイヤーが変わっていないこと |
+| `jumpTo` に center・zoom を渡すと `terrain.getElevationForLngLatZoom(center, options.zoom)` で中心の標高を決め（22264 行）、小数のズームでは 0 m になって次の zoom を渡さない `jumpTo` まで残る（実測） | `src/ui/perfWater.ts` の `settleCenterElevation`。`placeViewOnLoadedTerrain` を使うほかの計測（fps・view）の視点も同じ影響を受ける | 計測だけ | 中心の標高が 0 m に置かれるか（直っていれば `settleCenterElevation` は何もしない） |
 | `_elevateCameraIfInsideTerrain`（22431〜22443 行、22454 行で登録） | 計測の視点の照合（`tests/perf/fps.perf.ts` の pitch の下限 −10）、手動確認の「×10 はズーム 16.0 まで」 | 計測・手動 | ×10 で pitch 85 を要求すると 78.6° に落ち着くこと |
 | `Map.setTerrain` の先頭の `style._checkLoaded()`（25027〜25028 行）と、喪失の `_contextLost` が `style = null` にしつつ `map.terrain` を残すこと（23170〜23189 行） | `View3d.afterRender`・`View3d.dispose` の `isLoaded()` の守り | 本番 | 読み込み中・喪失の間の例外の種類 |
 | 3D の地形の喪失からの復帰で、失ったコンテキストの GL 資源を触る警告（175〜258 件） | `tests/e2e/view3d.spec.ts` の喪失のテストの許容（400 件未満） | E2E | 警告が消えたら許容を外す |
 | `CanvasSource` の `play()`（`_playing` を立てて `triggerRepaint`）と `pause()`（`_playing` の間に `prepare()` で `texture.update` してから下ろす）（4601〜4609・4649・4672〜4673 行） | `src/map/WaterOverlay.ts` の `uploadCanvasSource`（06 の Task 18。行わなかったなら、この行は書かない） | 本番 | `pause()` が転送すること、`hasTransition()` が `_playing` を返すこと |
 | `pause()` → `prepare()` → `Texture.update`（`maplibre-gl-shared-dev.mjs` 16852〜16905 行）が MapLibre の render パスの外（アプリの rAF の中）で走ること。`Texture.update` は現在アクティブなユニットに `gl.bindTexture(TEXTURE_2D, …)` で直に bind し、pixel-store の値を Context のキャッシュ済みの setter で設定して既定値に戻すだけで、フレームバッファ・viewport・program には触れない | `src/map/WaterOverlay.ts` の `uploadCanvasSource`（06 の Task 18） | 本番 | 安全な理由: MapLibre の `Texture.bind` は常に直に bind し直す（`maplibre-gl-shared-dev.mjs` 16924〜16928 行）ので MapLibre 側に古い bind のキャッシュが残らない。three.js の水面のレンダラーは毎 render の前に `resetState()` を呼ぶ（`src/renderer/waterLayer.ts` 約 357 行）。版を上げたら `Texture.update`・`Texture.bind` のこの前提が変わっていないか確かめる |
 | `Style.hasTransition()` が、再生中の canvas ソースがあると真になり `idle` が来ないこと | 計測の待ち（`areTilesLoaded()` を使い `idle` を待たない） | 計測だけ | — |
-| `map.transform.getCameraAltitude()`・`getCameraLngLat()` と `map.queryTerrainElevation`（型にある） | `src/ui/perfWater.ts` のカメラと地面の差 | 計測だけ | 高さの基準（海面からか、垂直強調を含むか） |
+| `map._camera.transform`（23231 行。6.6.0 の `Map` には `transform` の getter が無い）の `getCameraAltitude()`（9564〜9565 行）・`getCameraLngLat()`・`elevation` と `map.queryTerrainElevation`（→ `getElevation`、10306〜10307 行） | `src/ui/perfWater.ts` のカメラと地面の差・読みごとのカメラ | 計測だけ | 高さの基準（どちらも海面から・垂直強調を含む。dev.mjs で確認済み） |
 ```
 
 - [ ] **Step 2: tech-spec §14 の最終の値を書く**
