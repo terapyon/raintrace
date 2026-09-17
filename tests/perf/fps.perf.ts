@@ -88,12 +88,14 @@ const outDir = new URL('../../.handoff/05-fps/', import.meta.url)
 
 /**
  * 計測用のビルド（pnpm build:perf）でなければフックが入らず、印は一生付かない。そのまま回すと 240 秒の
- * timeout まで待たされ、「固まった」のか「ビルドし忘れた」のか分からない。先に dist を見て区別する
+ * timeout まで待たされ、「固まった」のか「ビルドし忘れた」のか分からない。先にビルドの情報（build-info/）を見て区別する
  */
 function assertPerfBuild(): void {
-  const manifest = new URL('../../dist/.vite/manifest.json', import.meta.url)
+  const manifest = new URL('../../build-info/manifest.json', import.meta.url)
   if (!existsSync(manifest)) {
-    throw new Error('dist がありません。先に pnpm build:perf を実行してください')
+    throw new Error(
+      'build-info/manifest.json がありません。先に pnpm build:perf を実行してください',
+    )
   }
   if (!readFileSync(manifest, 'utf8').includes('perfHook')) {
     throw new Error(

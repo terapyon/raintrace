@@ -1,4 +1,5 @@
-import { relative } from 'node:path'
+import { existsSync, renameSync, rmSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
@@ -23,7 +24,7 @@ function collectChunkModules(
 const workerChunkModules: ChunkModules = {}
 
 /**
- * メインと Worker の各チャンクに入ったモジュールを dist/.vite/chunk-modules.json に書き出す。
+ * メインと Worker の各チャンクに入ったモジュールを chunk-modules.json に書き出す（出力の後に build-info/ へ移る）。
  * scripts/check-bundle-size.mjs が、アプリ本体への外部パッケージの混入と、Worker との重複の報告に使う（spec 01 §4.9）
  */
 function chunkModulesReport(): Plugin {
@@ -53,10 +54,49 @@ function workerChunkModulesCollector(): Plugin {
   }
 }
 
+/** ビルドの情報（Vite のマニフェストと chunk-modules.json）の置き場所。gitignore する */
+const BUILD_INFO_DIR = 'build-info'
+
+/**
+ * 出力の後に dist/.vite/ を build-info/ へ移す（spec D §4.5、R-D4）。Cloudflare Pages の
+ * wrangler pages deploy は dist の全ファイルを上げ、.assetsignore を読まないので、dist には配信するファイルだけを置く。
+ * scripts/check-bundle-size.mjs と tests/perf/fps.perf.ts が build-info/ を読む。
+ * Vite の Environment API では writeBundle が環境ごとに走りうるので、client の環境だけで動かす
+ * （レビュー R1）。それ以外の環境（cloudflare() が作る worker の環境など）には .vite/ が無く、
+ * this.error で壊れてしまうため
+ */
+function moveBuildInfoOutOfDist(): Plugin {
+  let root = ''
+  let outDir = ''
+  return {
+    name: 'raintrace:build-info',
+    apply: 'build',
+    applyToEnvironment: (env) => env.name === 'client',
+    configResolved(config) {
+      root = config.root
+      outDir = resolve(config.root, config.build.outDir)
+    },
+    writeBundle: {
+      order: 'post',
+      sequential: true,
+      handler() {
+        if (this.environment?.name !== 'client') return
+        const from = resolve(outDir, '.vite')
+        const to = resolve(root, BUILD_INFO_DIR)
+        rmSync(to, { recursive: true, force: true })
+        if (!existsSync(from)) {
+          this.error(`${from} がありません（build.manifest と chunkModulesReport を確かめる）`)
+        }
+        renameSync(from, to)
+      },
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => ({
   // 計測用のフック（src/ui/perfHook.ts）は vite build --mode perf のときだけ入れる（spec 05 の計画で決めたこと 20）
   define: { __RAINTRACE_PERF__: JSON.stringify(mode === 'perf') },
-  plugins: [react(), cloudflare(), chunkModulesReport()],
+  plugins: [react(), cloudflare(), chunkModulesReport(), moveBuildInfoOutOfDist()],
   // Worker は { type: 'module' } で起動するので ES モジュールとして出力する
   worker: { format: 'es', plugins: () => [workerChunkModulesCollector()] },
   build: {

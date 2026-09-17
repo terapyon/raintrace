@@ -16,7 +16,14 @@ import {
 } from './lib/bundleBudget.mjs'
 
 const dist = 'dist'
-const manifest = JSON.parse(readFileSync(join(dist, '.vite/manifest.json'), 'utf8'))
+/** ビルドの情報は dist の外に置く（vite.config.ts の moveBuildInfoOutOfDist。spec D R-D4） */
+const buildInfo = 'build-info'
+const manifestPath = join(buildInfo, 'manifest.json')
+if (!existsSync(manifestPath)) {
+  console.error(`${manifestPath} がありません。先に pnpm build を実行してください`)
+  process.exit(1)
+}
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 const files = readdirSync(join(dist, 'assets'))
   .filter((name) => name.endsWith('.js'))
   .map((name) => {
@@ -38,9 +45,11 @@ console.log(
   '（Worker のチャンクは、起動時に読まれても初期ロードには数えない。spec 01 §4.9 の定義による）',
 )
 
-const reportPath = join(dist, '.vite/chunk-modules.json')
+const reportPath = join(buildInfo, 'chunk-modules.json')
 if (!existsSync(reportPath)) {
-  violations.push(`${reportPath} がありません（vite.config.ts の chunkModulesReport を確かめる）`)
+  violations.push(
+    `${reportPath} がありません（vite.config.ts の chunkModulesReport と moveBuildInfoOutOfDist を確かめる）`,
+  )
 } else {
   const report = JSON.parse(readFileSync(reportPath, 'utf8'))
 
