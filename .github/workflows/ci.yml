@@ -17,6 +17,12 @@ defaults:
   run:
     shell: bash
 
+env:
+  # Cloudflare Pages の project（spec D §4.1）と、その既定の URL のホスト。作成時に接尾辞が付いたら PAGES_HOST だけを直す
+  PAGES_PROJECT: raintrace
+  PAGES_HOST: raintrace.pages.dev
+  WRANGLER_SEND_METRICS: false
+
 # PR の古い実行だけを取り消す。main とタグでは、デプロイを途中で止めない
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -96,66 +102,105 @@ jobs:
 
   deploy-preview:
     # 同じリポジトリのブランチからの PR のみ（フォークには Secrets が渡らない）。
-    # プレビューはステージングの Worker にバージョンとして上げ、本番の Worker には触れない
+    # Pages の project のプレビューの deployment（ブランチ pr-<番号>）に上げ、本番（production）には触れない
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      # 別名は pr-<番号>.<PAGES_HOST>。PR ごとに一意で、ブランチ名に依存しない（英小文字・数字・ハイフンのまま残る）
+      PAGES_BRANCH: pr-${{ github.event.pull_request.number }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
       - run: pnpm build
-        env:
-          CLOUDFLARE_ENV: staging
-      - name: プレビュー用のバージョンを上げる
+      - name: プレビューに上げる
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        # alias は wrangler の規則（英小文字で始まり、英小文字・数字・ハイフン）に必ず合う pr-<番号> にする。
-        # PR ごとに一意で、ブランチ名に依存しない
+        # dist は Git の管理外なので --commit-dirty=true（付けないと警告）。GITHUB_SHA は PR のマージコミット（表示用）
         run: |
-          pnpm exec wrangler versions upload --preview-alias "pr-${PR_NUMBER}" --message "PR #${PR_NUMBER} ${GITHUB_SHA::7}" | tee upload.log
+          if [ "$PAGES_BRANCH" = production ]; then
+            echo "::error::プレビューのジョブが本番（production）に上げようとした（spec D §4.7）"
+            exit 1
+          fi
+          pnpm exec wrangler pages deploy dist --project-name "$PAGES_PROJECT" --branch "$PAGES_BRANCH" \
+            --commit-hash "$GITHUB_SHA" --commit-message "PR #${PR_NUMBER} ${GITHUB_SHA::7}" --commit-dirty=true | tee deploy.log
           {
             echo "### プレビュー"
-            grep -Eo 'https://[^ ]+\.workers\.dev' upload.log | sort -u | sed 's/^/- /' || true
+            grep -Eo 'https://[^ ]+\.pages\.dev' deploy.log | sort -u | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: 応答を検査する
+        run: node scripts/check-deployed-headers.mjs "https://${PAGES_BRANCH}.${PAGES_HOST}" --noindex
 
-  deploy-staging:
+  deploy-main:
+    # main への push。Pages のプレビューの別名 main.<PAGES_HOST>（独自ドメインなし、noindex）。必須ジョブの成功が前提。
+    # ステージングの環境は置かない（spec D R-D1）
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [quality, test, build, e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: staging
+    env:
+      PAGES_BRANCH: main
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      # 環境はビルド時に決まる。dist/wrangler.json が raintrace-staging 向けに出力される
       - run: pnpm build
-        env:
-          CLOUDFLARE_ENV: staging
-      - run: pnpm exec wrangler deploy
+      - name: main の別名に上げる
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "$PAGES_BRANCH" = production ]; then
+            echo "::error::main のジョブが本番（production）に上げようとした（spec D §4.7）"
+            exit 1
+          fi
+          pnpm exec wrangler pages deploy dist --project-name "$PAGES_PROJECT" --branch "$PAGES_BRANCH" \
+            --commit-hash "$GITHUB_SHA" --commit-dirty=true | tee deploy.log
+          {
+            echo "### main"
+            grep -Eo 'https://[^ ]+\.pages\.dev' deploy.log | sort -u | sed 's/^/- /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 応答を検査する
+        run: node scripts/check-deployed-headers.mjs "https://${PAGES_BRANCH}.${PAGES_HOST}" --noindex
 
   deploy-production:
-    # タグ付きリリース（R01-3）。タグの push でも必須ジョブが回り、その成功が前提
+    # タグ付きリリース（R01-3、spec D §4.2）。タグの push でも必須ジョブが回り、その成功が前提
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [quality, test, build, e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: production
+    env:
+      # ブランチ名 production を書くのはここだけ（spec D §4.7）。Pages の project の production branch と同じ名前
+      PAGES_BRANCH: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
       - run: pnpm build
-      - run: pnpm exec wrangler deploy
+      - name: 本番に上げる
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          pnpm exec wrangler pages deploy dist --project-name "$PAGES_PROJECT" --branch "$PAGES_BRANCH" \
+            --commit-hash "$GITHUB_SHA" --commit-message "$GITHUB_REF_NAME" --commit-dirty=true | tee deploy.log
+          {
+            echo "### 本番"
+            grep -Eo 'https://[^ ]+\.pages\.dev' deploy.log | sort -u | sed 's/^/- /' || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 応答を検査する（pages.dev）
+        run: node scripts/check-deployed-headers.mjs "https://${PAGES_HOST}" --noindex
+      - name: 応答を検査する（独自ドメイン）
+        # 独自ドメインが Active になった後に、ユーザーがリポジトリの変数 PRODUCTION_URL に
+        # https://raintrace.terapyon.net を登録する（spec D §5.1 の手順 7）。未登録ならこの検査を飛ばす
+        if: vars.PRODUCTION_URL != ''
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: node scripts/check-deployed-headers.mjs "$PRODUCTION_URL" --indexable
