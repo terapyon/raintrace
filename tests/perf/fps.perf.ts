@@ -168,6 +168,21 @@ const SETS: Record<string, SetDef> = {
       },
     ],
   },
+  // 500 m での矢印 5 m の確かめ（M3 のレビュー指摘）。arrowSpacingForRange(baseM, sizeM) = baseM × sizeM ÷ 500
+  // なので 1 辺の本数 = 500 ÷ baseM は範囲に依らない。矢印 5 m は 250・500・1000 m のどれでも 1 辺 100 本
+  // （10,000 本）になる。isolate（1000 m だけ）とは別の組にして、isolate の 1000 m の挙動は変えない
+  'isolate-500': {
+    sizes: ['500'],
+    views: ['z16 ×10 p85'],
+    variants: [
+      { label: '水面あり・depthEvery=1（既定の矢印間隔）', water: '1', extra: { depthEvery: '1' } },
+      {
+        label: '水面あり・矢印 5 m（500 m で実効 5 m・10,000 本）',
+        water: '1',
+        extra: { arrowsM: '5' },
+      },
+    ],
+  },
 }
 
 const DEFAULT_SET = 'terrain-main'
