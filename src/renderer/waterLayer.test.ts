@@ -4,10 +4,11 @@
  * three の中で GL を一切使わない（GPU 資源は WebGLRenderer が初めて描くときに確保する）
  */
 import { DataTexture, FloatType, RedFormat } from 'three'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildUniforms,
   CELL_ATTRIBUTE,
+  createCompileGate,
   resolveDepthData,
   shouldUploadDepth,
   type WaterLayerOptions,
@@ -95,5 +96,108 @@ describe('shouldUploadDepth（depthEvery=N。spec 06 §5.1）', () => {
       true,
       true,
     ])
+  })
+})
+
+/** 外から resolve・reject できる Promise（compileAsync の代わり） */
+function deferred(): {
+  promise: Promise<unknown>
+  resolve: () => void
+  reject: (error: unknown) => void
+} {
+  let resolve: () => void = () => {}
+  let reject: (error: unknown) => void = () => {}
+  const promise = new Promise<unknown>((res, rej) => {
+    resolve = () => res(undefined)
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+/** then の続きを流す（Promise の解決の後のマイクロタスクを全部走らせる） */
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+describe('createCompileGate（compileAsync の待ちと資源の解放の順。spec 06 §5.2、Task 17a (i)）', () => {
+  it('プログラムができるまで ready は false、できたら true になり onReady を 1 回呼ぶ', async () => {
+    const release = vi.fn()
+    const onReady = vi.fn()
+    const gate = createCompileGate(release, onReady)
+    const compiled = deferred()
+    gate.start(compiled.promise)
+    expect(gate.ready()).toBe(false)
+    await flush()
+    expect(gate.ready()).toBe(false)
+    compiled.resolve()
+    await flush()
+    expect(gate.ready()).toBe(true)
+    expect(onReady).toHaveBeenCalledTimes(1)
+    expect(release).not.toHaveBeenCalled()
+  })
+
+  it('待ちの途中で dispose すると、待ちが終わるまで release を呼ばず、終わったら release だけを呼ぶ（描かない）', async () => {
+    const release = vi.fn()
+    const onReady = vi.fn()
+    const gate = createCompileGate(release, onReady)
+    const compiled = deferred()
+    gate.start(compiled.promise)
+    gate.dispose()
+    expect(gate.disposed()).toBe(true)
+    expect(release).not.toHaveBeenCalled()
+    gate.dispose()
+    compiled.resolve()
+    await flush()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(onReady).not.toHaveBeenCalled()
+    expect(gate.ready()).toBe(false)
+  })
+
+  it('できた後に dispose すると、すぐに release を 1 回だけ呼び、ready は false に戻る', async () => {
+    const release = vi.fn()
+    const gate = createCompileGate(release, () => {})
+    const compiled = deferred()
+    gate.start(compiled.promise)
+    compiled.resolve()
+    await flush()
+    gate.dispose()
+    gate.dispose()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(gate.ready()).toBe(false)
+  })
+
+  it('start の前（onAdd の前）の dispose はすぐに release を呼び、その後の start は何もしない', async () => {
+    const release = vi.fn()
+    const onReady = vi.fn()
+    const gate = createCompileGate(release, onReady)
+    gate.dispose()
+    expect(release).toHaveBeenCalledTimes(1)
+    const compiled = deferred()
+    gate.start(compiled.promise)
+    compiled.resolve()
+    await flush()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(onReady).not.toHaveBeenCalled()
+    expect(gate.ready()).toBe(false)
+  })
+
+  it('Promise が reject されても待ちは終わる（描く側に戻す。dispose の後なら release を呼ぶ）', async () => {
+    const onReady = vi.fn()
+    const gate = createCompileGate(() => {}, onReady)
+    const failed = deferred()
+    gate.start(failed.promise)
+    failed.reject(new Error('compile'))
+    await flush()
+    expect(gate.ready()).toBe(true)
+    expect(onReady).toHaveBeenCalledTimes(1)
+
+    const release = vi.fn()
+    const disposedGate = createCompileGate(release, () => {})
+    const failedLater = deferred()
+    disposedGate.start(failedLater.promise)
+    disposedGate.dispose()
+    failedLater.reject(new Error('compile'))
+    await flush()
+    expect(release).toHaveBeenCalledTimes(1)
   })
 })

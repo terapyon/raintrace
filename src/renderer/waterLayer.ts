@@ -145,6 +145,55 @@ export function buildUniforms(
   }
 }
 
+/** シェーダのプログラムの非同期のリンクの待ちと、資源の解放の順（GL を使わないので waterLayer.test.ts が確かめる） */
+export interface CompileGate {
+  /** compileAsync の Promise を渡す（onAdd で 1 回）。dispose の後は何もしない */
+  start(compiled: Promise<unknown>): void
+  /** プログラムができて、まだ捨てていないか。false の間 render は何も描かない */
+  ready(): boolean
+  disposed(): boolean
+  /** 捨てる。待ちの途中なら、待ちが終わってから release を呼ぶ。2 回目からは何もしない */
+  dispose(): void
+}
+
+/**
+ * compileAsync の待ちの間に three の資源を捨てると、three の 10 ms ごとの確かめ（three 0.185.1 の
+ * WebGLRenderer.compileAsync の checkMaterialsReady）が、消えたプログラムを読んで例外を投げる
+ * （properties.get(material).currentProgram が undefined）。そのため待ちの途中の dispose は、待ちが
+ * 終わるまで release を遅らせ、終わっても描かない（onReady を呼ばない）。
+ * コンテキストの喪失の後も待ちは終わる（KHR_parallel_shader_compile の仕様で、喪失の後の
+ * COMPLETION_STATUS_KHR は true を返す）。compileAsync は reject しないが、もし reject されたら、
+ * 描く側に戻す（three が最初の描画で同期にリンクを待つ、Task 17a の前と同じ振る舞い）
+ */
+export function createCompileGate(release: () => void, onReady: () => void): CompileGate {
+  let pending = false
+  let programReady = false
+  let isDisposed = false
+  const settle = (): void => {
+    pending = false
+    if (isDisposed) {
+      release()
+      return
+    }
+    programReady = true
+    onReady()
+  }
+  return {
+    start(compiled) {
+      if (isDisposed || pending || programReady) return
+      pending = true
+      compiled.then(settle, settle)
+    },
+    ready: () => programReady && !isDisposed,
+    disposed: () => isDisposed,
+    dispose() {
+      if (isDisposed) return
+      isDisposed = true
+      if (!pending) release()
+    },
+  }
+}
+
 export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): WaterLayer {
   const n = options.size
   const zeros = new Float32Array(n * n)
@@ -180,12 +229,9 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
   scene.add(mesh)
   const camera = new Camera()
   let renderer: WebGLRenderer | null = null
-  let disposed = false
   let depthUpdates = 0
 
-  const dispose = (): void => {
-    if (disposed) return
-    disposed = true
+  const release = (): void => {
     geometry.dispose()
     material.dispose()
     elevationTexture.dispose()
@@ -195,18 +241,36 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
     renderer?.dispose()
     renderer = null
   }
+  // プログラムができたら次のフレームを頼む（それまでの render は何も描かない）
+  const gate = createCompileGate(release, () => map.triggerRepaint())
+  const dispose = gate.dispose
 
   const layer: CustomLayerInterface = {
     id: options.id,
     type: 'custom',
     renderingMode: '3d',
     onAdd(targetMap, gl) {
+      if (gate.disposed()) return
       // context を渡すと、antialias などの WebGL の属性の指定は無視される（MapLibre が作ったコンテキストのまま）
       renderer = new WebGLRenderer({ canvas: targetMap.getCanvas(), context: gl })
       renderer.autoClear = false
+      // シェーダのリンクを描画のフレームの外で待つ（spec 06 §5.2、Task 17a (i)）。これが無いと、最初の
+      // render で three がリンクの完了を同期で待ち（WebGLProgram の onFirstUse。60〜210 ms）、3D の切り替えの
+      // 長いタスクになる。compile は GL のシェーダ・プログラムを作ってリンクを始めるだけで、バインドなどの
+      // 状態を変えないので、MapLibre の描画の外（addLayer の中）で呼んでよい。
+      // KHR_parallel_shader_compile の無い環境（E2E の chromium など）では、リンクの完了を同期でしか確かめ
+      // られない（three の compileAsync も 10 ms 後に完了とみなす）ので、compileAsync を呼ばずに待ちを
+      // すぐ終え、最初の描画で今までと同じく同期で待つ（振る舞いは Task 17a の前と同じ）。compileAsync を
+      // 呼ぶと、three が拡張の無いことをコンソールに警告する（extensions.get）ため、has で先に確かめる
+      gate.start(
+        renderer.extensions.has('KHR_parallel_shader_compile')
+          ? renderer.compileAsync(scene, camera)
+          : Promise.resolve(),
+      )
     },
     render(gl, input) {
-      if (renderer === null) return
+      // プログラムができるまでは水面を描かない（onRenderTime も呼ばない）
+      if (renderer === null || !gate.ready()) return
       const start = performance.now()
       // mainMatrix × モデル行列を倍精度で掛け、Float32 にして渡す（spec 05 §3.1。modelViewProjectionMatrix は
       // x・y がワールドの画素で float32 の精度が足りないので使わない）
@@ -228,7 +292,7 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
     setWater(water) {
       // 破棄の後は終端（Task 8 の申し送りの反映）: ベースマップの切り替えの間の窓で呼ばれても、
       // 新しい DataTexture を確保して捨てられないまま残すことがない
-      if (disposed) return
+      if (gate.disposed()) return
       // 参照は毎回差し替える（返却済みのバッファを指したままにしない。転送しない回は GPU の内容が前のまま）
       depthTexture.image.data = resolveDepthData(water, n, zeros)
       depthUpdates++
@@ -240,12 +304,12 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
       map.triggerRepaint()
     },
     setExaggeration(value) {
-      if (disposed) return
+      if (gate.disposed()) return
       uniforms.u_exaggeration.value = value
       map.triggerRepaint()
     },
     setLut(next) {
-      if (disposed) return
+      if (gate.disposed()) return
       const texture = lutTexture(next)
       lut.dispose()
       lut = texture
