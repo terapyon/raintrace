@@ -20,7 +20,7 @@
 
 - Node 24、pnpm 12.1.0。**依存を足さない**（R06-4 の「安価」= 新しい依存・新しい Worker を足さない、`SimulationEngine` とメッセージ〈`src/shared/protocol.ts`〉の形を変えない）。`pnpm-workspace.yaml` の `minimumReleaseAge: 14400`・`minimumReleaseAgeStrict: true`（10 日のクールダウン）は変えない。`pnpm install` が lockfile を書き換えたら止めて知らせる
 - **計測のコードは計測用のビルド（`pnpm build:perf`）だけに入れる**（R06-5）。通常のビルドでは `__RAINTRACE_PERF__` が false に置き換わり、計測用のフック（`src/ui/perf*.ts`）と Worker の計測（`src/workers/stepTiming.ts`・BroadcastChannel）が出力に残らない。M1 の完了時と、実行時のコードを変える各 Task の終わりに、次の 3 つで確かめる:
-  - `pnpm build && (grep -c perfHook dist/.vite/manifest.json || true)` → `0`
+  - `pnpm build && (grep -c perfHook build-info/manifest.json || true)` → `0`
   - `grep -l raintrace-perf dist/assets/*.js || true` → 何も出ない
   - `pnpm size` の初期ロードが **427.5 KB** のまま（M4 の `ui` のチャンクの Task だけは減ってよい）
 - 書式と lint は Biome（2 スペース、シングルクォート、セミコロンなし、行幅 100）。画面に出す文字列は `src/ui/strings.ts` にだけ置く（tech-spec §9.4）。例外は計測用のフック（`src/ui/perf*.ts`）の JSON の表示だけ（利用者の画面ではない）。コメントとテスト名は日本語
@@ -80,7 +80,7 @@
     - 51 fps の転送側: `depthUploadEvery` の既定を、1000 m（一辺 768 セルを超える範囲）だけ 2 にする。変わった行だけの転送・Float16 は計画し直す（Task 23）。**M2 の準備での改訂**: 既定の矢印の本数では `depthEvery=1・2・4` がどれも 59.9〜60.0 で、転送は主因でない（`.handoff/06-perf/baseline-check.md`）。Task 13 の結論が変わらなければ行わない
     - `ui` のチャンク: `RainfallControls` の `TextField` を `FormControl`・`InputLabel`・`OutlinedInput`・`FormHelperText` に置き換える（ラベルの関連づけと説明文の `aria-describedby` は `useId` で作る）
 17. **M4 の各項目の前後の計測**は、同じ Task の中で「前」を測ってから直し、「後」を同じコマンドで測る。数字は `docs/perf/<実行日>-fixes.md` の項目ごとの節に足す
-18. **Worker のチャンクの `maplibre-gl-shared` の複製**（spec 06 §5.2 の最後の段落）: 計画の作成時に `dist/.vite/chunk-modules.json` を読んだ。複製があるのは MapLibre 自身の Worker（`maplibre-gl-worker-*.js` が `maplibre-gl-shared.mjs` と `maplibre-gl-worker.mjs` を持つ）で、シミュレーションの Worker ではない。Vite の Worker のビルドはメインのチャンクを共有できないので、ビルドの設定では消せない。M2 で記録だけする（Task 9）
+18. **Worker のチャンクの `maplibre-gl-shared` の複製**（spec 06 §5.2 の最後の段落）: 計画の作成時に `dist/.vite/chunk-modules.json`（spec D の後は `build-info/chunk-modules.json`）を読んだ。複製があるのは MapLibre 自身の Worker（`maplibre-gl-worker-*.js` が `maplibre-gl-shared.mjs` と `maplibre-gl-worker.mjs` を持つ）で、シミュレーションの Worker ではない。Vite の Worker のビルドはメインのチャンクを共有できないので、ビルドの設定では消せない。M2 で記録だけする（Task 9）
 19. **矢印の 1 辺の本数の上限（R06-11 の裁定 (a2)。Task 13b）**: `src/state/persistedSettings.ts` の `ARROW_SPACINGS` を `[5, 10, 20]` から `[10, 20]` にする。保存値・計測だけの URL（`arrowsM`）から届く 5 は `clampArrowSpacing(value: 5 | 10 | 20): 10 | 20`（新規、同ファイル）で 10 に丸める。`parsePersistedSettings` は「5 は移行、5 でも候補でもなければ不正（既定値に戻す。他の項目と同じ扱い）」に分ける（5 だけを特別扱いし、`parsePersistedSettings` の「マイグレーションはしない」という既存の方針は他の項目では変えない）。`src/ui/perfParams.ts` の `arrowsM` は表示の設定の `ARROW_SPACINGS` とは別に、計測だけが使う `PERF_ARROW_SPACINGS = [5, ...ARROW_SPACINGS]` を持ち、5 を受け続ける（既存の `perfParams.test.ts` の 4 つの期待は変えない）。`src/ui/perfHook.ts` は `settings.getState().setDisplay({ flowVectorSpacingM: clampArrowSpacing(params.arrowsM) })` で丸めてから渡す（`arrowsM=5` の URL で「5 m を選んだときと同じ 10,000 本」を測り続けることはできなくなり、「クランプ後の 2,500 本」を測ることになる。これは裁定の効果を数字で確かめるための意図した挙動）。`src/ui/components/DisplaySettings.tsx` は `ARROW_SPACINGS` を map するだけなので変更なし（5 m のボタンは自然に消える）。`src/state/urlState.ts`（共有できる URL）は `flowVectorSpacingM` を扱っていないので変更なし（「URL」の移行は `arrowsM` の計測用 URL だけを指す）
 
 ## ファイル構成
@@ -758,7 +758,7 @@ Expected: PASS（`options.test.ts` の既定の値の期待は変わらない）
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage`
 Expected: すべて成功
 
-Run: `pnpm build && pnpm exec playwright test --project=chromium && pnpm size && (grep -c perfHook dist/.vite/manifest.json || true)`
+Run: `pnpm build && pnpm exec playwright test --project=chromium && pnpm size && (grep -c perfHook build-info/manifest.json || true)`
 Expected: E2E 41 件成功（3D の水面の画素のテストを含む。既定は毎回転送）、初期ロード **427.5 KB**、grep は `0`
 
 - [ ] **Step 7: コミットする**
@@ -1399,7 +1399,7 @@ Expected: PASS（`perfWait.test.ts` の 2 件を含む）
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage`
 Expected: すべて成功
 
-Run: `pnpm build && pnpm size && (grep -c perfHook dist/.vite/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true)`
+Run: `pnpm build && pnpm size && (grep -c perfHook build-info/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true)`
 Expected: 初期ロード **427.5 KB**、`0`、何も出ない（計測用のフックの変更は通常のビルドに入らない。E2E は変わらないので回さなくてよい）
 
 - [ ] **Step 12: コミットする**
@@ -1822,7 +1822,7 @@ Expected: PASS
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage`
 Expected: すべて成功（`perfReports.ts` は型だけのモジュールで、`perfSteps.ts`・`perfLoad.ts` から型で届く。depcheck が `not-reachable-from-entry` で落とすなら、`.dependency-cruiser.mjs` の `options.tsPreCompilationDeps` を確かめ、落ちる理由を報告に書いてコントローラーに相談する）
 
-Run: `pnpm build && pnpm size && (grep -c perfHook dist/.vite/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true)`
+Run: `pnpm build && pnpm size && (grep -c perfHook build-info/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true)`
 Expected: 初期ロード **427.5 KB**、`0`、何も出ない
 
 - [ ] **Step 8: コミットする**
@@ -1931,12 +1931,12 @@ export function outDirFromEnv(value: string | undefined, fallback: string): URL 
 
 /**
  * 計測用のビルド（pnpm build:perf）でなければフックが入らず、印は一生付かない。そのまま回すと timeout まで
- * 待たされ、「固まった」のか「ビルドし忘れた」のか分からない。先に dist を見て区別する
+ * 待たされ、「固まった」のか「ビルドし忘れた」のか分からない。先にビルドの情報（build-info/）を見て区別する
  */
 export function assertPerfBuild(): void {
-  const manifest = new URL('../../dist/.vite/manifest.json', import.meta.url)
+  const manifest = new URL('../../build-info/manifest.json', import.meta.url)
   if (!existsSync(manifest)) {
-    throw new Error('dist がありません。先に pnpm build:perf を実行してください')
+    throw new Error('build-info/manifest.json がありません。先に pnpm build:perf を実行してください')
   }
   if (!readFileSync(manifest, 'utf8').includes('perfHook')) {
     throw new Error(
@@ -2843,7 +2843,7 @@ Expected: 1 件成功（渋谷 × 500・1000 m）。`load.md` の「2D の表示
 
 - [ ] **Step 5: 通常のビルドに戻し、計測のコードが無いことを確かめ直す（M1 の完了条件）**
 
-Run: `pnpm build && (grep -c perfHook dist/.vite/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true) && (grep -l stepTimes dist/assets/*.js || true) && pnpm size`
+Run: `pnpm build && (grep -c perfHook build-info/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true) && (grep -l stepTimes dist/assets/*.js || true) && pnpm size`
 Expected:
 - `0`、何も出ない、何も出ない
 - 初期ロード **427.5 KB**（M0 と同じ）。総量は 702.2 KB から ±0.3 KB 以内
@@ -2948,7 +2948,7 @@ Expected: 1 件成功、`load.{json,md}`。1000 m の読み込みの長いタス
 Run:
 ```bash
 pnpm build && pnpm size | tee .handoff/06-perf/baseline/size.md
-node -e 'const r=require("./dist/.vite/chunk-modules.json");for(const [k,v] of Object.entries(r.workers))console.log(k,v.length,v.filter(x=>x.includes("maplibre")))' | tee .handoff/06-perf/baseline/worker-chunks.txt
+node -e 'const r=require("./build-info/chunk-modules.json");for(const [k,v] of Object.entries(r.workers))console.log(k,v.length,v.filter(x=>x.includes("maplibre")))' | tee .handoff/06-perf/baseline/worker-chunks.txt
 ```
 Expected: 初期ロード 427.5 KB（M1 と同じ）、`ui` 160.0 KB・`index` 20.5 KB 前後。`maplibre-gl-worker-*.js` が `maplibre-gl-shared.mjs` と `maplibre-gl-worker.mjs` を持つ（計画で決めたこと 18）
 
@@ -5738,7 +5738,7 @@ Expected:
 - `water.md` の 2 行（p60 ×1 の 15・16）が `○` か `×`（評価できる視点が無い、が 2 行とも出たら、`cameraClearanceM` が極端〈負・数千 m〉でないか JSON を見る。`getCameraAltitude` が地形の高さを含まない値なら、`judgeWater` に渡す clearance を null にして footprint の条件だけで評価する形に直し、報告に書く）
 - 5 cm 刻みの水面が見える視点で footprint が数千 px 以上
 
-Run: `pnpm build && (grep -c perfHook dist/.vite/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true) && pnpm size`
+Run: `pnpm build && (grep -c perfHook build-info/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true) && pnpm size`
 Expected: `0`、何も出ない、初期ロードは M4 の後の値のまま
 
 - [ ] **Step 8: コミットする**
@@ -5902,7 +5902,7 @@ Expected: すべて成功。`git status --short` が空（format が何も変え
 
 - [ ] **Step 2: 通常のビルドに計測のコードが無いことを確かめる**
 
-Run: `(grep -c perfHook dist/.vite/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true) && (grep -l stepTimes dist/assets/*.js || true) && (grep -l u_debug dist/assets/index-*.js || true)`
+Run: `(grep -c perfHook build-info/manifest.json || true) && (grep -l raintrace-perf dist/assets/*.js || true) && (grep -l stepTimes dist/assets/*.js || true) && (grep -l u_debug dist/assets/index-*.js || true)`
 Expected: `0`、何も出ない、何も出ない、何も出ない（`u_debug` は 3D の水面のチャンク〈`waterLayer-*.js`〉にだけある。シェーダの文字列なので通常のビルドにも入るが、初期ロードには入らない）
 
 - [ ] **Step 3: main との差を確かめる**
