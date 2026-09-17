@@ -8,7 +8,7 @@
 
 **Tech Stack:** 01〜05 の構成（Vite 8.2.2、TypeScript 6、Vitest 4、Playwright 1.62、Biome 2.5）。wrangler 4.127.1（`pages dev`・`pages deploy`）。依存は足さず、`@cloudflare/vite-plugin@1.54.2` を外すだけ
 
-**Spec:** `docs/superpowers/specs/2026-09-17-D-pages-deploy-design.md`（190ece1 でレビュー役が承認。R-D1〜R-D8 は裁定済み、**R-D9 は未裁定**）。あわせて `specs/tech-spec.md` §3・§7.7・§12.3、`docs/superpowers/specs/2026-09-10-00-overview.md` §6（R01-3・R01-8）・§7、spec 01 §4.7・§4.8
+**Spec:** `docs/superpowers/specs/2026-09-17-D-pages-deploy-design.md`（190ece1 でレビュー役が承認。R-D1〜R-D9 は裁定済み。R-D9 は 2026-09-17 にユーザーが「挟まない」と裁定〈environment `production` に承認者を必須にしない、U4 は不要〉）。あわせて `specs/tech-spec.md` §3・§7.7・§12.3、`docs/superpowers/specs/2026-09-10-00-overview.md` §6（R01-3・R01-8）・§7、spec 01 §4.7・§4.8
 
 **前提:** ワークツリー `/home/terapyon/dev/terapyon/raintrace/.claude/worktrees/agent-abb19734b402c33ec`、ブランチ `feat/D-pages-deploy`（05 の最終 `b3a8916` の上に spec D の 3 コミット、head `190ece1`）。PR の base は `feat/05-3d-rendering`（R-D7）。計画そのものは本計画のコミット 1 つ。Task 1 はその次から
 
@@ -28,7 +28,7 @@
   - デプロイの後の検査の再試行: 5 秒おきに 6 回
   - ビルドの情報の置き場所: `build-info/`（gitignore）
   - `pages dev` の compatibility date: `2026-09-04`（`wrangler.jsonc` から移す。wrangler 4.127.1 の workerd が対応する最新の日付）
-- **R-D9（environment `production` の承認者）は未裁定。** 計画はどちらの裁定にも依存しない。承認者の設定は GitHub の画面の設定でリポジトリのファイルに現れないので、ユーザーが「付ける」と裁定したときだけ手作業 U4 で行う
+- **R-D9（environment `production` の承認者）は挟まない（2026-09-17 裁定）。** 承認者の設定は GitHub の画面の設定でリポジトリのファイルに現れないので、実装役はこのファイルには触れない。手作業 U4 は不要（U3 の次は U5）
 - 書式と lint は Biome（2 スペース、シングルクォート、セミコロンなし、行幅 100）。コメントとテスト名は日本語
 - 各 Task の終わりのゲート: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test`。ビルドに触れる Task は加えて `pnpm build && pnpm size && pnpm run licenses`。E2E（Task 3・7）は、コントローラーの許可の後に `pnpm test:e2e`（手元に WebKit が無ければ `pnpm build && pnpm exec playwright test --project=chromium` とし、その旨を記録）
 - 1 Task 1 コミット（Task 1 はコミットしない）。コミットメッセージは日本語で、本文の後に空行を 1 つ置き、末尾に `Co-Authored-By: Claude <モデル名> <noreply@anthropic.com>` を付ける（下の各 Task のコミット例では省略しているが、必ず付ける）。push はしない（ユーザーがまとめて行う）
@@ -1351,8 +1351,10 @@ Expected: 残るのは、移行の経緯として書いた §1.1・§3.1・§7.7
 | R-D6 | `workers.dev`・`pages.dev` の URL | `workers.dev` は Worker ごと消す。`*.pages.dev` は `_headers` で noindex | — | 承認（2026-09-17）: 独自ドメインは索引されるまま |
 | R-D7 | spec D の実装をどこに積むか | 05 の上に積み、05 の直後・06 より前にマージ。06 は M3 か M4 の後に D の上へリベース | — | 承認（2026-09-17） |
 | R-D8 | 記録の更新 | tech-spec・overview の R01-3・R01-8 を実装の中で改める | — | 承認（2026-09-17） |
-| R-D9 | environment `production` に承認者を必須にするか | 推奨しない（ユーザーの判断。材料は spec D §4.7） | レビュー役が論点として追加（2026-09-17） | 未裁定 |
+| R-D9 | environment `production` に承認者を必須にするか | 推奨しない（ユーザーの判断。材料は spec D §4.7） | レビュー役が論点として追加（2026-09-17） | 承認（2026-09-17、挟まない） |
 ```
+
+（この行は Task 6 の実装時点の下書きで、当時 R-D9 は未裁定だった。実際にはこのコミットの中でユーザーが「挟まない」と裁定し、Task 6 のレビュー fix round 1〈0e24bbb..c40bbe4〉で反映済み。上の表は最終の文言に合わせてある）
 
 §7 の表の T14 の行の後に:
 
@@ -1362,7 +1364,7 @@ Expected: 残るのは、移行の経緯として書いた §1.1・§3.1・§7.7
 
 表の直後の段落の末尾に 1 文を足す: `T15 は spec D のブランチ（2026-09-17）で反映した。`
 
-§3 の D の行の「裁定は spec D §9（R-D1〜R-D8）」を「裁定は spec D §9（R-D1〜R-D8。R-D9 は未裁定）」にする。
+§3 の D の行の「裁定は spec D §9（R-D1〜R-D8）」を「裁定は spec D §9（R-D1〜R-D9）」にする（R-D9 は「挟まない」で裁定済み。Task 6 のレビュー fix round 1〈0e24bbb..c40bbe4〉で「R-D9 は未裁定」の文言を外した）。
 
 - [ ] **Step 5: spec 01 と README**
 
@@ -1404,6 +1406,8 @@ cd $W && pnpm format && pnpm lint
 git add specs/tech-spec.md docs/superpowers/specs/2026-09-10-00-overview.md docs/superpowers/specs/2026-09-10-01-foundation-design.md README.md
 git commit -m "配信先の変更を記録に反映する: tech-spec の §1・§3・§4.1・§7.3・§7.7・§12.3・§13.3・§18・§19 を Pages とステージングの廃止に、overview の R01-3・R01-8 に追記し R-D1〜R-D9（R-D9 は未裁定）と T15 を足す。spec 01 の Status に 1 行、README に preview・deploy:production:manual・配信先（spec D §8、R-D8）"
 ```
+
+（実際のコミット 0e24bbb のメッセージは上のとおり「R-D9 は未裁定」を含む。ユーザーの裁定〈挟まない〉はこの直後に出て、Task 6 のレビュー fix round 1〈0e24bbb..c40bbe4〉で記録を直した。過去のコミットメッセージは書き換えない）
 
 ---
 
@@ -1529,7 +1533,7 @@ v* のタグを push。deploy-production が緑であること（U4 を付けた
 - 変更: Task 2〜6 のコミットの要点（1 行ずつ）
 - spec との差異: 決めたこと 4（`deployedHeaders` の単体テスト）、決めたこと 2（`pnpm size` の `dist/` の検査）、決めたこと 5（`PAGES_HOST`）、決めたこと 8（tech-spec の直した節が §8 の表より多い）
 - 確かめ: Task 1 の P1〜P6、E2E の件数、U3 の結果、`pnpm size` の値
-- マージの前後の手作業: U5〜U9 の要約。R-D9 は未裁定
+- マージの前後の手作業: U5〜U9 の要約（U4 は不要。R-D9 は 2026-09-17 に「挟まない」で裁定済み）
 - 06 への影響: §3 の要約
 - 末尾に `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
 
