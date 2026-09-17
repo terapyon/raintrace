@@ -68,7 +68,7 @@
 | U1 | いつでも（Task 1 と並行でよい） | Pages の project を作る。表示された URL（接尾辞の有無）と production branch を知らせる | §4.1、§5.1 の 1 |
 | U2 | U1 の後 | API トークンに Account → Cloudflare Pages → Edit を足す（Workers の権限は残す） | §4.8、§5.1 の 2 |
 | U3 | Task 5 の後（U1・U2 の後） | ワークツリーで手元から `--branch d-trial` に試しに上げ、出力と検査の結果を知らせる | §5.1 の 3 |
-| U4 | R-D9 の裁定の後（「付ける」のときだけ） | GitHub の environment `production` に Required reviewers（ユーザー）を設定する | §4.7、R-D9 |
+| U4 | 不要（R-D9 は挟まない、2026-09-17 裁定） | GitHub の environment `production` に Required reviewers は設定しない | §4.7、R-D9 |
 | U5 | Task 7 の後 | D を push して PR（base `feat/05-3d-rendering`）を作り、`deploy-preview` の検査が緑かを見る | §5.1 の 4 |
 | U6 | 01〜05 のマージの後（06 の M4 の計測の最中を避ける） | D をマージし、`deploy-main` の検査が緑かを見る。Firefox・Safari で `https://main.raintrace.pages.dev/` の地図を見る | §5.1 の 5、§6 の手動 |
 | U7 | U6 の後 | `v*` のタグを push し、`deploy-production` の検査が緑かを見る。`https://raintrace.pages.dev/` を見る | §5.1 の 6 |

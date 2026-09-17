@@ -195,7 +195,7 @@ D と 06（`feat/06-performance`）は、どちらも 05 の上に積まれ、�
   - ブランチ名はジョブの `env` の `PAGES_BRANCH` で組み立て、コマンドは `--branch "${PAGES_BRANCH}"` に統一する。`production` を書くのは `deploy-production` の `env`（`PAGES_BRANCH: production`）だけ。`deploy-preview` は `PAGES_BRANCH: pr-${{ github.event.number }}`、`deploy-main` は `PAGES_BRANCH: main`
   - `deploy-preview` と `deploy-main` のデプロイの直前に、1 行の検査 `[ "$PAGES_BRANCH" != production ]` を置く（一致したら失敗して上げない）
   - `package.json` の `deploy:production`（CI を通らない本番への経路）は **`deploy:production:manual` に改名**し、README に「CI が使えないときの緊急用。通常のリリースは `v*` のタグ」と書く。消さないのは、CI の障害時に本番を出す手段を残すため
-- **未裁定（R-D9、ユーザーの判断）**: GitHub の environment `production` に承認者（ユーザー）を必須にするか。いまは `v*` のタグの push だけが本番への関門
+- **裁定（R-D9、2026-09-17）: 挟まない**。GitHub の environment `production` に承認者（ユーザー）は必須にしない。`v*` のタグの push だけが本番への関門のまま
   - 付ける利点: タグの push の誤り（打ち間違い・古いコミットへのタグ）でも、承認の一手で止められる。本番への経路が CI のジョブ 1 つに集まる
   - 付ける欠点: リリースのたびに GitHub の画面で承認の操作が要る（1 人のリポジトリでは、タグを打った本人が承認するので二重の手間）。承認を待つ間、ジョブが保留になる
   - 付けない場合: タグの push が唯一の関門のまま。上の `PAGES_BRANCH` の守りで、PR と `main` のジョブからの取り違えは防げる
@@ -300,7 +300,7 @@ D と 06（`feat/06-performance`）は、どちらも 05 の上に積まれ、�
 
 ## 9. 裁定が必要な論点
 
-> 裁定（2026-09-17）: R-D1 は変更（ステージングを廃止し、project を 1 つにする。R01-3 の変更）。R-D2 は R-D1 により不要。R-D3〜R-D8 は推奨どおり承認。R-D9（レビューで加えた論点）は未裁定。DNS は Route 53 ではなく value-domain.com（ユーザーの記憶違いを訂正）。本文は裁定を反映済み。
+> 裁定（2026-09-17）: R-D1 は変更（ステージングを廃止し、project を 1 つにする。R01-3 の変更）。R-D2 は R-D1 により不要。R-D3〜R-D8 は推奨どおり承認。R-D9（レビューで加えた論点）は挟まない（承認者を必須にしない）。DNS は Route 53 ではなく value-domain.com（ユーザーの記憶違いを訂正）。本文は裁定を反映済み。
 
 | ID | 論点 | 推奨 | 理由 | 裁定 |
 |---|---|---|---|---|
@@ -312,4 +312,4 @@ D と 06（`feat/06-performance`）は、どちらも 05 の上に積まれ、�
 | R-D6 | `workers.dev`・`pages.dev` の URL を残すか | `workers.dev` は Worker ごと消す（転送は置かない）。`pages.dev` は消せないので残し、`_headers` で `X-Robots-Tag: noindex` を付ける | `workers.dev` は開発者しか使っておらず、残すと古い版が並ぶ。Pages は本番の deployment に noindex を付けない | 承認（2026-09-17）: `*.pages.dev` は noindex、本番の独自ドメインは索引されるまま |
 | R-D7 | この spec の実装をどこに積むか | 05（`b3a8916`）の上に積み、PR の base は `feat/05-3d-rendering`。05 の直後・06 より前にマージし、06 は D の上に載せ替える。06 の計測の最中は D をマージしない | 独自ドメインを 01〜05 の main へのマージ待ちにしない。06 との重なり（`dist/.vite/` の読み手・`.gitignore`・overview の表・tech-spec・`pnpm preview`）は §4.6 のとおり、D は 05 の時点のファイルだけを直し、06 がリベースで合わせる | 承認（2026-09-17）。レビュー（2026-09-17）の指摘で、06 との重なりを 5 点に改め、06 のリベースの時期と直す範囲を §4.6 に書いた |
 | R-D8 | 記録の更新 | tech-spec §3.4・§12.3 などと overview の R01-3・R01-8 を、実装の中で改める（§8） | 配信先と R01-3 の流れの変更を、決定の記録に残す | 承認（2026-09-17） |
-| R-D9 | GitHub の environment `production` に承認者（ユーザー）を必須にするか | 推奨しない（ユーザーの判断に委ねる。利点・欠点は §4.7） | 1 人のリポジトリでは、タグを打った本人が承認することになり手間が二重になる。PR と `main` のジョブからの取り違えは `PAGES_BRANCH` の守りで防げる。一方、タグの打ち間違いを止める一手が欲しいなら付ける価値がある | **未裁定** |
+| R-D9 | GitHub の environment `production` に承認者（ユーザー）を必須にするか | 推奨しない（ユーザーの判断に委ねる。利点・欠点は §4.7） | 1 人のリポジトリでは、タグを打った本人が承認することになり手間が二重になる。PR と `main` のジョブからの取り違えは `PAGES_BRANCH` の守りで防げる。一方、タグの打ち間違いを止める一手が欲しいなら付ける価値がある | 承認（2026-09-17）: 挟まない（推奨どおり） |
