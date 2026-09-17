@@ -178,5 +178,11 @@ export const strings = {
     close: '閉じる',
     notice: '簡易モデルによる参考表示です。実際の浸水・災害を予測するものではありません。',
     showFull: '注意事項の全文',
+    author: '作成者: @terapyon',
+    sourceCode: {
+      label: 'ソースコード: ',
+      linkText: 'GitHub（terapyon/raintrace）',
+      url: 'https://github.com/terapyon/raintrace',
+    },
   },
 } as const
