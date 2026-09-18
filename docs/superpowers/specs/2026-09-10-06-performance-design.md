@@ -86,6 +86,10 @@ M3 と M5 は M1 だけに依存する。M4 は M2・M3 の判定に依存する
 | 浸食（`erode`）のサイズを 6 回の読みの後に読んでいる | M5（Task 27〜28 の軽微 m4） | 読みの前に読んでも値は変わらない見込みだが、順序を直せば読みやすい |
 | 標本の最小のガードが割れる場合（5 件とも `lifted < 2000`）を分けて記録していない | M5（Task 27〜28 の軽微 m5） | この 06 の実行では 判定できず の理由の内訳として吸収されている |
 | `removeWater`／`dispose` が水面が無くても `onWaterDebug(null)` を呼ぶ | Task 26 の軽微（無害） | 呼び出しは無害だが、水面の有無をガードすれば余分な呼び出しを削れる |
+| `fillMatch` のテストが重い | 03 から 06 への引き継ぎ（`.handoff/disclaimer-author` で上限を 120 秒に広げた） | GitHub Actions のランナーでファイル全体が 17〜32 秒かかり、入れ子の窪地が時間切れで落ちた。テストを軽くするか、分ける |
+| `deploy:production:manual` の手順を README に書く | D の締め | 手で本番に出すときの道筋が README に無い |
+| 配信先の URL に対する配信後の確認 | D の締め | `check-deployed-headers.mjs` を配信先の URL に向けて回す（任意。URL ごと） |
+| `.handoff/README.md` の Workers 時代の記述 | D の締め | Cloudflare Workers を前提にした節が残っている。Pages の今の形に書き直す |
 
 ## 3. 計測の道具（R06-5）
 
