@@ -77,6 +77,9 @@ export const strings = {
     radiusError: (maxM: number) => `1〜${maxM} m の範囲で入力してください`,
     rangeSize: '範囲の大きさ',
     rangeSizeValue: (sizeM: number) => `${sizeM} m`,
+    // 1000 m は 1 step の所要時間が基準を超える（tech-spec §14.1）。ユーザー裁定（2026-09-18、M6）:
+    // 選択肢は残し、注意書きを出す
+    rangeSizeHeavyHint: '範囲 1000 m は動作が重くなることがあります。',
   },
   playback: {
     title: '再生',

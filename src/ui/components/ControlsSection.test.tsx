@@ -101,6 +101,15 @@ describe('ControlsSection: 入力の検証（spec 04 §9、R04-6）', () => {
     expect(primary().disabled).toBe(false)
   })
 
+  it('範囲 1000 m を選ぶと注意書きを出す。ほかの大きさでは出ない（ユーザー裁定 2026-09-18、M6）', async () => {
+    const { user } = setup()
+    expect(screen.queryByText(strings.rainfall.rangeSizeHeavyHint)).toBeNull()
+    await user.click(button(strings.rainfall.rangeSizeValue(1000)))
+    expect(screen.getByText(strings.rainfall.rangeSizeHeavyHint)).toBeTruthy()
+    await user.click(button(strings.rainfall.rangeSizeValue(500)))
+    expect(screen.queryByText(strings.rainfall.rangeSizeHeavyHint)).toBeNull()
+  })
+
   it('範囲外の雨量は入力欄にエラーを出し、有効な値だけを設定に保存する', async () => {
     const { user, settings } = setup()
     await replace(user, amount(), '80')

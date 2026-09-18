@@ -1,10 +1,11 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import FormHelperText from '@mui/material/FormHelperText'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useStore } from 'zustand'
 import type { PlaybackSpeed } from '../../shared/protocol'
 import { maxRadiusM, RANGE_SIZES, type RangeSizeM } from '../../state/persistedSettings'
@@ -40,6 +41,7 @@ interface Props {
  * 設定のストアに書く（計画で決めたこと 9）。範囲外の値は入力欄にエラーを出し、開始を押せなくする（spec 04 §9）
  */
 export function ControlsSection({ settings, simulation, hasTerrain, actions, onReload }: Props) {
+  const rangeSizeHintId = useId()
   const sizeM = useStore(settings, (s) => s.area.sizeM)
   const status = useStore(simulation, (s) => s.status)
   const speed = useStore(simulation, (s) => s.speed)
@@ -92,6 +94,7 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
           size="small"
           exclusive
           aria-label={strings.rainfall.rangeSize}
+          aria-describedby={sizeM === 1000 ? rangeSizeHintId : undefined}
           value={sizeM}
           onChange={(_, value: RangeSizeM | null) => {
             if (value !== null) onSizeChange(value)
@@ -103,6 +106,11 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
+        {sizeM === 1000 && (
+          <FormHelperText id={rangeSizeHintId}>
+            {strings.rainfall.rangeSizeHeavyHint}
+          </FormHelperText>
+        )}
       </Box>
       <Typography variant="subtitle2">{strings.playback.title}</Typography>
       <PlaybackControls
