@@ -146,9 +146,12 @@ async function measureWater(
 /**
  * 地図の中心の標高を読めた地形に合わせてから測る（Task 27 のレビュー修正 1 回目の dry run で見つけた）。
  * jumpTo は center・zoom を渡すと terrain.getElevationForLngLatZoom(center, options.zoom) で標高を決める
- * （dev.mjs 22264）。小数のズーム（15.924 など）ではタイルが見つからず 0 m になり、その後のフレームでも
- * 0 m のままだった（実測。渋谷で 0 → 14.88 m は、zoom を渡さない次の jumpTo（tr.tileZoom を使う）で初めて直る）。
- * 読みの途中の揺らしの jumpTo で視点が動かないよう、読みの前に zoom を渡さない jumpTo で合わせる
+ * （dev.mjs 22264）。小数のズーム（15.924 など）では _getOverscaledTileIDFromLngLatZoom（dev.mjs 10549）が
+ * 小数のままタイル ID を作るためタイルが見つからず 0 m になる。View3d.frame の easeTo（View3d.ts:330）は
+ * freezeElevation を渡さないため _finalizeElevation（dev.mjs 22371・22402）が呼ばれず elevationFreeze が
+ * 立ったままになり、_render（同 26181）とタイル読み込み時（同 25066〜25068）の毎フレームの再計算が両方
+ * 止まる（M5 レビュー m1。実アプリではドラッグ・ズームの終わりで handler が戻す〈同 22006〉ので影響しない）。
+ * 残る経路は zoom を渡さない次の jumpTo（tr.tileZoom を使う）だけなので、読みの前にそれを 1 回呼んで合わせる
  */
 async function settleCenterElevation(map: MapLibreMap): Promise<void> {
   map.jumpTo({ bearing: map.getBearing() })

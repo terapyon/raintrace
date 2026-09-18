@@ -1239,13 +1239,15 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 | 地点クリックから 2D の地形表示まで | < 3秒 | 0.71〜0.76 s（綾瀬 1000 m の中央値。Task 16・17 の後） | 基準内（元々基準内。副次効果で同じか短い） |
 | 3D に切り替えてから最初の 3D のフレームまで | < 3秒 | 0.65〜0.70 s（渋谷 500 m の中央値。Task 17a (i)・(ii) の後） | 基準内（元々基準内） |
 | メインスレッドの最長ブロック時間 | < 50ms | 1000 m の読み込みの終わり: 綾瀬 88 → 0 ms、渋谷 86 → 0 ms（Task 16・17）。3D に切り替え（1000 m）: 綾瀬 141 → 0 ms、渋谷 102 → 0 ms（Task 17a (i)・(ii)）。500 m の読み込みも 0 ms。再生中 2D の 53 ms（M2、1 件のみ）は Task 25 の再測定（18 行）で再発せず | 基準内（Task 16・17・17a (i)・(ii) で直した） |
-| 平衡までの時間 | 半径 10m は 60 秒、半径 100m は 5 分 | 半径 10m: **76.8 s**（綾瀬 500 m。渋谷 35.1 s・みなとみらい 2.6 s は基準内）。半径 100m: 500 m の 3 地点とも 300 秒で届かず | **確定: 超過**（Task 25。fill-spill-merge 法の spec を M6・Task 29 で起こす） |
+| 平衡までの時間 | 半径 10m は 60 秒、半径 100m は 5 分 | 半径 10m: **76.8 s**（綾瀬 500 m。渋谷 35.1 s・みなとみらい 2.6 s は基準内）。半径 100m: 500 m の 3 地点とも 300 秒で届かず | **確定: 超過**。**ユーザー裁定（2026-09-18、M6・Task 29）: 許容**。fill-spill-merge 法の別 spec は起こさない（雛形も作らない）。基準の超過は記録として残す |
 | 止まっている間の再描画 | 止まっている間は毎フレーム描き直さない | 2 秒の render の回数: 120 → 0（Task 18。Task 25 の再測定〈500 m・1000 m・3 地点・3 つの雨、18 行〉すべてで 0） | 基準内（Task 18 で直した） |
 | 再生中の割り当て | 定期的な大きな確保をしない | `flowVectors()` の配列を使い回す（Task 14。コードの事実） | 基準内（Task 14 で直した） |
-| バンドル（`ui`・`index`） | §14.2 の予算 | `ui` 160.0 → 151.8 KB（Task 19、−8.2 KB。予算 150 KB になお 1.8 KB 超過）、`index` 21.0 KB（予算 20 KB に 1.0 KB 超過） | 超過（チャンクの予算のみ。パネルの遅延読み込みは M6） |
-| 1000m 四方 | 上の基準をすべて満たすか | M4 で最長ブロック・止まっている間の再描画・再生中の割り当て・fps は基準内になった。なお外れるのは 1 step（参考、段 1〈DEM1A〉の`until=settle`実測で綾瀬 30.80・渋谷 36.00 ms）と平衡（綾瀬 r10 80.2 s、r100 は綾瀬・渋谷とも届かず） | 超過。500 m も平衡の基準を満たさないため、1000 m に固有の問題ではなく fill-spill-merge の対応に集約される部分と、1000 m 固有の 1 step の扱いとがある。1000 m を外すか、注意を出すか、8 ms に届かせる Rust WASM の spec を起こすかはユーザーの裁定に上げる（M6・Task 29） |
+| バンドル（`ui`・`index`） | §14.2 の予算 | `ui` 160.0 → 151.8 KB（Task 19、−8.2 KB。予算 150 KB になお 1.8 KB 超過）、`index` 21.0 KB（予算 20 KB に 1.0 KB 超過） | **ユーザー裁定（2026-09-18、M6・Task 29）**: `ui` のチャンクの予算を 150 KB → 200 KB に引き上げ（§14.2）。151.8 KB の実測は 1.2% の超過で体感に影響しない。CI が検査する初期ロード・総量の上限（§14.2 冒頭の表）は変えない。`index` の 1.0 KB 超過は記録のみで変更しない |
+| 1000m 四方 | 上の基準をすべて満たすか | M4 で最長ブロック・止まっている間の再描画・再生中の割り当て・fps は基準内になった。なお外れるのは 1 step（参考、段 1〈DEM1A〉の`until=settle`実測で綾瀬 30.80・渋谷 36.00 ms）と平衡（綾瀬 r10 80.2 s、r100 は綾瀬・渋谷とも届かず） | **ユーザー裁定（2026-09-18、M6・Task 29）**: 1000 m の選択肢は残す。ただし注意書きを出す（Rust WASM の spec は起こさない）。1 step・平衡の両方が 500 m にも及ぶ問題（fill-spill-merge の対応に集約）と、1000 m 固有の 1 step の重さとが混ざっているため、1000 m だけを外す理由にはならないと判断した。注意書きの文言・UI の実装は Task 30 の範囲。実装が要るかは Task 30 の前にコントローラーへ確認する |
 
 tech-spec §6.3 の条件（500 m・DEM1A）では、1 番目（1 step の中央値・p95）は M4 の後の `until=settle` 実測（Task 25）で基準を満たし、この基準では Rust WASM 移行検討は必須でない。1000 m の 1 step（参考、30.80・36.00 ms）は上の「1000m 四方」の行の裁定にまとめる。2 番目（メインスレッドの最長ブロック時間）は M4 で解消した。
+
+**M6 の追記（2026-09-18、Task 29）**: 05 の記録にあった 1000 m ×10 p85・水面ありの 51.0 fps は、c25be04（Task 9、矢印の既定 10 m・10,000 本）で測った値であり、Task 10 が既定を 20 m（2,500 本）に改めた後は 60.0 fps に戻る。原因は A/B（§5.1・M3）で矢印の symbol の本数と特定した（描画・転送・タイルの組み立ては既定の本数では上限の内）。`probe=water`（Task 26〜28、`docs/perf/2026-09-18-water-probe.md`）は、描かれるタイル 15・16 の可視率・持ち上げ比・ちらつき率を測った。p45・p60 の倍率 1・2 は 15・16 とも合格、**倍率 10 は 15・16 とも不合格**（持ち上げ比 p45 0.9568/0.9682、p60 0.9388/0.9532。基準 0.98。沈み込みの幅は「欠損 − 雑音 〜 欠損」で読み、倍率 10 は 0.020〜0.061（下限でも基準を超える＝不合格）、倍率 5 は 0.011〜0.031 で基準の 0.02 をまたぎ判定できず）。倍率 10 の沈み込みは境界の選び方の問題ではなく水面の描き方（polygonOffset の偏りが倍率に比例しない）の問題で、**ユーザー裁定（2026-09-18）: PoC として許容**する（記録として残し、直すのは後続の spec）。p85 は評価できる視点が 1 つも無く未評価のまま（overview R05-4 は未決、ユーザーの手動確認 1・2 待ち）。p85 でカメラが強調した地形の中に入るのは、`_elevateCameraIfInsideTerrain` が小数のズームで標高を読んで 0 m を返すため（§14.4 の jumpTo の行、M5 レビュー R2）で、ホイールのズームは小数なので実アプリでも起きる。**ユーザー裁定（2026-09-18）: PoC として許容**する（記録として残し、機構の是正は後続の spec）。なお、fps・view の probe と Task 13 の撮影は、中心の標高が 0 m に置かれた視点で撮られた可能性がある（同じ機構が `jumpTo` の中心の標高にも当たる）が、0 m になるのは `jumpTo` に小数のズームを渡した視点だけであり、記録された判定は変わらない（fps は 60.0 の天井に張り付いており、約 15 m の差に対して地面からの高さは 200〜600 m ある）。
 
 計測は `performance.now()` による step 時間の記録を実装に組み込み、統計は**計測用のビルド（`pnpm build:perf`）でだけ**表示する。本番のビルドには計測のコードを入れない（2026-09-17 の裁定 R06-5。実装 spec 06 §3）。
 
@@ -1354,6 +1356,25 @@ tech-spec §6.3 の条件（500 m・DEM1A）では、1 番目（1 step の中央
 - `ui`（Task 19、`RainfallControls` の `TextField` を `FormControl`＋`OutlinedInput` に置き換え）と初期ロードだけが 06 の着手時から動いた。`map`・`maplibre-gl-worker`・`three`・`View3d` は着手時と同じ。`simulation.worker` は 8.8 → 9.0 KB（Task 13a・13b の計測のパラメータと矢印の上限の移行のぶん）、`waterLayer` は 2.1 → 2.6 KB（Task 17a (i)・(ii) の `compileAsync` と区画分割のぶん）で、総量は 702.4 → 695.5 KB（初期ロードの −8.1 KB が主）
 - 通常のビルドで `perfHook` 0、`raintrace-perf` の出力なしを確認（M4 の全 Task 共通）。初期ロード 419.8 KB は M4 完了時点の基準（Task 19 のみ減ってよい例外。以後の Task はこの値を保つ）
 
+**`ui` のチャンクの予算の引き上げ（2026-09-18、ユーザー裁定、M6・Task 29）**: `ui` のチャンクの予算を **150 KB → 200 KB** に引き上げる。理由: Task 19 で 160.0 → 151.8 KB まで削ったが、`TextField` を `OutlinedInput`＋`FormControl` に置き換える以上の手（パネルの遅延読み込みなど）は 06 の「安価」の範囲を超え、151.8 KB は 150 KB の予算に対して 1.2% の超過で体感に影響しない。CI が実際に検査するのは初期ロード・総量の上限（本節冒頭の表。RB-1 で決めた 500 KB・1.2 MB）だけで（`scripts/lib/bundleBudget.mjs`）、チャンクごとの予算は目安（本節の説明のとおり）のため、この引き上げで CI の挙動は変わらない。`map`・`index`・初期ロード・総量の上限は変更しない。
+
+06 完了時点（M6・Task 29、2026-09-18、`pnpm build && pnpm size`）:
+
+| チャンク | 実測 | 予算 |
+|---|---:|---:|
+| `map` | 246.6 KB | 260 KB |
+| `ui` | 151.8 KB | **200 KB**（引き上げ後。Task 19 からの変更なし） |
+| `index` | 21.0 KB（別に rolldown のランタイム 0.4 KB） | 20 KB（超過。記録のみ、M4 から変更なし） |
+| 初期ロードの合計 | 419.8 KB | 500 KB |
+| `maplibre-gl-worker` | 131.8 KB | — |
+| `three` | 126.5 KB | — |
+| `simulation.worker` | 9.0 KB | — |
+| `View3d` | 5.9 KB | — |
+| `waterLayer` | 3.0 KB | — |
+| 総量 | 695.9 KB | 1.2 MB |
+
+- `ui`・`index`・初期ロードは M4 完了時点（Task 19）と同じ。`View3d`（5.8 → 5.9 KB）・`waterLayer`（2.6 → 3.0 KB）・総量（695.5 → 695.9 KB）は M5（Task 26〜28）の `probe=water` の計測用コード（水面のシェーダの判定用 uniform と `setDebug`、`View3d` から `water.setDebug` への配線）のぶん増えた。計測用のコードの分岐自体（シェーダの文字列や配線）は通常のビルドにも入るが、初期ロードには入らない（`waterLayer` は 3D に切り替えたときの動的 import）。`ui` のチャンクの予算の引き上げにより、`ui` は超過なし。通常のビルドで `perfHook` 0、`raintrace-perf`・`u_debug` の出力なしを確認（Task 30 で改めて検査）
+
 ## 14.3 メモリ
 
 500m 四方 / DEM1A（250,000 セル）における主要な配列:
@@ -1373,6 +1394,26 @@ Worker ⇄ メイン:
 ```
 
 1000m 四方（1,000,000 セル）を選択した場合でも約 30MB であり、実用範囲に収まる。
+
+## 14.4 MapLibre 6.6.0 の内部への依存（版を上げるときの確認点）
+
+実装 spec 05・06 で、MapLibre の公開 API の外、または挙動の細部に頼っているもの。`maplibre-gl` の版を上げるときは、各項目を `maplibre-gl-dev.mjs`（Worker とメインで共通する部分は `maplibre-gl-shared-dev.mjs`）で読み直し、E2E と計測（`pnpm perf:fps`）を回す。行番号は 6.6.0 のもの（2026-09-18、M6・Task 29 で 1 件ずつ開いて確認済み。誤りが見つかった行は本節の下に注記）。
+
+| 頼っているもの | 使っている場所 | 本番か計測だけか | 確かめること |
+|---|---|---|---|
+| `map.terrain.tileManager.getRenderableTiles()` と戻り値の `tileID.canonical`（10017 行） | `src/map/view3d/View3d.ts` の `measuredCentreZoom`（毎 render） | 本番 | (c) の判定の実測。有無と形 |
+| `map.painter.context.gl` | `src/map/fpsProbe.ts`・`src/ui/perfWater.ts` | 計測だけ | GL のコンテキストの取り出し（`drawingBufferWidth`・`readPixels`） |
+| `map.painter.context.bindFramebuffer.set(null)`（Context の `bindFramebuffer` プロパティの定義は 16954 行）と `render` イベントの中の `gl.readPixels` | `src/ui/perfWater.ts` | 計測だけ | `render` が `painter.render` の直後に同期で発火し（26187〜26197 行）、その時点で既定のフレームバッファに描き終えていること（合成の前） |
+| 地形が有効な間は `opaquePassCutoff = 0`（19118〜19121 行）になり、`opaquePassEnabledForLayer()`（19081〜19083 行、`currentLayer < opaquePassCutoff`）が常に偽になる。symbol・circle の翻訳（`translucent`）パスの深度は `getDepthModeForSublayer` → `DepthMode.disabled`（19073〜19074 行）で、深度テストなしのまま水面（custom）の上に描かれる。`fill`・`line`・`background`・`raster`・`hillshade`・`color-relief`（`LAYERS_TO_TEXTURES`、22898〜22905 行）はこれに入らず、custom の後の 2 つ目の地形のパス（`RenderToTexture.renderLayer` が RTT にスタックし `drawTerrain` が LEQUAL で描く、22971〜23013 行・`getDepthModeFor3D` は 19078〜19080 行）で描かれる | `src/ui/perfWater.ts` が水の矢印（`arrows=0`、symbol）・範囲の枠（line）・流れの向き（symbol）・最低点（circle）を隠して読む（Task 27 のレビュー I1・I4） | 計測だけ | 判定用の色を覆うレイヤーが変わっていないこと（symbol・circle は深度テストなし、line 等は 2 つ目の地形のパスで LEQUAL。circle は `LAYERS_TO_TEXTURES` に無いため symbol と同じ扱いで、当初の想定〈line・circle が同じ扱い〉は誤りだった） |
+| `jumpTo` に center・zoom を渡すと `terrain.getElevationForLngLatZoom(center, options.zoom)` で中心の標高を決める（22264 行）。小数のズーム（例: 15.924）では `_getOverscaledTileIDFromLngLatZoom`（10549〜10559 行）が `zoom` をそのまま `OverscaledTileID` の `z` に使ってタイル ID を作るため、整数のズームで読み込んだタイルと一致せず 0 m になる。`jumpTo` の末尾の `applyUpdatedTransform`（22450〜22465 行）は常に `_elevateCameraIfInsideTerrain`（22431〜22443 行、22454 行で登録）をカメラにも適用し、同じ `getElevationForLngLatZoom` で `minAltitude` を読むため、小数のズームではここも 0 m になり、カメラが地形の中に入っていても持ち上げない。中心の標高は zoom を渡さない次の `jumpTo`（`tr.tileZoom` を使う。整数）で直るが、`View3d.frame` の `easeTo`（`View3d.ts:330`）は `freezeElevation` オプションを渡さないため `_finalizeElevation`（22371・22402 行）が呼ばれず `elevationFreeze` が立ったままになり、`_render`（26181 行）とタイル読み込み時（25066〜25068 行）の毎フレームの標高の再計算が両方止まる（実アプリではドラッグ・ズームの終わりで handler が `elevationFreeze` を戻す〈22006 行〉ので影響しない） | `src/ui/perfWater.ts` の `settleCenterElevation`（中心の標高）。`placeViewOnLoadedTerrain` を使うほかの計測（fps・view）の視点も同じ影響を受ける。カメラの標高が 0 m のまま持ち上がらない件は p85 の PoC（M5 レビュー R2、ユーザー裁定 5〈2026-09-18〉）で、ホイールのズームは小数なので実アプリでも起きる | 計測だけ（中心の標高）／本番にも影響（カメラの標高。ただし実アプリでは operation の終わりに `elevationFreeze` が戻る） | 中心の標高が 0 m に置かれるか（直っていれば `settleCenterElevation` は何もしない）。カメラが地形の中に入ったまま持ち上がらないままか |
+| `Map.setTerrain` の先頭の `style._checkLoaded()`（25027〜25028 行）と、喪失の `_contextLost` が `style = null` にしつつ `map.terrain` を残すこと（23170〜23189 行） | `View3d.afterRender`・`View3d.dispose` の `isLoaded()` の守り | 本番 | 読み込み中・喪失の間の例外の種類 |
+| 3D の地形の喪失からの復帰で、失ったコンテキストの GL 資源を触る警告（175〜258 件） | `tests/e2e/view3d.spec.ts` の喪失のテストの許容（400 件未満） | E2E | 警告が消えたら許容を外す |
+| `CanvasSource` の `play()`（`_playing` を立てて `triggerRepaint`）と `pause()`（`_playing` の間に `prepare()` で `texture.update` してから下ろす）（4601〜4609・4649・4672〜4673 行） | `src/map/WaterOverlay.ts` の `uploadCanvasSource`（06 の Task 18） | 本番 | `pause()` が転送すること、`hasTransition()` が `_playing` を返すこと |
+| `pause()` → `prepare()` → `Texture.update`（`maplibre-gl-shared-dev.mjs` 16852〜16905 行）が MapLibre の render パスの外（アプリの rAF の中）で走ること。`Texture.update` は現在アクティブなユニットに `gl.bindTexture(TEXTURE_2D, …)` で直に bind し、pixel-store の値を Context のキャッシュ済みの setter で設定して既定値に戻すだけで、フレームバッファ・viewport・program には触れない | `src/map/WaterOverlay.ts` の `uploadCanvasSource`（06 の Task 18） | 本番 | 安全な理由: MapLibre の `Texture.bind` は常に直に bind し直す（`maplibre-gl-shared-dev.mjs` 16924〜16928 行）ので MapLibre 側に古い bind のキャッシュが残らない。three.js の水面のレンダラーは毎 render の前に `resetState()` を呼ぶ（`src/renderer/waterLayer.ts` 約 381 行）。版を上げたら `Texture.update`・`Texture.bind` のこの前提が変わっていないか確かめる |
+| `Style.hasTransition()` が、再生中の canvas ソースがあると真になり `idle` が来ないこと | 計測の待ち（`areTilesLoaded()` を使い `idle` を待たない） | 計測だけ | — |
+| `map._camera.transform`（23231 行。6.6.0 の `Map` には `transform` の getter が無い）の `getCameraAltitude()`（9564〜9565 行）・`getCameraLngLat()`・`elevation` と `map.queryTerrainElevation`（→ `getElevation`、10306〜10307 行） | `src/ui/perfWater.ts` のカメラと地面の差・読みごとのカメラ | 計測だけ | 高さの基準（どちらも海面から・垂直強調を含む。dev.mjs で確認済み） |
+
+**確認で見つかった食い違い（2026-09-18）**: 計画の下書きは「線・円のレイヤーは custom の後の 2 つ目の地形のパス（22979〜23000 行）で LEQUAL で描かれる」としていたが、`LAYERS_TO_TEXTURES`（22898〜22905 行）に `circle` は無い。circle（最低点の marker）は symbol（矢印）と同じく `getDepthModeForSublayer` 経由で深度テストなし（`DepthMode.disabled`）のまま直接描かれ、line（範囲の枠）だけが RTT の 2 つ目の地形のパスで LEQUAL になる。上の表は line だけを 2 つ目の地形のパスに残し、circle は symbol と同列にして修正した（挙動の実害は無い。`perfWater.ts` は Task 27 の時点ですでに symbol・line・circle の 3 種とも隠しており、深度テストの有無で読みが変わる心配はしていなかった）。`src/renderer/waterLayer.ts` の `resetState()` の行番号も、計画の下書きの「約 357 行」から実際の「約 381 行」に直した（Task 26〜28 でファイルが伸びたため）。
 
 ---
 
