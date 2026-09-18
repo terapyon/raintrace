@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEPTH_TOLERANCE_M as DEPTH_TOLERANCE_M_TERRAIN } from '../simulation/terrain/analyzeDepressions'
 import { makeDepression } from '../simulation/testing/terrainGrids.test-support'
 import {
+  DEPRESSION_BANDS,
   DEPTH_TOLERANCE_M,
   depressionLegendCss,
   depressionRgba,
@@ -109,5 +110,97 @@ describe('interpolateStops（標高と水深の配色で共有する線形補間
     expect(interpolateStops(stops, 1)).toEqual([200, 200, 250])
     expect(interpolateStops(stops, -1)).toEqual([0, 0, 0])
     expect(interpolateStops(stops, 2)).toEqual([200, 200, 250])
+  })
+})
+
+describe('RGBA の組み立ては、配列を作らない版でも旧版とビット単位で同じ（spec 06 §5.2）', () => {
+  /** 決まった種の擬似乱数（mulberry32） */
+  function random(seed: number): () => number {
+    let a = seed
+    return () => {
+      a |= 0
+      a = (a + 0x6d2b79f5) | 0
+      let t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  /** 置き換える前の elevationRgba（06 の Task 16 の前の colormap.ts の写し） */
+  function referenceElevationRgba(
+    elevation: Float32Array,
+    validMask: Uint8Array,
+    min: number,
+    max: number,
+  ): Uint8ClampedArray {
+    const rgba = new Uint8ClampedArray(elevation.length * 4)
+    const span = max - min
+    for (let i = 0; i < elevation.length; i++) {
+      if (validMask[i] !== 1) continue
+      const [r, g, b] = elevationColor(span > 0 ? ((elevation[i] ?? min) - min) / span : 0)
+      rgba.set([r, g, b, 200], i * 4)
+    }
+    return rgba
+  }
+
+  it('elevationRgba: 無効セル・範囲の外・NaN・最低と最高が同じ場合を含めて一致する', () => {
+    const next = random(7)
+    const n = 4096
+    const elevation = new Float32Array(n)
+    const validMask = new Uint8Array(n)
+    for (let i = 0; i < n; i++) {
+      elevation[i] = next() * 40 - 5
+      validMask[i] = next() < 0.1 ? 0 : 1
+    }
+    elevation[3] = Number.NaN
+    for (const [min, max] of [
+      [-2, 30],
+      [5, 5],
+      [10, 0],
+    ] as const) {
+      expect(Array.from(elevationRgba(elevation, validMask, min, max))).toEqual(
+        Array.from(referenceElevationRgba(elevation, validMask, min, max)),
+      )
+    }
+  })
+
+  /** 置き換える前の depressionRgba（06 の Task 16 の前の colormap.ts の写し） */
+  function referenceDepressionRgba(
+    fill: Float32Array,
+    elevation: Float32Array,
+    labels: Int32Array,
+    depressions: Parameters<typeof depressionRgba>[3],
+  ): Uint8ClampedArray {
+    const rgba = new Uint8ClampedArray(fill.length * 4)
+    for (let i = 0; i < fill.length; i++) {
+      const label = labels[i] ?? 0
+      if (label === 0 || !depressions[label - 1]?.significant) continue
+      const depth = (fill[i] ?? 0) - (elevation[i] ?? 0)
+      if (depth <= 0) continue
+      const color = DEPRESSION_BANDS[depthBand(depth)] ?? [0, 0, 0]
+      rgba.set([color[0], color[1], color[2], 220], i * 4)
+    }
+    return rgba
+  }
+
+  it('depressionRgba: 表示対象・対象外・深さ 0 以下・最も深い帯を含めて一致する', () => {
+    const next = random(11)
+    const n = 2048
+    const fill = new Float32Array(n)
+    const elevation = new Float32Array(n)
+    const labels = new Int32Array(n)
+    for (let i = 0; i < n; i++) {
+      elevation[i] = next() * 3
+      fill[i] = (elevation[i] ?? 0) + (next() < 0.2 ? -0.01 : next() * 0.6)
+      labels[i] = Math.floor(next() * 4)
+    }
+    const depressions = [
+      makeDepression({ id: 1, significant: true }),
+      makeDepression({ id: 2, significant: false }),
+      makeDepression({ id: 3, significant: true }),
+    ]
+    expect(Array.from(depressionRgba(fill, elevation, labels, depressions))).toEqual(
+      Array.from(referenceDepressionRgba(fill, elevation, labels, depressions)),
+    )
   })
 })

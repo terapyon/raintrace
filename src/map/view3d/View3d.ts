@@ -11,8 +11,8 @@ import type { DrawnTileZoom } from '../../dem/tileZoom'
 import type { WaterLayer, WaterLayerOptions } from '../../renderer/waterLayer'
 import type { TerrainPayload } from '../../shared/protocol'
 import type { Basemap } from '../basemapStyle'
+import { beforeLayerId } from '../layerIds'
 import type { MapController } from '../MapController'
-import { TERRAIN_LAYER_IDS } from '../TerrainOverlay'
 import { type WaterPalette, waterLutSpec } from '../waterColormap'
 import {
   boundaryDecision,
@@ -68,6 +68,11 @@ export class View3d {
   private readonly marks = { mapZoom: '', mapPitch: '', drawnTileZoom: '' }
   /** 水面を作った回数（E2E の印 data-water-builds。計画で決めたこと 21） */
   private waterBuilds = 0
+  /**
+   * 水面のすべての区画を初めて描いた回数（E2E・計測の印 data-water-ready）。水面は作った後、シェーダのリンクを
+   * 待ち、区画を数フレームに分けて見せる（spec 06 §5.2、Task 17a）ので、「水面が見えた」はこちらで待つ
+   */
+  private waterShown = 0
   private readonly onRender = (): void => this.afterRender()
   private readonly onMoveEnd = (): void => this.afterMove()
   /**
@@ -78,6 +83,8 @@ export class View3d {
   private readonly onContextLost = (): void => {
     this.water?.dispose()
     this.water = null
+    // removeWater と同じく、計測の受け口に水面が無くなったことを伝える（着手前の確かめ N14）
+    this.options.onWaterDebug?.(null)
   }
 
   constructor(controller: MapController, init: View3dInit) {
@@ -173,9 +180,13 @@ export class View3d {
       // コンテキスト喪失・ベースマップの切り替えの間（スタイルが無い、または読み込み中）は地形を外さない。
       // MapLibre 6.6.0 の Map.setTerrain は先頭で this.style._checkLoaded() を呼び、喪失の間（style = null）は
       // TypeError、読み込み中は Style is not done loading. を投げる（喪失でも map.terrain は残るので
-      // getTerrain() は地形を返す）。次の style.load が setTerrain(stylesheet.terrain ?? null) で地形を外し、
-      // 新しいスタイルには 3D のソースも hillshade も無い。下の購読の解除・水面・タイルの生成の後始末は
-      // スタイルに依らないので、ここで飛ばさない（横断レビュー m4。R1 と同じ isLoaded）
+      // getTerrain() は地形を返す）。ベースマップの切り替えなら、次の style.load が
+      // setTerrain(stylesheet.terrain ?? null) で地形を外し、新しいスタイルには 3D のソースも hillshade も無い。
+      // コンテキスト喪失ではそうならない: 復帰は Style.serialize() を setStyle し直し、その中に terrain と
+      // DEM のソース・hillshade が入る（dev.mjs 24926〜24929・14950・14968）ので、喪失の間に dispose すると、
+      // 復帰の後に後始末済みのタイルの生成につながった地形が戻る。本番では dispose は MapView を外すとき
+      // （map.remove() と一緒）にしか呼ばれないので、この経路には入らない（06 の M0、05 の最終の再レビューの軽微 1）。
+      // 下の購読の解除・水面・タイルの生成の後始末はスタイルに依らないので、ここで飛ばさない（横断レビュー m4。R1 と同じ isLoaded）
       if (this.controller.isLoaded()) this.terrain3d.hide()
       // 3D で傾けた地図を戻す（Task 4 のレビューの積み残し）。dispose は 3D をやめるとき・外すときにだけ
       // 呼ばれる（唯一の呼び出し元は View3dSession.attach の後始末）。コンテキスト喪失では呼ばれない
@@ -209,7 +220,8 @@ export class View3d {
     if (this.terrain !== null) this.terrain3d.setRange(this.ensureRange())
     this.terrain3d.show({
       hillshade: hillshadeEnabled(this.options.hillshade, this.basemap),
-      beforeId: this.hillshadeBeforeId(),
+      // hillshade は 04 の重ね描き（標高の色分け）の下、ベースマップの上に置く
+      beforeId: this.beforeId(VIEW3D_LAYER_IDS.hillshade),
     })
     this.setRendering('3d')
     this.ensureWater()
@@ -228,12 +240,10 @@ export class View3d {
     this.onRendering(rendering)
   }
 
-  /** hillshade は 04 の重ね描き（標高の色分け）の下、ベースマップの上に置く */
-  private hillshadeBeforeId(): string | undefined {
+  /** id を重ね描きの並び（OVERLAY_LAYER_ORDER）どおりに置くための beforeId（地形の重ね描きは後から足されうる） */
+  private beforeId(id: string): string | undefined {
     const { map } = this.controller
-    return map.getLayer(TERRAIN_LAYER_IDS.elevation) !== undefined
-      ? TERRAIN_LAYER_IDS.elevation
-      : undefined
+    return beforeLayerId(id, (other) => map.getLayer(other) !== undefined)
   }
 
   /** 水面の Custom Layer を、無ければ足す。three は初めて要るときに動的 import で読む（spec 05 §3.8） */
@@ -275,17 +285,23 @@ export class View3d {
       elevation: range.elevation,
       lut: waterLutSpec(this.palette),
       exaggeration: this.exaggeration,
+      depthUploadEvery: this.options.depthUploadEvery ?? 1,
       onRenderTime: this.options.onRenderTime,
+      onShown: () => {
+        // 作り直しの後に古い層から届いても数えない（dispose の後の render は来ないが、念のため）
+        if (this.water !== water) return
+        this.waterShown++
+        map.getContainer().dataset.waterReady = String(this.waterShown)
+      },
     })
     water.setWater(this.depth)
     // メッシュ（1000 m で約 212 万枚、index 25 MB）とテクスチャの作成の時間。GPU への転送（最初の texSubImage2D 等）は
     // 別で、Task 9 は計測の窓（先頭 1 秒を捨てる）の外に落ちるため測っていない（推測では埋めていない）
     this.options.onWaterBuildTime?.(performance.now() - start)
     // 04 の重ね描き（標高・窪地・2D の水深）の上、範囲の枠と矢印の下に置く（矢印は水面の後。spec 05 §3.3）
-    const before =
-      map.getLayer(TERRAIN_LAYER_IDS.outline) !== undefined ? TERRAIN_LAYER_IDS.outline : undefined
-    map.addLayer(water.layer, before)
+    map.addLayer(water.layer, this.beforeId(VIEW3D_LAYER_IDS.water))
     this.water = water
+    this.options.onWaterDebug?.((debug) => water.setDebug(debug))
     this.waterBuilds++
     map.getContainer().dataset.waterBuilds = String(this.waterBuilds)
   }
@@ -296,6 +312,7 @@ export class View3d {
     if (map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) map.removeLayer(VIEW3D_LAYER_IDS.water)
     this.water?.dispose()
     this.water = null
+    this.options.onWaterDebug?.(null)
   }
 
   /** 3D の視点（spec 05 §3.4、計画で決めたこと 4）: 範囲を中心に pitch 60、ズームは zoomFor3dView */

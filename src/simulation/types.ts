@@ -62,6 +62,10 @@ export interface SimulationEngine {
   waterDepth(): Float64Array
   /** 越流イベントの判定に使う窪地（実装 spec 02 の地形解析の結果） */
   setDepressions(list: { id: number; pitIndex: number; spillElevation: number }[]): void
-  /** 現在の状態から計算した、各セルの流出のベクトル（水の流れの矢印用） */
+  /**
+   * 現在の状態から計算した、各セルの流出のベクトル（水の流れの矢印用）。
+   * 戻り値の配列はエンジンが使い回し、次の flowVectors()・loadTerrain で上書きされる。呼び出し側はすぐに読み切る
+   * （Worker の SimulationRunner.arrowsFor が thinFlowArrows で読む。spec 06 §5.2）
+   */
   flowVectors(): { x: Float32Array; y: Float32Array }
 }

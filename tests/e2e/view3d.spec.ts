@@ -18,6 +18,10 @@ const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 
 const mapElement = (page: Page): Locator => page.locator('[data-map-loaded="true"]')
 
+/** 水面のすべての区画を描いた回数（data-water-ready。View3d。spec 06 §5.2、Task 17a） */
+const readyCount = async (element: Locator): Promise<number> =>
+  Number(await element.getAttribute('data-water-ready'))
+
 const layersOf = async (element: Locator, name: string): Promise<string[]> =>
   (await element.getAttribute(name))?.split(',') ?? []
 
@@ -142,6 +146,21 @@ test.describe('3D の表示（spec 05 §5）', () => {
       { timeout: 30_000 },
     )
     expect(requested.some((url) => /\/assets\/three-/.test(url))).toBe(true)
+    // 重なり順: hillshade が一番下、水面は 2D の水深の上・範囲の枠の下（spec 05 §3.3・§3.6、spec 06 Task 17）
+    await expect(mapEl).toHaveAttribute(
+      'data-overlay-order',
+      [
+        VIEW3D_LAYER_IDS.hillshade,
+        TERRAIN_LAYER_IDS.elevation,
+        TERRAIN_LAYER_IDS.depressions,
+        WATER_LAYER_IDS.water,
+        VIEW3D_LAYER_IDS.water,
+        TERRAIN_LAYER_IDS.outline,
+        TERRAIN_LAYER_IDS.flow,
+        WATER_LAYER_IDS.arrows,
+        TERRAIN_LAYER_IDS.markers,
+      ].join(','),
+    )
     const visible3d = (await mapEl.getAttribute('data-visible-overlay-layers'))?.split(',') ?? []
     expect(visible3d).not.toContain(WATER_LAYER_IDS.water)
     expect(visible3d).toContain(WATER_LAYER_IDS.arrows)
@@ -201,6 +220,9 @@ test.describe('3D の表示（spec 05 §5）', () => {
         { timeout: 30_000 },
       )
       .toBeGreaterThan(50_000)
+    // 水面はシェーダのリンクを待ち、区画を数フレームに分けて見せる（spec 06 §5.2、Task 17a）。すべての区画を
+    // 描いた印（data-water-ready）を待ってから撮る（Task 17a のレビュー R1）
+    await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
 
     const after = waterColoredFraction(decodePng(await page.screenshot({ clip })))
     // 実測（本タスク、3 回）: before は 0、after は 0.855〜0.859。シェーダを discard させると after も 0 になる
@@ -262,6 +284,9 @@ test.describe('3D の表示（spec 05 §5）', () => {
       { timeout: 30_000 },
     )
     const builds = Number(await mapEl.getAttribute('data-water-builds'))
+    // 作り直しの前の水面を描き終えてから数える（描き終える前に数えると、前の水面の印で下の待ちが通ってしまう）
+    await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
+    const ready = await readyCount(mapEl)
     await page.getByRole('button', { name: strings.map.basemaps.photo }).click()
     await expect(mapEl).toHaveAttribute('data-basemap', 'photo')
     // hillshade は写真では付けない（hillshadeEnabled の auto）が、3D 自体と水面は戻る
@@ -273,11 +298,18 @@ test.describe('3D の表示（spec 05 §5）', () => {
     await expect
       .poll(async () => Number(await mapEl.getAttribute('data-water-builds')))
       .toBeGreaterThan(builds)
+    // 作り直した水面のすべての区画が描かれる（Task 17a）
+    await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThan(ready)
     await expect(mapEl).toHaveAttribute(
       'data-visible-overlay-layers',
       new RegExp(VIEW3D_LAYER_IDS.water),
       { timeout: 30_000 },
     )
+    // 上の hillshade の無さは、スタイルの読み込み中の空のレイヤーの一覧でも通ってしまう。水面が作り直された
+    // （restore が済んだ）後の一覧で、hillshade が足し直されていないことを確かめ直す（05 の最終の再レビューの軽微 2）
+    const restoredLayers = await mapEl.getAttribute('data-overlay-layers')
+    expect(restoredLayers).toMatch(new RegExp(VIEW3D_LAYER_IDS.water))
+    expect(restoredLayers).not.toMatch(new RegExp(VIEW3D_LAYER_IDS.hillshade))
     await page.getByRole('button', { name: strings.map.basemaps.pale }).click()
     await expect(mapEl).toHaveAttribute('data-basemap', 'pale')
     await expect(mapEl).toHaveAttribute(
@@ -304,6 +336,9 @@ test.describe('3D の表示（spec 05 §5）', () => {
       { timeout: 30_000 },
     )
     const builds = Number(await mapEl.getAttribute('data-water-builds'))
+    // 作り直しの前の水面を描き終えてから数える（描き終える前に数えると、前の水面の印で下の待ちが通ってしまう）
+    await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
+    const ready = await readyCount(mapEl)
     // WEBGL_lose_context で失わせ、1 秒後に同じ拡張で戻す。喪失の間は render が来ず、render で書く印は凍るので
     // （着手前の確かめ P9）、喪失と復帰はブラウザの webglcontextlost・webglcontextrestored で待つ
     const events = await page.evaluate(async () => {
@@ -335,6 +370,7 @@ test.describe('3D の表示（spec 05 §5）', () => {
     await expect
       .poll(async () => Number(await mapEl.getAttribute('data-water-builds')), { timeout: 30_000 })
       .toBeGreaterThan(builds)
+    await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThan(ready)
     await expect(mapEl).toHaveAttribute(
       'data-visible-overlay-layers',
       new RegExp(VIEW3D_LAYER_IDS.water),

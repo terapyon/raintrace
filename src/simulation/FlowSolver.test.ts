@@ -3,7 +3,9 @@ import { FLOW_THRESHOLD_M } from './constants.ts'
 import {
   computeFlowVectors,
   createScratch,
+  edgeOutflowCandidates,
   FLOW_K,
+  interiorOutflowCandidates,
   solveStep,
   type TerrainArrays,
 } from './FlowSolver.ts'
@@ -109,5 +111,83 @@ describe('computeFlowVectors（spec 03 §3.9）', () => {
     expect(v.x[6]).toBe(0)
     expect(v.y[8]).toBe(0)
     expect(Array.from(w)).toEqual(Array.from(before))
+  })
+
+  it('出力の配列を渡すと、それに書いて返す。前の値は 0 に戻す（使い回し。spec 06 §5.2）', () => {
+    const t = flat(5, 3)
+    for (let i = 0; i < 15; i++) t.elevation[i] = 4 - (i % 5)
+    const w = new Float64Array(15)
+    w[7] = 0.1
+    const out = { x: new Float32Array(15).fill(9), y: new Float32Array(15).fill(9) }
+    const v = computeFlowVectors(t, w, { x0: 0, y0: 0, x1: 5, y1: 3 }, createScratch(), out)
+    expect(v).toBe(out)
+    const fresh = computeFlowVectors(t, w, { x0: 0, y0: 0, x1: 5, y1: 3 }, createScratch())
+    expect(Array.from(v.x)).toEqual(Array.from(fresh.x))
+    expect(Array.from(v.y)).toEqual(Array.from(fresh.y))
+  })
+
+  it('出力の配列の大きさが合わなければ、新しく確保する', () => {
+    const w = new Float64Array(9)
+    const out = { x: new Float32Array(4), y: new Float32Array(4) }
+    const v = computeFlowVectors(
+      flat(3, 3),
+      w,
+      { x0: 0, y0: 0, x1: 3, y1: 3 },
+      createScratch(),
+      out,
+    )
+    expect(v).not.toBe(out)
+    expect(v.x.length).toBe(9)
+  })
+})
+
+describe('内側のセルの近傍の添字（03 の軽微 8、spec 06 §5.2）', () => {
+  /** 決まった種の擬似乱数（mulberry32） */
+  function random(seed: number): () => number {
+    let a = seed
+    return () => {
+      a |= 0
+      a = (a + 0x6d2b79f5) | 0
+      let t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  it('内側のすべてのセルで、端の版と g・近傍・合計がビット単位で同じ（無効セルと乾いた近傍を含む）', () => {
+    const next = random(42)
+    const width = 13
+    const height = 9
+    const t = flat(width, height)
+    const w = new Float64Array(width * height)
+    for (let i = 0; i < width * height; i++) {
+      t.elevation[i] = next() * 2
+      t.validMask[i] = next() < 0.15 ? 0 : 1
+      w[i] = next() < 0.3 ? 0 : next() * 0.05
+    }
+    const edge = createScratch()
+    const interior = createScratch()
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const i = y * width + x
+        const a = edgeOutflowCandidates(t, w, x, y, i, edge)
+        const b = interiorOutflowCandidates(t, w, i, interior)
+        expect(Object.is(a, b)).toBe(true)
+        expect(Array.from(interior.g)).toEqual(Array.from(edge.g))
+        expect(Array.from(interior.nb)).toEqual(Array.from(edge.nb))
+      }
+    }
+  })
+
+  it('幅が変わったら添字の差を作り直す', () => {
+    const s = createScratch()
+    const a = flat(5, 5)
+    interiorOutflowCandidates(a, new Float64Array(25), 12, s)
+    expect(s.offsetsWidth).toBe(5)
+    expect(Array.from(s.offsets)).toEqual([-6, -5, -4, -1, 1, 4, 5, 6])
+    const b = flat(7, 3)
+    interiorOutflowCandidates(b, new Float64Array(21), 8, s)
+    expect(s.offsetsWidth).toBe(7)
+    expect(Array.from(s.offsets)).toEqual([-8, -7, -6, -1, 1, 6, 7, 8])
   })
 })

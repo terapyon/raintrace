@@ -25,7 +25,7 @@ export interface FpsResult extends FrameStats {
   warmupMs: number
   /**
    * 水面の render の CPU の時間。これを呼ぶのは水面の Custom Layer（呼び出し元は Task 8 で入った。
-   * Task 9 の実測は 0.149〜0.416 ms）。水面が無効などでサンプルが 1 つも無ければ null（0 ms ではなく「未計測」）
+   * Task 9 の実測は条件ごとの中央値で 0.149〜0.416 ms、ランごとの値は 0.137〜0.463 ms）。水面が無効などでサンプルが 1 つも無ければ null（0 ms ではなく「未計測」）
    */
   renderCpuMeanMs: number | null
   renderCpuP95Ms: number | null
@@ -39,6 +39,11 @@ export interface FpsResult extends FrameStats {
   drawnTileZoom: string
   devicePixelRatio: number
   canvas: [number, number]
+  /**
+   * GPU の時間を測る拡張（EXT_disjoint_timer_query_webgl2）を使えるか（spec 06 §4.2・§5.1。計画で決めたこと 13）。
+   * 使えるかだけを記録し、使う計測は M3 で使えると分かった場合に計画し直す
+   */
+  gpuTimerQuery: boolean
 }
 
 export function rendererName(gl: WebGL2RenderingContext): string {
@@ -111,5 +116,6 @@ export async function runFpsProbe(
     drawnTileZoom: map.getContainer().dataset.drawnTileZoom ?? '',
     devicePixelRatio: window.devicePixelRatio,
     canvas: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+    gpuTimerQuery: gl.getExtension('EXT_disjoint_timer_query_webgl2') !== null,
   }
 }

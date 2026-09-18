@@ -48,10 +48,18 @@ export interface Scratch {
   g: Float64Array
   /** 各近傍のセル番号。仮想セル（グリッドの外・無効セル）は −1 */
   nb: Int32Array
+  /** 内側のセルの 8 近傍の添字の差（NEIGHBOR_DY × 幅 + NEIGHBOR_DX）。offsetsWidth の幅で作った */
+  offsets: Int32Array
+  offsetsWidth: number
 }
 
 export function createScratch(): Scratch {
-  return { g: new Float64Array(8), nb: new Int32Array(8) }
+  return {
+    g: new Float64Array(8),
+    nb: new Int32Array(8),
+    offsets: new Int32Array(8),
+    offsetsWidth: -1,
+  }
 }
 
 export interface StepFlow {
@@ -63,9 +71,26 @@ export interface StepFlow {
 
 /**
  * セル i（列 x、行 y）から各近傍への流量の候補 g_ij を scratch に書き、合計 G_i を返す。
- * グリッドの外と無効セルは、標高が i と同じで水深 0 の仮想セルとして扱う（§3.3）
+ * グリッドの外と無効セルは、標高が i と同じで水深 0 の仮想セルとして扱う（§3.3）。
+ * 上下左右の端でないセルは、近傍が必ずグリッドの中なので、範囲の判定を省いて添字の足し算で引く
+ * （03 の軽微 8。演算の順は同じなので結果はビット単位で同じ。FlowSolver.test.ts が突き合わせる）
  */
 function outflowCandidates(
+  t: TerrainArrays,
+  w: Float64Array,
+  x: number,
+  y: number,
+  i: number,
+  s: Scratch,
+): number {
+  if (x > 0 && y > 0 && x < t.width - 1 && y < t.height - 1) {
+    return interiorOutflowCandidates(t, w, i, s)
+  }
+  return edgeOutflowCandidates(t, w, x, y, i, s)
+}
+
+/** 端のセルを含む、どのセルでも使える版（範囲の判定つき） */
+export function edgeOutflowCandidates(
   t: TerrainArrays,
   w: Float64Array,
   x: number,
@@ -88,6 +113,39 @@ function outflowCandidates(
         j = c
         hj = elevation[c] + w[c]
       }
+    }
+    const dh = hi - hj
+    const gk = dh > FLOW_THRESHOLD_M ? FLOW_K * NEIGHBOR_WEIGHT[k] * dh : 0
+    s.nb[k] = j
+    s.g[k] = gk
+    sum += gk
+  }
+  return sum
+}
+
+/** 内側のセル（1 ≤ x < 幅 − 1、1 ≤ y < 高さ − 1）だけに使う版 */
+export function interiorOutflowCandidates(
+  t: TerrainArrays,
+  w: Float64Array,
+  i: number,
+  s: Scratch,
+): number {
+  const { width, elevation, validMask } = t
+  if (s.offsetsWidth !== width) {
+    for (let k = 0; k < 8; k++) s.offsets[k] = NEIGHBOR_DY[k] * width + NEIGHBOR_DX[k]
+    s.offsetsWidth = width
+  }
+  const { offsets } = s
+  const zi = elevation[i]
+  const hi = zi + w[i]
+  let sum = 0
+  for (let k = 0; k < 8; k++) {
+    const c = i + offsets[k]
+    let j = -1
+    let hj = zi
+    if (validMask[c] !== 0) {
+      j = c
+      hj = elevation[c] + w[c]
     }
     const dh = hi - hj
     const gk = dh > FLOW_THRESHOLD_M ? FLOW_K * NEIGHBOR_WEIGHT[k] * dh : 0
@@ -155,19 +213,38 @@ export function solveStep(
   return { outflowDepth, flowed }
 }
 
+/** 流れのベクトル（x は東が正、y は南が正。m／step） */
+export interface FlowVectors {
+  x: Float32Array
+  y: Float32Array
+}
+
 /**
  * 現在の W に §3.2 の式を当てはめたときの各セルの流出を、流出先の方向の単位ベクトルで
- * 重み付けして足したもの（m／step）。水は動かさない。濡れていないセルは 0
+ * 重み付けして足したもの（m／step）。水は動かさない。濡れていないセルは 0。
+ * out を渡すと（大きさが合えば）それを 0 で埋めて書き、返す。1000 m で 2 × 1031² × 4 バイト = 8.5 MB を
+ * 矢印の計算のたび（最短 100 ms ごと）に確保しないため（spec 06 §5.2）
  */
 export function computeFlowVectors(
   t: TerrainArrays,
   w: Float64Array,
   win: ScanWindow,
   s: Scratch,
-): { x: Float32Array; y: Float32Array } {
+  out?: FlowVectors,
+): FlowVectors {
   const { width, height } = t
-  const vx = new Float32Array(width * height)
-  const vy = new Float32Array(width * height)
+  const n = width * height
+  let vx: Float32Array
+  let vy: Float32Array
+  if (out !== undefined && out.x.length === n && out.y.length === n) {
+    vx = out.x
+    vy = out.y
+    vx.fill(0)
+    vy.fill(0)
+  } else {
+    vx = new Float32Array(n)
+    vy = new Float32Array(n)
+  }
   const { g } = s
   for (let y = win.y0; y < win.y1; y++) {
     for (let x = win.x0; x < win.x1; x++) {
@@ -188,5 +265,5 @@ export function computeFlowVectors(
       vy[i] = sy
     }
   }
-  return { x: vx, y: vy }
+  return out !== undefined && vx === out.x ? out : { x: vx, y: vy }
 }

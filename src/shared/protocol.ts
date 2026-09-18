@@ -12,7 +12,8 @@ export type PlaybackSpeed = 0.25 | 0.5 | 1 | 2 | 4 | 'max'
 
 /**
  * 再生の命令（spec 04 §5.1）。setArrows は spec の setArrowSpacing の代わり。
- * 矢印が非表示なら Worker は flowVectors() を呼ばない（呼ぶたびに 2 × N² を確保する）。
+ * 矢印が非表示なら Worker は flowVectors() を呼ばない（表示中は呼ぶたびに使い回しの 2 × N² の
+ * バッファへ書く。spec 06 §5.2）。
  *
  * start・reset の runId は、メイン（SimulationSession）だけが振る通し番号（タスクレビューの重要な指摘・
  * 追加の裁定）。Worker 側では作らない（異常終了で作り直した Worker が番号を巻き戻さないため）。

@@ -165,6 +165,32 @@ describe('flowVectors（§3.9、§6.3）', () => {
     expect(wet).toBe(13)
     expect(sameBits(engine.waterDepth(), w)).toBe(true)
   })
+
+  it('同じ配列を使い回し、呼ぶたびに今の水で書き直す（新しいエンジンの値とビット単位で同じ）', () => {
+    const t = buildTerrain(15, 9, 1, (x) => (14 - x) * 0.2)
+    const a = engineOn(t)
+    const rain = { ...cellCenter(5, 4, 1), radiusM: 2, amountMm: 50 }
+    a.addRainfall(rain)
+    const first = a.flowVectors()
+    for (let n = 0; n < 20; n++) a.step()
+    const second = a.flowVectors()
+    expect(second.x).toBe(first.x)
+    expect(second.y).toBe(first.y)
+    const fresh = engineOn(t)
+    fresh.addRainfall(rain)
+    for (let n = 0; n < 20; n++) fresh.step()
+    const expected = fresh.flowVectors()
+    expect(Array.from(second.x)).toEqual(Array.from(expected.x))
+    expect(Array.from(second.y)).toEqual(Array.from(expected.y))
+  })
+
+  it('loadTerrain で大きさが変わったら、新しい大きさの配列にする', () => {
+    const engine = engineOn(buildTerrain(4, 4, 1, () => 0))
+    expect(engine.flowVectors().x.length).toBe(16)
+    const t = buildTerrain(6, 5, 1, () => 0)
+    engine.loadTerrain(t.elevation, t.validMask, t.meta)
+    expect(engine.flowVectors().x.length).toBe(30)
+  })
 })
 
 describe('reset（§6.3）', () => {

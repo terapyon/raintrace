@@ -370,3 +370,80 @@ describe('SimulationRunner: 失敗と地形の差し替え', () => {
     expect(h.frames().map((f) => f.terrainId)).toEqual([1, 2])
   })
 })
+
+describe('SimulationRunner: onStepTime（計測用。spec 06 §3）', () => {
+  it('ポートの onStepTime をスケジューラに渡し、再生中の step ごとに呼ぶ', () => {
+    const clock = { now: 0 }
+    const timers: (() => void)[] = []
+    const times: number[] = []
+    const runner = new SimulationRunner({
+      post: () => {},
+      now: () => clock.now,
+      setTimer: (run) => {
+        timers.push(run)
+        return timers.length
+      },
+      clearTimer: () => {},
+      onStepTime: (ms) => times.push(ms),
+    })
+    const grid = basin()
+    runner.loadTerrain(1, grid, [makeDepression({ id: 1, significant: true })])
+    runner.handle({ type: 'setSpeed', speed: 1 })
+    runner.handle({ type: 'start', rain: RAIN, runId: 1 })
+    timers.shift()?.()
+    expect(times.length).toBe(1)
+  })
+
+  /**
+   * setup() と同じ組み立てだが、now() の呼び出し回数を数える。onStepTime の有無で回数が変わらないことを
+   * 確かめる（N2: 「渡さなければ今までどおり動く」を、frames が 0 件より多いことだけでなく、
+   * onStepTime が無い経路が壊れたら失敗するように強める。playbackScheduler.test.ts の nowCalls と同じ考え方）
+   */
+  function countingNowCalls(withTiming: boolean): number {
+    const clock = { now: 0 }
+    let nowCalls = 0
+    const timers = new Map<number, { at: number; run: () => void }>()
+    let nextId = 1
+    const runner = new SimulationRunner({
+      post: () => {},
+      now: () => {
+        nowCalls++
+        return clock.now
+      },
+      setTimer: (run, delayMs) => {
+        const id = nextId++
+        timers.set(id, { at: clock.now + delayMs, run })
+        return id
+      },
+      clearTimer: (handle) => {
+        timers.delete(handle as number)
+      },
+      ...(withTiming ? { onStepTime: () => {} } : {}),
+    })
+    runner.loadTerrain(1, basin(), [])
+    runner.handle({ type: 'start', rain: RAIN, runId: 1 })
+    for (let k = 0; k < 3; k++) {
+      let first: [number, { at: number; run: () => void }] | undefined
+      for (const entry of timers)
+        if (first === undefined || entry[1].at < first[1].at) first = entry
+      if (first === undefined) break
+      timers.delete(first[0])
+      clock.now = Math.max(clock.now, first[1].at)
+      first[1].run()
+    }
+    return nowCalls
+  }
+
+  it('onStepTime を渡さなければ、今までどおり動く（呼ぶ先が無くても now() の回数は同じ）', () => {
+    const { runner, run, frames } = setup()
+    runner.loadTerrain(1, basin(), [])
+    runner.handle({ type: 'start', rain: RAIN, runId: 1 })
+    run(3)
+    expect(frames().length).toBeGreaterThan(0)
+    // onStepTime を渡す・渡さないで now() の呼び出し回数が変わらない（渡さない経路が別の分岐を通っていない）。
+    // tick が 1 回も回らなければ両方とも 0 になって区別が付かないので、下限も確かめる
+    const calls = countingNowCalls(false)
+    expect(calls).toBeGreaterThan(3)
+    expect(countingNowCalls(true)).toBe(calls)
+  })
+})

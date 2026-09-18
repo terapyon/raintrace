@@ -15,6 +15,17 @@ const OVERLAY_LAYER_IDS = [
   ...Object.values(TERRAIN_LAYER_IDS),
   ...Object.values(WATER_LAYER_IDS),
 ].join(',')
+// 2D の重ね描きの下から上への重なり順（src/map/layerIds.ts の OVERLAY_LAYER_ORDER から 3D のレイヤーを抜いた並び）。
+// 地形の重ね描きは複数のタスクに分けて足すので、足す順ではなくこの並びで重なることを確かめる（spec 06 Task 17）
+const OVERLAY_ORDER_2D = [
+  TERRAIN_LAYER_IDS.elevation,
+  TERRAIN_LAYER_IDS.depressions,
+  WATER_LAYER_IDS.water,
+  TERRAIN_LAYER_IDS.outline,
+  TERRAIN_LAYER_IDS.flow,
+  WATER_LAYER_IDS.arrows,
+  TERRAIN_LAYER_IDS.markers,
+].join(',')
 
 test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
   test.beforeEach(async ({ context }) => {
@@ -34,6 +45,16 @@ test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
     await expect(page.getByTestId('stat-total')).toHaveText('31.4 m³')
     await expect(page.getByTestId('stat-step')).not.toHaveText('Step 0')
     expect(errors).toEqual([])
+  })
+
+  test('地形を読み込むと、重ね描きのレイヤーが固定の並び（標高・窪地・水深・枠・流向・矢印・最低点）の順に重なる', async ({
+    page,
+  }) => {
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    const mapEl = page.locator('[data-map-loaded="true"]')
+    await expect(mapEl).toHaveAttribute('data-overlay-layers', OVERLAY_LAYER_IDS)
+    await expect(mapEl).toHaveAttribute('data-overlay-order', OVERLAY_ORDER_2D)
   })
 
   test('Reset で、投入水量が 0 に、Step が 0 に戻り、もう一度開始すると新しい実行が進む', async ({
@@ -233,6 +254,7 @@ test.describe('表示の設定（spec 04 §2）', () => {
     // 切り替え後にレイヤーが本当に戻っているかは map.getLayer() の実物を数えた印で確かめる
     await expect(mapEl).toHaveAttribute('data-basemap', 'photo')
     await expect(mapEl).toHaveAttribute('data-overlay-layers', OVERLAY_LAYER_IDS)
+    await expect(mapEl).toHaveAttribute('data-overlay-order', OVERLAY_ORDER_2D)
     await page.getByRole('button', { name: strings.map.basemaps.std }).click()
     await expect.poll(() => counts.std).toBeGreaterThan(0)
     await expect(mapEl).toHaveAttribute('data-basemap', 'std')

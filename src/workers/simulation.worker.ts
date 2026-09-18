@@ -2,10 +2,13 @@ import { assembleGrid } from '../dem/DemGrid'
 import { selectDem, tileKey } from '../dem/demSelection'
 import { rangeCorners } from '../dem/gridRange'
 import { inServiceArea } from '../dem/serviceArea'
+import { PERF_CHANNEL } from '../shared/perfProtocol'
 import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../shared/protocol'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
+import type { RunnerPorts } from './simulationRunner'
 import { SimulationRunner } from './simulationRunner'
+import { createStepTimeRing, STEP_TIME_PUBLISH_MS } from './stepTiming'
 import { packTerrain } from './terrainResult'
 
 declare const self: DedicatedWorkerGlobalScope
@@ -14,13 +17,29 @@ function post(message: WorkerToMainMessage, transfer: Transferable[] = []): void
   self.postMessage(message, transfer)
 }
 
-// 再生（spec 04 §5）。地形の真の状態はエンジンだけが持つ（Worker は grid を保持しない）
-const runner = new SimulationRunner({
+const ports: RunnerPorts = {
   post,
   now: () => performance.now(),
   setTimer: (run, delayMs) => setTimeout(run, delayMs),
   clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-})
+}
+
+// 計測用のビルドだけ、1 step の所要時間を直近 300 step 持ち、1 秒ごとに BroadcastChannel で計測用のフックへ送る
+// （spec 06 §3、計画で決めたこと 1）。通常のビルドでは __RAINTRACE_PERF__ が false に置き換わり、この if の
+// 中身（リング・BroadcastChannel・上の 2 つの import）がまるごと出力から消える（Task 2 の grep で確かめる）
+if (__RAINTRACE_PERF__) {
+  const ring = createStepTimeRing()
+  ports.onStepTime = ring.record
+  // 送るのは tick の外（タイマーの間）。step の計測の途中に postMessage を挟まない
+  const channel = new BroadcastChannel(PERF_CHANNEL)
+  setInterval(() => {
+    const snapshot = ring.snapshot()
+    if (snapshot !== null) channel.postMessage(snapshot)
+  }, STEP_TIME_PUBLISH_MS)
+}
+
+// 再生（spec 04 §5）。地形の真の状態はエンジンだけが持つ（Worker は grid を保持しない）
+const runner = new SimulationRunner(ports)
 
 // 新しい地点の読み込みが来たら、取得中のものを取り消す（spec 02 §4.3）
 let current: AbortController | null = null

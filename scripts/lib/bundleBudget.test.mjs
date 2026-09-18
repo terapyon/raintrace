@@ -121,7 +121,24 @@ describe('lazyOnlyViolations（three と src/renderer は初期ロードに入�
     }
     const violations = lazyOnlyViolations(chunks, initial, LAZY_ONLY_MODULES)
     expect(violations).toHaveLength(1)
+    // 4 つとも拾われたことを件数で確かめる（先頭の 3 件を名で、残りを「ほか 1 件」で）。View3d だけに
+    // 当たる正規表現でも通ってしまわないように（05 の最終の再レビューの軽微 3）
     expect(violations[0]).toContain('src/map/view3d/View3d.ts')
+    expect(violations[0]).toContain('src/map/view3d/Terrain3d.ts')
+    expect(violations[0]).toContain('src/map/view3d/mainTileGenerator.ts')
+    expect(violations[0]).toContain('ほか 1 件')
+  })
+
+  it.each([
+    'src/map/view3d/View3d.ts',
+    'src/map/view3d/Terrain3d.ts',
+    'src/map/view3d/mainTileGenerator.ts',
+    'src/map/view3d/gsiDemTile.ts',
+  ])('初期ロードのチャンクに %s だけがあっても違反（spec 05 §3.8。R3）', (id) => {
+    const chunks = { 'assets/index-a.js': ['src/main.tsx', id] }
+    const violations = lazyOnlyViolations(chunks, initial, LAZY_ONLY_MODULES)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain(id)
   })
 
   it('options・layerIds は初期ロードに入っていても違反でない（計画で決めたこと 21）', () => {

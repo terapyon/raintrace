@@ -36,6 +36,9 @@ export function solidPng(r: number, g: number, b: number): Buffer {
 
 const naTile = solidPng(128, 0, 0)
 
+/** 地理院のタイルの URL（E2E の routeGsi と計測の routeDem〈tests/perf/demFixtures.ts〉が共有する） */
+export const GSI_TILE_URL = 'https://cyberjapandata.gsi.go.jp/**'
+
 type DemResponse = 'fixture' | 'na' | 'missing'
 type Rule = DemResponse | ((x: number, y: number) => DemResponse)
 
@@ -53,12 +56,19 @@ export interface GsiCounts {
   dem: number
 }
 
-const fulfillPng = (route: Route, body: Buffer) =>
+export const fulfillPng = (route: Route, body: Buffer) =>
   route.fulfill({
     status: 200,
     contentType: 'image/png',
     headers: { 'access-control-allow-origin': '*' },
     body,
+  })
+
+export const fulfillNotFound = (route: Route) =>
+  route.fulfill({
+    status: 404,
+    headers: { 'access-control-allow-origin': '*' },
+    body: 'not found',
   })
 
 /** 地理院への要求を差し替える。Worker の中の fetch も捕まえるため browserContext で差し替える */
@@ -67,7 +77,7 @@ export async function routeGsi(
   scenario: GsiScenario = {},
 ): Promise<GsiCounts> {
   const counts: GsiCounts = { pale: 0, std: 0, photo: 0, dem: 0 }
-  await context.route('https://cyberjapandata.gsi.go.jp/**', async (route) => {
+  await context.route(GSI_TILE_URL, async (route) => {
     const match = /\/xyz\/([^/]+)\/\d+\/(\d+)\/(\d+)\.(?:png|jpg)$/.exec(
       new URL(route.request().url()).pathname,
     )
@@ -89,13 +99,7 @@ export async function routeGsi(
             ? (scenario.demPng ?? 'fixture')
             : 'missing'
     const outcome = typeof rule === 'function' ? rule(Number(match?.[2]), Number(match?.[3])) : rule
-    if (outcome === 'missing') {
-      return route.fulfill({
-        status: 404,
-        headers: { 'access-control-allow-origin': '*' },
-        body: 'not found',
-      })
-    }
+    if (outcome === 'missing') return fulfillNotFound(route)
     return fulfillPng(route, outcome === 'na' ? naTile : demTile)
   })
   return counts

@@ -12,7 +12,7 @@ const ELEVATION_STOPS: readonly Rgb[] = [
 ]
 
 // 窪地の満水時の深さ: 5cm 刻み。04 の水深（青系）と取り違えないよう赤紫の系統にする（spec 02 §6.1）
-const DEPRESSION_BANDS: readonly Rgb[] = [
+export const DEPRESSION_BANDS: readonly Rgb[] = [
   [253, 224, 221],
   [252, 197, 192],
   [250, 159, 181],
@@ -31,19 +31,32 @@ const ELEVATION_ALPHA = 200
 const DEPRESSION_ALPHA = 220
 const BLACK: Rgb = [0, 0, 0]
 
-/** 色の点の列を t（0〜1。範囲の外は端に丸める）で線形補間する。標高と水深の配色で共有する */
-export function interpolateStops(stops: readonly Rgb[], t: number): Rgb {
+/**
+ * 色の点の列を t（0〜1。範囲の外は端に丸める）で線形補間し、out の offset から r・g・b の 3 要素を書き込む。
+ * interpolateStops と elevationRgba（セルごとに配列を作らない）の両方がこれを呼ぶ（spec 06 §5.2、N5）
+ */
+function interpolateStopsInto(
+  stops: readonly Rgb[],
+  t: number,
+  out: Uint8ClampedArray,
+  offset: number,
+): void {
   const clamped = Math.min(1, Math.max(0, t))
   const position = clamped * (stops.length - 1)
   const lower = Math.min(stops.length - 2, Math.floor(position))
   const f = position - lower
   const a = stops[lower] ?? BLACK
   const b = stops[lower + 1] ?? a
-  return [
-    Math.round(a[0] + (b[0] - a[0]) * f),
-    Math.round(a[1] + (b[1] - a[1]) * f),
-    Math.round(a[2] + (b[2] - a[2]) * f),
-  ]
+  out[offset] = Math.round(a[0] + (b[0] - a[0]) * f)
+  out[offset + 1] = Math.round(a[1] + (b[1] - a[1]) * f)
+  out[offset + 2] = Math.round(a[2] + (b[2] - a[2]) * f)
+}
+
+/** 色の点の列を t（0〜1。範囲の外は端に丸める）で線形補間する。標高と水深の配色で共有する */
+export function interpolateStops(stops: readonly Rgb[], t: number): Rgb {
+  const out = new Uint8ClampedArray(3)
+  interpolateStopsInto(stops, t, out, 0)
+  return [out[0] ?? 0, out[1] ?? 0, out[2] ?? 0]
 }
 
 export function elevationColor(t: number): Rgb {
@@ -56,7 +69,12 @@ export function depthBand(depthM: number): number {
   return Math.min(DEPRESSION_BANDS.length - 1, Math.max(0, band))
 }
 
-/** 標高を範囲内の最低〜最高で色分けした RGBA（無効セルは透明） */
+/**
+ * 標高を範囲内の最低〜最高で色分けした RGBA（無効セルは透明）。1000 m（約 106 万セル）ではメインスレッドの
+ * 長いタスクの主因だったので（04 の 75 ms）、セルごとに配列（elevationColor の戻り値と set の引数）を作らない。
+ * 色の式は interpolateStops と同じ（interpolateStopsInto を共有する）ので、出力はビット単位で同じ
+ * （colormap.test.ts が旧版と突き合わせる。spec 06 §5.2）
+ */
 export function elevationRgba(
   elevation: Float32Array,
   validMask: Uint8Array,
@@ -67,8 +85,10 @@ export function elevationRgba(
   const span = max - min
   for (let i = 0; i < elevation.length; i++) {
     if (validMask[i] !== 1) continue
-    const [r, g, b] = elevationColor(span > 0 ? ((elevation[i] ?? min) - min) / span : 0)
-    rgba.set([r, g, b, ELEVATION_ALPHA], i * 4)
+    const t = span > 0 ? ((elevation[i] ?? min) - min) / span : 0
+    const o = i * 4
+    interpolateStopsInto(ELEVATION_STOPS, t, rgba, o)
+    rgba[o + 3] = ELEVATION_ALPHA
   }
   return rgba
 }
@@ -88,7 +108,12 @@ export function depressionRgba(
     const depth = (fill[i] ?? 0) - (elevation[i] ?? 0)
     if (depth <= 0) continue
     const color = DEPRESSION_BANDS[depthBand(depth)] ?? BLACK
-    rgba.set([color[0], color[1], color[2], DEPRESSION_ALPHA], i * 4)
+    // セルごとに配列を作らない（spec 06 §5.2）
+    const o = i * 4
+    rgba[o] = color[0]
+    rgba[o + 1] = color[1]
+    rgba[o + 2] = color[2]
+    rgba[o + 3] = DEPRESSION_ALPHA
   }
   return rgba
 }
