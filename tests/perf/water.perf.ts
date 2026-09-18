@@ -38,7 +38,8 @@ const OFFSETS = [0, -0.25, -0.5] as const
 const outDir = outDirFromEnv(process.env.RAINTRACE_WATER_OUT_DIR, '.handoff/06-perf/water-probe')
 const PAGE_TIMEOUT_MS = 600_000
 /**
- * 地図の maxZoom（MapController.ts）。perfParams の zs はこれを超える値を捨てる。pitch 85・描かれるタイル 16・
+ * perfParams の zs パーサがこれを超える値を捨てる境界（`src/ui/perfParams.ts:121` の `value <= 18`。
+ * 地図の `maxZoom: 18`（MapController.ts）と同じ値の 3 つ目の独立したコピー）。pitch 85・描かれるタイル 16・
  * offset 0 は見込みが 18.184 になりこれを超えるので、その組では行が 1 つ少ない（実測で判明。計画の想定外）
  */
 const MAX_MAP_ZOOM = 18
