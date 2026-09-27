@@ -1,6 +1,6 @@
 # Spec 07: 地図の印の説明と、流出の説明・可視化
 
-- Status: 草案（2026-09-27）
+- Status: 裁定済み（2026-09-27。R07-1〜R07-4）
 - 日付: 2026-09-27
 - 対応: base-spec §18（境界条件）・§30（描画閾値）・§38（統計）・§59（免責）
 - 依存: 02、04、05
@@ -53,7 +53,7 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 `terrainSession` の `onClick`（`src/ui/terrainSession.ts:74-88`）で、`clickTarget` を求める前に `map.queryRenderedFeatures(event.point, { layers: [TERRAIN_LAYER_IDS.markers] })` を呼ぶ。1 つでも当たれば、セル情報の代わりに印の説明を開く。
 
 - 当たりの判定は、描画された円（半径 6 px、白い縁 2 px）に任せる。指で押しやすくするため、`queryRenderedFeatures` には点ではなく ±4 px の矩形を渡す。
-- 最低点とあふれ出し点が重なったときは、最低点を優先する（R07-4）。
+- 複数の ○ に当たったとき（最低点とあふれ出し点が重なったとき）は、当たったものをすべて 1 つのポップオーバーに縦に並べる。並びは最低点を先、あふれ出し点は `depressionId` の昇順とする（R07-4）。
 - 3D でも ○ は出ている（`src/map/view3d/*` はこの層に触れない）。3D の中のクリックでも同じように開く。
 
 ### 3.2 状態
@@ -61,8 +61,8 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 `src/state/clickState.ts` の `Popover` に次を足す。
 
 ```ts
-| { kind: 'marker'; marker: 'lowest' } & Anchor
-| { kind: 'marker'; marker: 'spill'; depressionId: number } & Anchor
+type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number }
+| ({ kind: 'marker'; markers: readonly MarkerRef[] } & Anchor)   // markers は 1 個以上
 ```
 
 `Anchor` は既存の `lon`・`lat`・`x`・`y` とする。`ClickEvent` には `{ type: 'marker-click'; … }` を足し、純粋関数 `reduceClick` で扱う。
@@ -76,7 +76,7 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 
 ### 3.4 表示（`MarkerInfoPopover`）
 
-形は `CellInfoPopover` と同じにする。MUI `Popover` を `anchorReference="anchorPosition"`、`hideBackdrop`、`disableScrollLock`、`disableEnforceFocus` で置き、root の `pointerEvents: 'none'` と paper の `'auto'` も揃える。
+形は `CellInfoPopover` と同じにする。印が複数のときは、下の表の 1 行分ずつを `Divider` で区切って縦に並べる。MUI `Popover` を `anchorReference="anchorPosition"`、`hideBackdrop`、`disableScrollLock`、`disableEnforceFocus` で置き、root の `pointerEvents: 'none'` と paper の `'auto'` も揃える。
 
 | 印 | 見出し | 説明 | 数値 |
 |---|---|---|---|
@@ -127,7 +127,7 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 これをエンジンの外で求める。
 
 - 地形を読み込んだとき、メインスレッドで `outflowBoundaryMask: Uint8Array` を 1 回だけ作る。有効セルのうち、8 近傍にグリッドの外か無効セルを含むものが 1 になる。`validMask` から作れる。
-- 描画のたびに、このマスクが 1 で、水深が表示の閾値（`OUTFLOW_VISIBLE_M`、R07-1）以上のセルを「流出中」とする。
+- 描画のたびに、このマスクが 1 で、水深が表示の閾値（`OUTFLOW_VISIBLE_M` = 0.001 m、R07-1）以上のセルを「流出中」とする。
 
 ソルバーの計算のループには手を入れない。Worker とのメッセージも変えない。水深のバッファは既にメインに届いている。
 
@@ -161,7 +161,7 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 
 ### 7.1 ユニット
 
-- `reduceClick`: `marker-click` で `kind: 'marker'` になる。`close` で閉じる。`confirm` では何もしない。
+- `reduceClick`: `marker-click` で `kind: 'marker'` になり、`markers` の並びが最低点を先にした順になる。`close` で閉じる。`confirm` では何もしない。
 - `markerFeatures`: あふれ出し点に `depressionId` が付く。
 - `outflowBoundaryMask`: 端、内側の無効セルの周り、無効セルそのもの（0）、全部有効の内側（0）。
 - 流出の塗り分け: 閾値の境目、マスク外のセルは塗らない、前回の分を消す。
@@ -171,6 +171,7 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 ### 7.2 E2E（ポート 4173、フォアグラウンド）
 
 - 地点を選び、最低点の ○ をクリックすると、説明と標高が出る。あふれ出し点でも同じ（fixture に有意な窪地を含む地点を使う）。
+- 重なった ○ の並びはユニット（`reduceClick` と `MarkerInfoPopover`）で確かめる（E2E で重なる地点を探さない）。
 - ○ ではない場所のクリックは、今までどおりセル情報を開く。
 - 3D に切り替えた後、○ のクリックで説明が開く。
 - 範囲の端の近くに雨を置いて再生すると、`water-outflow` 層に色の付いた画素が出る。スイッチを切ると消える。
@@ -188,12 +189,14 @@ v0.2.0 のデモで、ユーザーから次の 2 つの疑問が出た（2026-09
 
 ## 9. 裁定が必要な論点
 
-| ID | 論点 | 推奨 |
-|---|---|---|
-| R07-1 | 流出中として塗る水深の閾値 | **1 mm**。θ（1e-5 m）にすると、ごく薄い膜でも端の 1 周がすべて塗られ、どこから多く抜けているかが分からない。描画の 1 cm では、薄く抜けていく様子が見えない |
-| R07-2 | 流出の層を 3D でも出すか | **出す**。3D がデモの主な見せ方なので。canvas の raster は 3D の地形に貼られる |
-| R07-3 | 注意事項に流出の 1 行を足すか | **足す**。免責の範囲の話なので |
-| R07-4 | 最低点とあふれ出し点が重なったときの優先 | **最低点**。1 セルの話で、最低点の方が説明が短い |
+ユーザーの裁定（2026-09-27）。
+
+| ID | 論点 | 裁定 | 理由・備考 |
+|---|---|---|---|
+| R07-1 | 流出中として塗る水深の閾値 | **1 mm**（推奨どおり） | θ（1e-5 m）にすると、ごく薄い膜でも端の 1 周がすべて塗られ、どこから多く抜けているかが分からない。描画の 1 cm では、薄く抜けていく様子が見えない |
+| R07-2 | 流出の層を 3D でも出すか | **出す**（推奨どおり） | 3D がデモの主な見せ方なので。canvas の raster は 3D の地形に貼られる |
+| R07-3 | 注意事項に流出の 1 行を足すか | **足す**（推奨どおり） | 免責の範囲の話なので |
+| R07-4 | 最低点とあふれ出し点が重なったとき | **両方を並べて出す**（推奨は最低点の優先） | 3.1・3.2 のとおり、当たった印をすべて 1 つのポップオーバーに並べる |
 
 ## 10. 後続への引き継ぎ
 
