@@ -4,6 +4,7 @@
  */
 import type { DemId } from '../dem/demSources.ts'
 import type { Corners } from '../dem/gridRange.ts'
+import type { OutflowCells } from '../simulation/outflowCells.ts'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain.ts'
 import type { RainfallInput, StepStats } from '../simulation/types.ts'
 
@@ -68,6 +69,11 @@ export interface TerrainPayload extends TerrainAnalysis {
   elevation: Float32Array
   validMask: Uint8Array
   geo: TerrainGeo
+  /**
+   * 流出の縁のマスクと帯（spec 07 §5.1）。地形の解析と同じく Worker が読み込みのときに 1 回だけ作って送る
+   * （spec の「メインスレッドで作る」からの逸脱。計画 2026-09-29-07 の冒頭）。メインは読むだけ
+   */
+  outflow: OutflowCells
 }
 
 /** 再生の失敗の理由。no-elevation-at-rain-center は 03 の NoElevationAtRainCenterError（name で判別する） */

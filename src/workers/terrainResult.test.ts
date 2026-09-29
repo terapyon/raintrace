@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TerrainGeo } from '../shared/protocol'
+import type { OutflowCells } from '../simulation/outflowCells'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain'
 import { makeDepression } from '../simulation/testing/terrainGrids.test-support'
 import { packTerrain } from './terrainResult'
@@ -34,6 +35,15 @@ function makeGrid() {
 
 const depression = makeDepression({ spillElevation: 3 })
 
+/** 2 × 2 の範囲の流出の表（中身は packTerrain が触れないので、形だけ合わせる） */
+function makeOutflow(): OutflowCells {
+  return {
+    mask: Uint8Array.from([1, 1, 1, 0]),
+    nearest: Int32Array.from([0, 1, 2, -1]),
+    band: Int32Array.from([0, 1, 2]),
+  }
+}
+
 function makeAnalysis(): TerrainAnalysis {
   return {
     lowestIndex: 0,
@@ -48,23 +58,27 @@ function makeAnalysis(): TerrainAnalysis {
 describe('packTerrain', () => {
   it('payload の elevation・validMask は grid と中身が同じで、buffer は別', () => {
     const grid = makeGrid()
-    const { payload } = packTerrain(grid, makeAnalysis(), geo)
+    const { payload } = packTerrain(grid, makeAnalysis(), geo, makeOutflow())
     expect(payload.elevation).toEqual(grid.elevation)
     expect(payload.elevation.buffer).not.toBe(grid.elevation.buffer)
     expect(payload.validMask).toEqual(grid.validMask)
     expect(payload.validMask.buffer).not.toBe(grid.validMask.buffer)
   })
 
-  it('transfer は payload の elevation・validMask と analysis の flowDirection・fill・labels の buffer を含み、grid の buffer を含まない（grid はエンジンに渡す）', () => {
+  it('transfer は payload の elevation・validMask と analysis の flowDirection・fill・labels と流出の表の mask・nearest・band の buffer を含み、grid の buffer を含まない（grid はエンジンに渡す）', () => {
     const grid = makeGrid()
     const analysis = makeAnalysis()
-    const { payload, transfer } = packTerrain(grid, analysis, geo)
+    const outflow = makeOutflow()
+    const { payload, transfer } = packTerrain(grid, analysis, geo, outflow)
     expect(transfer).toEqual([
       payload.elevation.buffer,
       payload.validMask.buffer,
       analysis.flowDirection.buffer,
       analysis.fill.buffer,
       analysis.labels.buffer,
+      outflow.mask.buffer,
+      outflow.nearest.buffer,
+      outflow.band.buffer,
     ])
     expect(transfer).not.toContain(grid.elevation.buffer)
     expect(transfer).not.toContain(grid.validMask.buffer)
@@ -72,8 +86,14 @@ describe('packTerrain', () => {
 
   it('payload は geo をそのまま持ち、meta を持たない', () => {
     const grid = makeGrid()
-    const { payload } = packTerrain(grid, makeAnalysis(), geo)
+    const { payload } = packTerrain(grid, makeAnalysis(), geo, makeOutflow())
     expect(payload.geo).toBe(geo)
     expect(payload).not.toHaveProperty('meta')
+  })
+
+  it('payload は Worker で作った流出の表をそのまま outflow に持つ（spec 07 §5.1。複製せずに移す）', () => {
+    const outflow = makeOutflow()
+    const { payload } = packTerrain(makeGrid(), makeAnalysis(), geo, outflow)
+    expect(payload.outflow).toBe(outflow)
   })
 })
