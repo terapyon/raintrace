@@ -34,15 +34,21 @@ const MARKER_MIN_PX = 10
 /**
  * 流出の帯の画素のしきい値（降雨の前との差）。実測を報告に書き、しきい値は大きな余裕を取る（06 の慣習）。
  * スパイク（実 GPU）では 500 m・1 セル幅の帯でも 3D で 240〜420 px だった。帯は 6 セル幅なので、それより多い。
- * 実測（2026-09-29、SwiftShader、5 回）: 2D の c1 − c0 = 1139〜1955、3D の c1 − c0 = 1980〜2603
+ * 実測（2026-09-29、SwiftShader）: 2D の c1 − c0 = 856〜2040（最速で再生しながら読む）。3D は step 1 で
+ * 読むので c1 − c0 = 1057（3 回とも同じ）
  */
 const OUTFLOW_MIN_PX = 200
 /**
  * t1 から t2 への増え方の下限（3D。M2）。SwiftShader の揺れ（色の分類ではほぼ 0）より十分大きく。
- * 実測（2026-09-29、5 回）: c2 − c1 = 688〜1165。同じカメラで 3 回読んだ数は ×2・×1 とも完全に一致した
+ * 実測（2026-09-29、3 回）: step 1 → 31 で c2 − c1 = 1315（3 回とも同じ）。同じカメラで 3 回読んだ数は ×2・×1 とも
+ * 完全に一致した。一時停止が遅れた場合も、step 11〜30 から 30 step で 454〜640 増えた（修正前の版での実測）
  */
 const OUTFLOW_GROWTH_PX = 100
-/** 帯を消した後の、降雨の前との差の許容（揺れ）。実測（2026-09-29、5 回）: 2D は 0、3D は −21〜−19 */
+/** t1 までに進める step 数の上限（帯が出ないまま、ここで止まる） */
+const T1_MAX_STEPS = 60
+/** t1 から t2 までに進める step 数（3D。M2）。決まった量だけ進め、再生の速さと競争しない */
+const T2_STEPS = 30
+/** 帯を消した後の、降雨の前との差の許容（揺れ）。実測（2026-09-29）: 2D は 0、3D は −21〜−16 */
 const OUTFLOW_NOISE_PX = 30
 
 type Clip = { x: number; y: number; width: number; height: number }
@@ -107,6 +113,74 @@ function logMeasured(name: string, values: Record<string, number | readonly numb
   console.log(`[実測] ${name} ${JSON.stringify(values)}`)
 }
 
+/** 表示中の step の数（「Step 12」の 12） */
+async function shownStep(page: Page): Promise<number> {
+  const text = (await page.getByTestId('stat-step').textContent()) ?? ''
+  const match = /Step (\d+)/.exec(text)
+  if (match === null) throw new Error(`step の表示が読めません: ${text}`)
+  return Number(match[1])
+}
+
+/**
+ * 「開始」を押し、ボタンが「一時停止」に変わった最初のフレームで押す（ページの中で続けて押す）。Playwright の
+ * click を 2 回続けると、その間に進む step 数が機械の負荷で揺れるので、一時停止の時点をなるべく早く揃える
+ */
+async function startAndPauseAtOnce(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ start, pause }) =>
+      new Promise<void>((resolve, reject) => {
+        const byText = (text: string): HTMLButtonElement | undefined =>
+          [...document.querySelectorAll('button')].find((b) => b.textContent === text)
+        const startButton = byText(start)
+        if (startButton === undefined) {
+          reject(new Error('開始のボタンがありません'))
+          return
+        }
+        startButton.click()
+        const deadline = performance.now() + 10_000
+        const tryPause = (): void => {
+          const pauseButton = byText(pause)
+          if (pauseButton !== undefined) {
+            pauseButton.click()
+            resolve()
+          } else if (performance.now() > deadline) {
+            reject(new Error('一時停止のボタンが出ません'))
+          } else {
+            requestAnimationFrame(tryPause)
+          }
+        }
+        requestAnimationFrame(tryPause)
+      }),
+    { start: strings.playback.start, pause: strings.playback.pause },
+  )
+}
+
+/** 一時停止の後、表示中の step が動かなくなるまで待って返す（最後のフレームが届くまで） */
+async function settledStep(page: Page): Promise<number> {
+  let last = -1
+  await expect
+    .poll(
+      async () => {
+        const previous = last
+        last = await shownStep(page)
+        return last === previous
+      },
+      { timeout: 10_000, intervals: [300] },
+    )
+    .toBe(true)
+  await nextFrames(page)
+  return last
+}
+
+/** 一時停止のまま「1 step 進める」を押し、表示が step + 1 になって描かれるまで待つ */
+async function stepOnce(page: Page, step: number): Promise<number> {
+  await page.getByRole('button', { name: strings.playback.step, exact: true }).click()
+  await expect(page.getByTestId('stat-step')).toHaveText(`Step ${step + 1}`)
+  await nextFrames(page)
+  await nextFrames(page)
+  return step + 1
+}
+
 /** 垂直強調のボタンを押す */
 async function setExaggeration(page: Page, value: number): Promise<void> {
   const button = page
@@ -161,6 +235,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
   test('2D: あふれ出し点の ○ をクリックすると、説明と 4 つの数値が出る（§3.4）', async ({
     page,
   }) => {
+    const errors = collectErrors(page)
     await page.setViewportSize(NARROW)
     await page.goto(SHIBUYA)
     await waitTerrain(page)
@@ -174,6 +249,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await expect(row.getByTestId('marker-max-depth')).toHaveText(/^\d+\.\d{2} m$/)
     await expect(row.getByTestId('marker-capacity')).toHaveText(/ m³$/)
     await expect(row.getByTestId('marker-area')).toHaveText(/^\d+ m²$/)
+    expect(errors).toEqual([])
   })
 
   test('3D: ○ のクリックで説明が開く（垂直強調 ×1 は最低点、×5 はあふれ出し点。§3.1、軽微 m1）', async ({
@@ -273,51 +349,51 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
         { timeout: 20_000, intervals: [500] },
       )
       .toBe(true)
-    await page.getByRole('button', { name: strings.playback.max, exact: true }).click()
-    await page.getByRole('button', { name: strings.playback.start }).click()
-    await expect
-      .poll(async () => Number(await mapElement(page).getAttribute('data-water-ready')), {
-        timeout: 30_000,
-      })
-      .toBeGreaterThanOrEqual(1)
-    // t1: 帯が出るまで待つ（canvas を地形に貼る方式のように最初の絵で凍ると、ここで c0 のまま時間切れになる）
-    let c1 = 0
-    await expect
-      .poll(
-        async () => {
-          c1 = await outflowCount(page, clip)
-          return c1 - c0
-        },
-        { timeout: 60_000 },
-      )
-      .toBeGreaterThan(OUTFLOW_MIN_PX)
-    // t2: 同じカメラのまま、さらに増える（最初に描いた 1 回で凍ると、ここで c1 のまま時間切れになる）
-    let c2 = 0
-    await expect
-      .poll(
-        async () => {
-          c2 = await outflowCount(page, clip)
-          return c2 - c1
-        },
-        { timeout: 60_000 },
-      )
-      .toBeGreaterThan(OUTFLOW_GROWTH_PX)
-    // 一時停止して、同じカメラで 3 回読んだ画素数が一致する（ちらつかない）。垂直強調 ×2 と ×1（推奨 R3）。
+    // 再生の速さと競争しないよう、開始してすぐ一時停止し、あとは「1 step 進める」で決まった量だけ進める
+    // （Task 9 のレビューの修正ラウンド 1）。step が同じなら画素数も同じになる（実測）
+    await page.getByRole('button', { name: strings.playback.speedValue(0.25), exact: true }).click()
+    await startAndPauseAtOnce(page)
+    await expect(page.getByRole('button', { name: strings.playback.resume })).toBeVisible()
+    let step = await settledStep(page)
+    const pausedStep = step
+    // t1: 帯が出るまで 1 step ずつ進める（canvas を地形に貼る方式のように最初の絵で凍ると、c0 のまま上限に届く）
+    let c1 = await outflowCount(page, clip)
+    for (let n = 0; c1 - c0 <= OUTFLOW_MIN_PX && n < T1_MAX_STEPS; n++) {
+      step = await stepOnce(page, step)
+      c1 = await outflowCount(page, clip)
+    }
+    expect(c1 - c0).toBeGreaterThan(OUTFLOW_MIN_PX)
+    const s1 = step
+    // t2: 同じカメラのまま、決まった step 数だけ進めると、さらに増える（最初に描いた 1 回で凍ると c1 のまま）
+    for (let n = 0; n < T2_STEPS; n++) step = await stepOnce(page, step)
+    const s2 = step
+    expect(s2).toBe(s1 + T2_STEPS)
+    const c2 = await outflowCount(page, clip)
+    expect(c2 - c1).toBeGreaterThan(OUTFLOW_GROWTH_PX)
+    // 一時停止のまま、同じカメラで 3 回読んだ画素数が一致する（ちらつかない）。垂直強調 ×2 と ×1（推奨 R3）。
     // 各垂直強調で帯を切った画素数も読み、切ると帯の分が消えることを確かめる
-    await page.getByRole('button', { name: strings.playback.pause }).click()
     const flicker: Record<string, number[]> = {}
     const offCounts: Record<string, number> = {}
     let offDiff = 0
     // 既定の垂直強調は ×2（DEFAULT_SETTINGS）。c0 は ×2 で読んだので、×2 を先に読む
+    let previousShot: Buffer | null = null
     for (const ex of [2, 1] as const) {
       await setExaggeration(page, ex)
-      await page.waitForTimeout(2_000)
+      if (previousShot !== null) {
+        // 垂直強調が画面に効くまで待つ（前の垂直強調の絵から変わるまで。読みが揃うまでは待たない）
+        const before = previousShot
+        await expect
+          .poll(async () => (await page.screenshot({ clip })).equals(before), { timeout: 10_000 })
+          .toBe(false)
+        await page.waitForTimeout(500)
+      }
       await nextFrames(page)
       const reads: number[] = []
       for (let n = 0; n < 3; n++) {
         reads.push(await outflowCount(page, clip))
         await nextFrames(page)
       }
+      previousShot = await page.screenshot({ clip })
       flicker[`x${ex}`] = reads
       expect(reads).toEqual([reads[0], reads[0], reads[0]])
       // 切ると u_showOutflow が 0 になり、帯の分が消える
@@ -340,9 +416,16 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
         expect(Math.abs(offDiff)).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
       }
       await page.getByLabel(strings.panel.showOutflow).check()
+      await nextFrames(page)
+      previousShot = await page.screenshot({ clip })
     }
     logMeasured('3D', {
+      pausedStep,
+      s1,
+      s2,
       c0,
+      c1,
+      c2,
       c1MinusC0: c1 - c0,
       c2MinusC1: c2 - c1,
       offDiff,
@@ -357,6 +440,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
   test('領域外流出量の説明のアイコンに Tab で焦点を移すとツールチップが出る。水深の凡例の注記と ○・流出の凡例が出る（§3.6・§4.1・§4.2）', async ({
     page,
   }) => {
+    const errors = collectErrors(page)
     await page.goto(SHIBUYA)
     await waitTerrain(page)
     const help = page.getByRole('button', { name: strings.stats.outflowHelpLabel })
@@ -365,5 +449,6 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await expect(page.getByTestId('water-legend-note')).toHaveText(strings.legend.waterThinNote)
     await expect(page.getByRole('img', { name: strings.legend.markersAria })).toBeVisible()
     await expect(page.getByRole('img', { name: strings.legend.outflowAria })).toBeVisible()
+    expect(errors).toEqual([])
   })
 })
