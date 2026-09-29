@@ -142,6 +142,7 @@ export const strings = {
     depressionMin: '0 m',
     depressionMax: '0.35 m 以上',
     depressionAria: '窪地の凡例。5 cm 刻みの 8 段で、深いほど濃い赤紫',
+    markersAria: '地図の印の凡例。青い丸は最低点、オレンジの丸はあふれ出し点',
   },
   cellInfo: {
     elevation: '標高',
@@ -150,6 +151,23 @@ export const strings = {
     noData: '標高データなし',
     useAsCenter: 'ここを降雨中心にする',
     newPoint: 'ここを新しい地点にする',
+    close: '閉じる',
+  },
+  /** 地図の ○ の説明（spec 07 §3.4） */
+  markerInfo: {
+    lowest: {
+      title: '最低点',
+      body: '範囲の中でいちばん低い地点です。水が集まりやすい場所の目安です。',
+    },
+    spill: {
+      title: 'あふれ出し点',
+      body: 'くぼ地が水で満たされると、ここから水があふれ出します。',
+    },
+    elevation: '標高',
+    spillElevation: 'あふれる標高',
+    maxDepth: 'くぼ地の最大の深さ',
+    capacity: 'ためられる水の量',
+    area: 'くぼ地の面積',
     close: '閉じる',
   },
   /** 数値の単位と組み立て（src/ui/format.ts が使う。桁の丸めは format.ts が行い、ここは文字列だけ） */

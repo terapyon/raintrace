@@ -4,6 +4,7 @@ import type { SettingsStore } from '../state/settingsStore'
 import { CellInfoHost } from './components/CellInfoHost'
 import { DisclaimerDialog, useDisclaimer } from './components/DisclaimerDialog'
 import { MapView } from './components/MapView'
+import { MarkerInfoHost } from './components/MarkerInfoHost'
 import { Panel } from './components/Panel'
 import { TerrainSessionBinder } from './components/TerrainSessionBinder'
 import { ThemeModeBinder } from './components/ThemeModeBinder'
@@ -35,6 +36,7 @@ export function App({ missingFeatures, session, settings }: Props) {
             <>
               <Panel session={session} settings={settings} onShowDisclaimer={disclaimer.reopen} />
               <CellInfoHost session={session} />
+              <MarkerInfoHost session={session} />
             </>
           )}
           <DisclaimerDialog

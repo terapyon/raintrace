@@ -2,14 +2,20 @@ import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { wrapLongitude } from '../dem/tileMath'
 import type { MapController } from '../map/MapController'
-import { type OverlayDisplay, TerrainOverlay } from '../map/TerrainOverlay'
+import { type OverlayDisplay, TERRAIN_LAYER_IDS, TerrainOverlay } from '../map/TerrainOverlay'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
 import { arrowSpacingForRange } from '../state/arrowSpacing'
-import { type ClickEvent, type ClickTarget, reduceClick } from '../state/clickState'
+import { type ClickEvent, type ClickTarget, type MarkerRef, reduceClick } from '../state/clickState'
 import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
+import {
+  type MarkerInfoRow,
+  markerHitBox,
+  markerInfoRows,
+  markerRefsFromFeatures,
+} from './markerInfo'
 import type { SimulationSession } from './simulationSession'
 import { View3dSession } from './view3dSession'
 
@@ -77,14 +83,40 @@ export class TerrainSession {
       // event.point は地図の要素の中の座標。ポップオーバーはビューポートの座標で置くので、要素の左上を足す
       // （地図の要素が画面の左上から始まるとは限らない）
       const rect = map.getContainer().getBoundingClientRect()
+      const x = rect.left + event.point.x
+      const y = rect.top + event.point.y
+      // ○（最低点・あふれ出し点）に当たれば、セル情報の代わりに印の説明を開く（spec 07 §3.1）。
+      // 当たりの判定は描画された円に任せ、±4 px の矩形で問い合わせる。3D でも circle は地形に焼かれず直接
+      // 描かれ、queryRenderedFeatures は標高を渡して判定する（軽微 m1）
+      const markers = markersAt(event.point.x, event.point.y)
+      if (markers.length > 0) {
+        this.dispatchClick({ type: 'marker-click', markers, lon: lng, lat, x, y })
+        return
+      }
       this.dispatchClick({
         type: 'map-click',
         target: this.clickTarget(lng, lat),
         lon: lng,
         lat,
-        x: rect.left + event.point.x,
-        y: rect.top + event.point.y,
+        x,
+        y,
       })
+    }
+    // 印のレイヤーが無い（地形が無い・読み込み中・段に分けて足す途中）ときは問い合わせない。無いレイヤーを
+    // 指定すると MapLibre がエラーのイベントを出す（maplibre-gl-dev.mjs 15024）
+    const markersAt = (px: number, py: number): MarkerRef[] => {
+      if (map.getLayer(TERRAIN_LAYER_IDS.markers) === undefined) return []
+      return markerRefsFromFeatures(
+        map.queryRenderedFeatures(markerHitBox(px, py), { layers: [TERRAIN_LAYER_IDS.markers] }),
+      )
+    }
+    // ○ の上では指の形のカーソル（spec 07 §3.5）。レイヤー付きの mouseenter・mouseleave は、レイヤーが無い間は
+    // 問い合わせない（maplibre-gl-dev.mjs 24517〜24560 の _createDelegatedListener）。ドラッグ中は MapLibre に任せる
+    const onMarkerEnter = (): void => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const onMarkerLeave = (): void => {
+      map.getCanvas().style.cursor = ''
     }
     let frame = 0
     let pending: { lng: number; lat: number } | null = null
@@ -111,6 +143,8 @@ export class TerrainSession {
       }
     })
     map.on('click', onClick)
+    map.on('mouseenter', TERRAIN_LAYER_IDS.markers, onMarkerEnter)
+    map.on('mouseleave', TERRAIN_LAYER_IDS.markers, onMarkerLeave)
     map.on('mousemove', onMove)
     map.on('moveend', this.urlDebounce.schedule)
 
@@ -126,6 +160,8 @@ export class TerrainSession {
     return () => {
       detach3d()
       map.off('click', onClick)
+      map.off('mouseenter', TERRAIN_LAYER_IDS.markers, onMarkerEnter)
+      map.off('mouseleave', TERRAIN_LAYER_IDS.markers, onMarkerLeave)
       map.off('mousemove', onMove)
       map.off('moveend', this.urlDebounce.schedule)
       cancelAnimationFrame(frame)
@@ -193,6 +229,12 @@ export class TerrainSession {
     const terrain = this.client.terrain
     if (terrain === null) return null
     return cellInfoAt(terrain, this.client.water, lon, lat)
+  }
+
+  /** 印の説明の数値（spec 07 §3.4、計画で決めたこと 3）。地形が無ければ空 */
+  markerInfo(markers: readonly MarkerRef[]): MarkerInfoRow[] {
+    const terrain = this.client.terrain
+    return terrain === null ? [] : markerInfoRows(terrain, markers)
   }
 
   private clickTarget(lon: number, lat: number): ClickTarget {

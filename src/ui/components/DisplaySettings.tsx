@@ -17,6 +17,7 @@ import {
 import type { SettingsStore } from '../../state/settingsStore'
 import { strings } from '../strings'
 import { DepressionLegend } from './DepressionLegend'
+import { MarkerLegend } from './MarkerLegend'
 import { Row } from './TerrainInfo'
 import { View3dSettings } from './View3dSettings'
 import { WaterLegend } from './WaterLegend'
@@ -104,6 +105,7 @@ export function DisplaySettings({ app, settings }: { app: AppStore; settings: Se
         label={strings.panel.showDepressions}
       />
       <DepressionLegend />
+      <MarkerLegend />
       <Row label={strings.map.basemap}>
         <ToggleButtonGroup
           size="small"
