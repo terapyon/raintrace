@@ -131,7 +131,7 @@ describe('outflowNearest（spec 07 §5.1、軽微 m6）', () => {
     expect(row).toEqual([1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1])
   })
 
-  it('全部有効なら、帯の中の各セルの nearest はマスクのセルで、チェビシェフ距離は幅 − 1 以下。帯は端からの距離で決まる', () => {
+  it('全部有効なら、帯の中の各セルの nearest はマスクのセルで、チェビシェフ距離は端からの距離 fromEdge に一致する。帯は端からの距離で決まる', () => {
     const n = 15
     const band = 4
     const validMask = allValid(n)
@@ -178,6 +178,29 @@ describe('outflowNearest（spec 07 §5.1、軽微 m6）', () => {
     expect(nearest[2 * width + 3]).toBeGreaterThanOrEqual(0)
     expect(nearest[2 * width + 5]).toBe(-1)
   })
+
+  it('無効セルの壁の向こうには、幅優先探索が壁を越えて届かない（壁の向こうは −1 か、壁の向こう側のマスクから届く）', () => {
+    // 幅 9、高さ 5。x = 4 の列を丸ごと無効にして、左右を完全に分ける壁にする
+    const { validMask, width, height } = grid([
+      '####.####',
+      '####.####',
+      '####.####',
+      '####.####',
+      '####.####',
+    ])
+    const mask = outflowBoundaryMask(validMask, width, height)
+    const nearest = outflowNearest(mask, validMask, width, height, 2)
+    // 壁のセル自身は常に −1
+    expect(nearest[2 * width + 4]).toBe(-1)
+    // 壁のすぐ右（x = 5）はマスクそのもの。1 つ内側（x = 6）はその帯（深さ 1）
+    const wallAdjacentRight = 2 * width + 5
+    const bandRight = 2 * width + 6
+    expect(nearest[wallAdjacentRight]).toBe(wallAdjacentRight)
+    const j = nearest[bandRight] ?? -1
+    expect(j).toBeGreaterThanOrEqual(0)
+    // 届いた先は右側（x >= 5）のセルで、壁を挟んだ左側（x <= 3）から届いたのではない
+    expect(j % width).toBeGreaterThanOrEqual(5)
+  })
 })
 
 describe('buildOutflowCells', () => {
@@ -200,11 +223,9 @@ describe('buildOutflowCells', () => {
     expect(Array.from(cells.nearest).every((v) => v === -1)).toBe(true)
   })
 
-  it('1000 m（1031²）でも 1 秒以内に作れる（spec 07 §6 の見込みは数十 ms。粗い上限）', () => {
+  it('1000 m（1031²）でも、帯のセル数が端の 1 周（4(n − 1)）より多い（性能は Task 10 の計測で見る）', () => {
     const n = 1031
-    const start = Date.now()
     const cells = buildOutflowCells(allValid(n), n)
-    expect(Date.now() - start).toBeLessThan(1000)
     expect(cells.band.length).toBeGreaterThan(4 * (n - 1))
   })
 })
