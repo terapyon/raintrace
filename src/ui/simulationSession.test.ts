@@ -29,7 +29,14 @@ const geo = {
   size: 512,
   cellSizeM: 0.98,
 } as TerrainPayload['geo']
-const terrain = { geo } as TerrainPayload
+const terrain = {
+  geo,
+  outflow: {
+    mask: new Uint8Array(geo.size * geo.size),
+    nearest: new Int32Array(geo.size * geo.size).fill(-1),
+    band: new Int32Array(0),
+  },
+} as unknown as TerrainPayload
 
 /** WaterOverlay の偽物。attach() の第 2 引数（テストの差し替え口）で使う */
 function fakeOverlay(): WaterOverlay & {
@@ -42,6 +49,7 @@ function fakeOverlay(): WaterOverlay & {
   clear: ReturnType<typeof vi.fn>
   restore: ReturnType<typeof vi.fn>
   setDepthVisible: ReturnType<typeof vi.fn>
+  setOutflowVisible: ReturnType<typeof vi.fn>
 } {
   return {
     show: vi.fn(),
@@ -53,6 +61,7 @@ function fakeOverlay(): WaterOverlay & {
     clear: vi.fn(),
     restore: vi.fn(),
     setDepthVisible: vi.fn(),
+    setOutflowVisible: vi.fn(),
   } as unknown as WaterOverlay & {
     show: ReturnType<typeof vi.fn>
     setWater: ReturnType<typeof vi.fn>
@@ -63,6 +72,7 @@ function fakeOverlay(): WaterOverlay & {
     clear: ReturnType<typeof vi.fn>
     restore: ReturnType<typeof vi.fn>
     setDepthVisible: ReturnType<typeof vi.fn>
+    setOutflowVisible: ReturnType<typeof vi.fn>
   }
 }
 
@@ -399,7 +409,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     session.attach(fakeController(), () => overlay)
     expect(overlay.setPalette).toHaveBeenCalledWith('continuous')
     expect(overlay.setArrowsVisible).toHaveBeenCalledWith(false)
-    expect(overlay.show).toHaveBeenCalledWith(terrain.geo)
+    expect(overlay.show).toHaveBeenCalledWith(terrain.geo, terrain.outflow)
   })
 
   it('今の runId の frame は overlay へ水を渡し、矢印つきなら間引いて渡す', () => {
@@ -592,5 +602,25 @@ describe('SimulationSession: 3D への水深の受け渡し（spec 05 §3.1、�
     session.reset()
     session.terrainCleared()
     expect(seen.map((w) => (w === null ? null : 'water'))).toEqual([null, 'water', null, null])
+  })
+})
+
+describe('SimulationSession: 流出の帯（spec 07 §5）', () => {
+  it('terrainReady は地形の流出の表（Worker が作ったもの）をそのまま overlay に渡す（メインでは作らない）', () => {
+    const { session } = setup()
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    session.terrainReady(terrain, CENTER)
+    expect(overlay.show.mock.calls.at(-1)?.[1]).toBe(terrain.outflow)
+  })
+
+  it('設定の showOutflowCells を overlay に渡す（attach の時点の値と、その後の変化。spec 07 §5.3）', () => {
+    const { session, settings } = setup()
+    settings.getState().setDisplay({ showOutflowCells: false })
+    const overlay = fakeOverlay()
+    session.attach(fakeController(), () => overlay)
+    expect(overlay.setOutflowVisible).toHaveBeenLastCalledWith(false)
+    settings.getState().setDisplay({ showOutflowCells: true })
+    expect(overlay.setOutflowVisible).toHaveBeenLastCalledWith(true)
   })
 })

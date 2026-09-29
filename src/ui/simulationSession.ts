@@ -55,6 +55,8 @@ export class SimulationSession {
   private readonly waterListeners = new Set<(water: Float32Array | null) => void>()
   /** 2D の水深の canvas を出すか（3D の間は隠す。計画で決めたこと 16） */
   private depthCanvasVisible = true
+  /** 流出しているセルの表示（設定の display.showOutflowCells。spec 07 §5.3） */
+  private outflowVisible = true
 
   constructor(client: SimulationClient, store: SimulationStore, settings: SettingsStore) {
     this.client = client
@@ -89,6 +91,7 @@ export class SimulationSession {
         arrowSpacingForRange(display.flowVectorSpacingM, area.sizeM),
       )
       this.setPalette(display.waterDepthPalette)
+      this.setOutflowVisible(display.showOutflowCells)
     }
     apply(settings.getState())
     settings.subscribe((state, previous) => {
@@ -118,7 +121,8 @@ export class SimulationSession {
     // 異常終了で作り直した Worker（新しい PlaybackScheduler）は速度 1・既定の矢印設定で始まり、
     // ストアが持つ今の速度とずれる。読み込みが済むたびに送り直して揃える（コントローラーの追加の裁定）
     this.client.setSpeed(this.store.getState().speed)
-    this.overlay?.show(terrain.geo)
+    // 流出の帯の表は Worker が地形の読み込みで作って送ってくる（spec 07 §5.1。計画で決めたこと 1）
+    this.overlay?.show(terrain.geo, terrain.outflow)
     this.client.setArrows(this.arrowSettings.visible, this.arrowSettings.spacingM)
     for (const listener of this.terrainListeners) listener(terrain)
   }
@@ -135,7 +139,8 @@ export class SimulationSession {
     overlay.setPalette(this.palette)
     overlay.setArrowsVisible(this.arrowSettings.visible)
     overlay.setDepthVisible(this.depthCanvasVisible)
-    if (this.terrain !== null) overlay.show(this.terrain.geo)
+    overlay.setOutflowVisible(this.outflowVisible)
+    if (this.terrain !== null) overlay.show(this.terrain.geo, this.terrain.outflow)
     this.overlay = overlay
     return () => {
       this.arrowsThrottle.cancel()
@@ -154,6 +159,12 @@ export class SimulationSession {
   setPalette(palette: WaterPalette): void {
     this.palette = palette
     this.overlay?.setPalette(palette)
+  }
+
+  /** 流出しているセルの表示（spec 07 §5.3）。3D は View3dSession が設定から直接受ける */
+  setOutflowVisible(visible: boolean): void {
+    this.outflowVisible = visible
+    this.overlay?.setOutflowVisible(visible)
   }
 
   /** ベースマップの切り替えで消えた水深と矢印のレイヤーを足し直す */

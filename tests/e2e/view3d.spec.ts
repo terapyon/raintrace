@@ -154,6 +154,7 @@ test.describe('3D の表示（spec 05 §5）', () => {
         TERRAIN_LAYER_IDS.elevation,
         TERRAIN_LAYER_IDS.depressions,
         WATER_LAYER_IDS.water,
+        WATER_LAYER_IDS.outflow,
         VIEW3D_LAYER_IDS.water,
         TERRAIN_LAYER_IDS.outline,
         TERRAIN_LAYER_IDS.flow,
@@ -163,6 +164,8 @@ test.describe('3D の表示（spec 05 §5）', () => {
     )
     const visible3d = (await mapEl.getAttribute('data-visible-overlay-layers'))?.split(',') ?? []
     expect(visible3d).not.toContain(WATER_LAYER_IDS.water)
+    // 2D の流出の帯も 3D の間は隠す（3D は水面のシェーダが描く。spec 07 §5.2）
+    expect(visible3d).not.toContain(WATER_LAYER_IDS.outflow)
     expect(visible3d).toContain(WATER_LAYER_IDS.arrows)
     await page.getByRole('button', { name: strings.view3d.view2d }).click()
     await expect(mapEl).toHaveAttribute('data-view3d', 'off')

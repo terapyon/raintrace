@@ -1,7 +1,15 @@
 import type { CanvasSource, GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import type { Corners } from '../dem/gridRange'
+import type { OutflowCells } from '../simulation/outflowCells'
 import { ensureArrowImage } from './arrowImage'
 import { beforeLayerId, WATER_LAYER_IDS } from './layerIds'
+import {
+  clearOutflow,
+  createOutflowPainted,
+  type OutflowPainted,
+  paintOutflow,
+} from './outflowPaint'
+import { OUTFLOW_OPACITY } from './overlayColors'
 import type { PointCollection } from './terrainFeatures'
 import { WATER_LAYER_OPACITY, type WaterPalette, waterRgba } from './waterColormap'
 
@@ -25,12 +33,33 @@ export function uploadCanvasSource(
   source.pause()
 }
 
-interface Target {
-  corners: Corners
+/** 範囲の大きさの canvas と、その RGBA（putImageData で描く） */
+interface Canvas2d {
   canvas: HTMLCanvasElement
   context: CanvasRenderingContext2D
   rgba: Uint8ClampedArray<ArrayBuffer>
   image: ImageData
+}
+
+function createCanvas2d(size: number): Canvas2d | null {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+  if (context === null) return null
+  const rgba = new Uint8ClampedArray(size * size * 4)
+  return { canvas, context, rgba, image: new ImageData(rgba, size, size) }
+}
+
+/** 流出の帯の canvas と、帯の表・塗っているセル（spec 07 §5.2） */
+interface OutflowTarget extends Canvas2d {
+  cells: OutflowCells
+  painted: OutflowPainted
+}
+
+interface Target extends Canvas2d {
+  corners: Corners
+  outflow: OutflowTarget | null
 }
 
 /**
@@ -38,7 +67,8 @@ interface Target {
  * animate: false で置き、描画フレームごとに最新の水深だけを着色して、そのときだけ転送する（届いた frame が多くても 1 回）。
  * 水深の配列は SimulationClient が持つもので、ここでは参照するだけ。client は次の frame で古い方を Worker へ
  * 返す（転送で切り離す）。Reset の後に古い実行の frame が届くと、session は setWater を呼ばないまま client が
- * 前のバッファを返すので、session は reset・start・失敗・異常終了のたびに setWater(null) で参照を外す
+ * 前のバッファを返すので、session は reset・start・失敗・異常終了のたびに setWater(null) で参照を外す。
+ * 流出の帯（spec 07 §5.2）は別の canvas ソース（water-outflow）に、水深と同じ描画フレームで塗る
  */
 export class WaterOverlay {
   private readonly map: MapLibreMap
@@ -50,6 +80,8 @@ export class WaterOverlay {
   private arrowsVisible = true
   /** 2D の水深の canvas を出すか（3D の間は隠す。spec 05 §3.6） */
   private depthVisible = true
+  /** 流出しているセルの表示（設定の display.showOutflowCells。spec 07 §5.3） */
+  private outflowVisible = true
   private frame = 0
   private generation = 0
 
@@ -58,22 +90,20 @@ export class WaterOverlay {
     this.whenMapLoaded = whenMapLoaded
   }
 
-  /** 地形の範囲に水深の canvas と矢印のレイヤーを置く（最初は透明） */
-  show(geo: { size: number; corners: Corners }): void {
+  /** 地形の範囲に水深・流出の帯の canvas と矢印のレイヤーを置く（最初は透明）。outflow が null なら帯は置かない */
+  show(geo: { size: number; corners: Corners }, outflow: OutflowCells | null): void {
     this.clear()
     const generation = this.generation
-    const canvas = document.createElement('canvas')
-    canvas.width = geo.size
-    canvas.height = geo.size
-    const context = canvas.getContext('2d')
-    if (context === null) return
-    const rgba = new Uint8ClampedArray(geo.size * geo.size * 4)
+    const water = createCanvas2d(geo.size)
+    if (water === null) return
+    const outflowCanvas = outflow === null ? null : createCanvas2d(geo.size)
     this.target = {
+      ...water,
       corners: geo.corners,
-      canvas,
-      context,
-      rgba,
-      image: new ImageData(rgba, geo.size, geo.size),
+      outflow:
+        outflow === null || outflowCanvas === null
+          ? null
+          : { ...outflowCanvas, cells: outflow, painted: createOutflowPainted(outflow.band) },
     }
     this.whenMapLoaded(() => {
       if (generation === this.generation) this.addLayers()
@@ -111,13 +141,30 @@ export class WaterOverlay {
     }
   }
 
-  /** 2D の水深の canvas を出すか。3D の間は水面の Custom Layer と二重になるので隠し、着色も止める（spec 05 §3.6） */
+  /**
+   * 2D の水深の canvas を出すか。3D の間は水面の Custom Layer と二重になるので隠し、着色も止める（spec 05 §3.6）。
+   * 流出の帯も 3D の間は隠す（3D は水面のシェーダが描く。spec 07 §5.2）
+   */
   setDepthVisible(visible: boolean): void {
     this.depthVisible = visible
     if (this.map.getLayer(WATER_LAYER_IDS.water) !== undefined) {
       this.map.setLayoutProperty(WATER_LAYER_IDS.water, 'visibility', visible ? 'visible' : 'none')
     }
+    this.applyOutflowVisibility()
     if (visible) this.requestDraw()
+  }
+
+  /** 流出しているセルの表示（spec 07 §5.3）。出すときは今の水深で塗り直す */
+  setOutflowVisible(visible: boolean): void {
+    this.outflowVisible = visible
+    this.applyOutflowVisibility()
+    if (visible) this.requestDraw()
+  }
+
+  private applyOutflowVisibility(): void {
+    if (this.map.getLayer(WATER_LAYER_IDS.outflow) === undefined) return
+    const shown = this.depthVisible && this.outflowVisible
+    this.map.setLayoutProperty(WATER_LAYER_IDS.outflow, 'visibility', shown ? 'visible' : 'none')
   }
 
   /** レイヤー・ソースと、待っている描画を消す（新しい地点の読み込み） */
@@ -131,9 +178,14 @@ export class WaterOverlay {
     this.arrows = EMPTY
   }
 
-  /** ベースマップの切り替えで消えたソースとレイヤーを足し直す（冪等。Task 10） */
+  /**
+   * ベースマップの切り替えで消えたソースとレイヤーを足し直す（冪等。Task 10）。足し直した後に今の水深で描き直す
+   * （流出の canvas は塗っているセルの一覧と常に一致しているので、古い帯は出ない。計画で決めたこと 8）
+   */
   restore(): void {
-    if (this.target !== null) this.addLayers()
+    if (this.target === null) return
+    this.addLayers()
+    this.requestDraw()
   }
 
   private requestDraw(): void {
@@ -149,6 +201,23 @@ export class WaterOverlay {
     else waterRgba(this.latest, this.palette, target.rgba)
     target.context.putImageData(target.image, 0, 0)
     uploadCanvasSource(this.map.getSource<CanvasSource>(WATER_LAYER_IDS.water))
+    if (target.outflow !== null) this.drawOutflow(target.outflow)
+  }
+
+  /**
+   * 流出の帯（spec 07 §5.2）。水が無い（setWater(null)。reset・start・失敗・異常終了）ときは、表示の有無に関わらず
+   * 全部消す（推奨 R4。切っている間の Reset の後に入れ直しても古い帯を出さない）。切っている間は塗らない
+   * （入れ直すときに setOutflowVisible が塗り直す）。塗るセルが変わらなければ転送しない（計画で決めたこと 7）
+   */
+  private drawOutflow(outflow: OutflowTarget): void {
+    let changed: boolean
+    if (this.latest === null) changed = clearOutflow(outflow.rgba, outflow.painted)
+    else if (this.outflowVisible) {
+      changed = paintOutflow(this.latest, outflow.cells, outflow.rgba, outflow.painted)
+    } else return
+    if (!changed) return
+    outflow.context.putImageData(outflow.image, 0, 0)
+    uploadCanvasSource(this.map.getSource<CanvasSource>(WATER_LAYER_IDS.outflow))
   }
 
   private addLayers(): void {
@@ -177,6 +246,26 @@ export class WaterOverlay {
       },
       before(WATER_LAYER_IDS.water),
     )
+    // 流出の帯（spec 07 §5.2）。水深のすぐ上、範囲の枠・矢印・○ の下。水の canvas とは別のソース（表示の切り替えを
+    // 水と独立にするため）。3D の間と切っている間は隠す
+    if (target.outflow !== null) {
+      this.map.addSource(WATER_LAYER_IDS.outflow, {
+        type: 'canvas',
+        canvas: target.outflow.canvas,
+        coordinates: target.corners,
+        animate: false,
+      })
+      this.map.addLayer(
+        {
+          id: WATER_LAYER_IDS.outflow,
+          type: 'raster',
+          source: WATER_LAYER_IDS.outflow,
+          layout: { visibility: this.depthVisible && this.outflowVisible ? 'visible' : 'none' },
+          paint: { 'raster-opacity': OUTFLOW_OPACITY, 'raster-resampling': 'nearest' },
+        },
+        before(WATER_LAYER_IDS.outflow),
+      )
+    }
     // 白に濃い青の縁（青い水の上でも見える）
     ensureArrowImage(this.map, ARROW_IMAGE, '#ffffff', '#0d47a1')
     this.map.addSource(WATER_LAYER_IDS.arrows, { type: 'geojson', data: this.arrows })

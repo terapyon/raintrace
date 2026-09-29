@@ -21,6 +21,7 @@ const OVERLAY_ORDER_2D = [
   TERRAIN_LAYER_IDS.elevation,
   TERRAIN_LAYER_IDS.depressions,
   WATER_LAYER_IDS.water,
+  WATER_LAYER_IDS.outflow,
   TERRAIN_LAYER_IDS.outline,
   TERRAIN_LAYER_IDS.flow,
   WATER_LAYER_IDS.arrows,
@@ -47,7 +48,7 @@ test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
     expect(errors).toEqual([])
   })
 
-  test('地形を読み込むと、重ね描きのレイヤーが固定の並び（標高・窪地・水深・枠・流向・矢印・最低点）の順に重なる', async ({
+  test('地形を読み込むと、重ね描きのレイヤーが固定の並び（標高・窪地・水深・流出の帯・枠・流向・矢印・○）の順に重なる', async ({
     page,
   }) => {
     await page.goto(SHIBUYA)
