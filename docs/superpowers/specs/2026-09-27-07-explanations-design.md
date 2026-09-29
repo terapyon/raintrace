@@ -128,7 +128,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 
 これをエンジンの外で求める。
 
-- 地形を読み込んだとき、メインスレッドで `outflowBoundaryMask: Uint8Array` を 1 回だけ作る。有効セルのうち、近傍にグリッドの外か無効セルを含むものが 1 になる。`validMask` から作れる。
+- 地形を読み込んだとき、Worker で `outflowBoundaryMask: Uint8Array` を 1 回だけ作り、`TerrainPayload.outflow` に入れて Transferable で送る（`analyzeTerrain` の結果と同じ扱い。ui から simulation の値を import しないため。計画の作成時に変更、2026-09-29）。有効セルのうち、近傍にグリッドの外か無効セルを含むものが 1 になる。`validMask` から作れる。
 - **近傍の定義は `src/simulation/FlowSolver.ts` の `NEIGHBOR_DX`・`NEIGHBOR_DY` を import して使う**（今は 8 近傍）。同じ表を使うことで、08 の R08-2 で流れが 4 近傍になったとき、マスクも一緒に変わる（推奨 R3）。無効の判定も FlowSolver と同じく `validMask[c] !== 0` にする。
 - 仮想セルは `hj = zi`（`FlowSolver.ts:100-150`）なので `dh = w[i]` になり、`w[i] ≥ 1 mm` は θ（1e-5 m）を超える。マスクのセルは必ず外へ流し、マスクの外のセルは流出しない（レビューで裏取り済み）。
 - 描画のたびに、このマスクが 1 で、水深が表示の閾値（`OUTFLOW_VISIBLE_M` = 0.001 m、R07-1）以上のセルを「流出中」とする。
@@ -140,7 +140,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 - 作り方は、マスクのセルからの多始点の幅優先探索（8 近傍の歩みで、深さを帯の幅で打ち切る）とする。1000 m（約 1031²、帯 約 10 セル）でも、帯のセルは端の 1 周 × 10 程度で、数十 ms 以内と見込む。
 - 帯は「近傍の表」とは独立の見た目の規則なので、08 で近傍が 4 になっても 8 近傍の歩みのままでよい。
 
-ソルバーの計算のループには手を入れない。Worker とのメッセージも変えない。水深のバッファは既にメインに届いている。
+ソルバーの計算のループには手を入れない。Worker とのメッセージで形が変わるのは `TerrainPayload` だけで、命令と frame は変えない。水深のバッファは既にメインに届いている。
 
 ### 5.2 描き方
 
