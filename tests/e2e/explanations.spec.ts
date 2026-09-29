@@ -337,19 +337,18 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await switchTo3d(page)
     // ここから先はカメラを動かさない（3D の視点へ動き終えた後）
     const clip = await mapClip(page, false)
-    // 視点へ動き終えた直後は地形のタイルの描き足しで数が少し動くので、続けて 2 回同じになるまで待つ
-    let c0 = -1
+    const mapEl = mapElement(page)
+    // 流出の帯は水面のシェーダで描く（tech-spec §9.7）ので、水面がすべての区画を初めて描き終えた回数
+    // （data-water-ready。spec 06 §5.2、Task 17a）が 1 以上になるまで待ってから読む（読み直しての一致待ちは
+    // しない。最終レビューの指摘）。GPU への転送が描画の完了より少し遅れることがあるので、直後ではなく
+    // さらに数フレーム後に 1 回だけ読む
     await expect
-      .poll(
-        async () => {
-          const previous = c0
-          await nextFrames(page)
-          c0 = await outflowCount(page, clip)
-          return c0 === previous
-        },
-        { timeout: 20_000, intervals: [500] },
-      )
-      .toBe(true)
+      .poll(async () => Number(await mapEl.getAttribute('data-water-ready')), { timeout: 20_000 })
+      .toBeGreaterThanOrEqual(1)
+    await nextFrames(page)
+    await nextFrames(page)
+    await nextFrames(page)
+    const c0 = await outflowCount(page, clip)
     // 再生の速さと競争しないよう、開始してすぐ一時停止し、あとは「1 step 進める」で決まった量だけ進める
     // （Task 9 のレビューの修正ラウンド 1）。step が同じなら画素数も同じになる（実測）
     await page.getByRole('button', { name: strings.playback.speedValue(0.25), exact: true }).click()

@@ -149,7 +149,7 @@ export const strings = {
     depressionAria: '窪地の凡例。5 cm 刻みの 8 段で、深いほど濃い赤紫',
     markersAria: '地図の印の凡例。青い丸は最低点、オレンジの丸はあふれ出し点',
     outflow: 'この辺りから範囲の外へ流出中',
-    outflowAria: '流出の凡例。赤紫の帯は、この辺りから範囲の外へ水が流れ出ていることを示す',
+    outflowAria: '流出の凡例。濃いピンクの帯は、この辺りから範囲の外へ水が流れ出ていることを示す',
   },
   cellInfo: {
     elevation: '標高',

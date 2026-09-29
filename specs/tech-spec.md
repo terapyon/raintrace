@@ -1411,6 +1411,8 @@ Worker ⇄ メイン:
 
 1000m 四方（1,000,000 セル）を選択した場合でも約 30MB であり、実用範囲に収まる。
 
+spec 07 は上の表に、地形ごと（一辺 N セル）の配列をメインスレッドに足す: 流出の帯の最寄りのマスクのセルの添字 `nearest`（Int32Array、4N² B）と帯のセルの添字 `band`（Int32Array、帯のセル数だけ。N² よりずっと小さい）、Worker で作る境界のマスク `mask`（Uint8Array、N² B）も転送されてここに残る（`OutflowCells`。tech-spec §9.4 の `TerrainPayload.outflow`）。3D はさらに `nearest` を Float32Array に複製した分（4N² B。`outflowNearestData`）と、そのテクスチャ（R32F）を持つ。1000 m は N ≈ 1031 で、4N² B はいずれも約 4.25 MB。
+
 ## 14.4 MapLibre 6.6.0 の内部への依存（版を上げるときの確認点）
 
 実装 spec 05・06 で、MapLibre の公開 API の外、または挙動の細部に頼っているもの。`maplibre-gl` の版を上げるときは、各項目を `maplibre-gl-dev.mjs`（Worker とメインで共通する部分は `maplibre-gl-shared-dev.mjs`）で読み直し、E2E と計測（`pnpm perf:fps`）を回す。行番号は 6.6.0 のもの（2026-09-18、M6・Task 29 で 1 件ずつ開いて確認済み。誤りが見つかった行は本節の下に注記）。
@@ -1428,6 +1430,7 @@ Worker ⇄ メイン:
 | `pause()` → `prepare()` → `Texture.update`（`maplibre-gl-shared-dev.mjs` 16852〜16905 行）が MapLibre の render パスの外（アプリの rAF の中）で走ること。`Texture.update` は現在アクティブなユニットに `gl.bindTexture(TEXTURE_2D, …)` で直に bind し、pixel-store の値を Context のキャッシュ済みの setter で設定して既定値に戻すだけで、フレームバッファ・viewport・program には触れない | `src/map/WaterOverlay.ts` の `uploadCanvasSource`（06 の Task 18） | 本番 | 安全な理由: MapLibre の `Texture.bind` は常に直に bind し直す（`maplibre-gl-shared-dev.mjs` 16924〜16928 行）ので MapLibre 側に古い bind のキャッシュが残らない。three.js の水面のレンダラーは毎 render の前に `resetState()` を呼ぶ（`src/renderer/waterLayer.ts` 約 381 行）。版を上げたら `Texture.update`・`Texture.bind` のこの前提が変わっていないか確かめる |
 | `Style.hasTransitions()`（14381 行。`hasTransition()` ではない）が、再生中の canvas ソースがあると真になり `idle` が来ないこと | 計測の待ち（`areTilesLoaded()` を使い `idle` を待たない） | 計測だけ | — |
 | `map._camera.transform`（23231 行。6.6.0 の `Map` には `transform` の getter が無い）の `getCameraAltitude()`（9564〜9565 行）・`getCameraLngLat()`・`elevation` と `map.queryTerrainElevation`（→ `getElevation`、10306〜10307 行） | `src/ui/perfWater.ts` のカメラと地面の差・読みごとのカメラ | 計測だけ | 高さの基準（どちらも海面から・垂直強調を含む。dev.mjs で確認済み） |
+| `setTerrain` が有効な間、`CanvasSource` を含む raster ソースはタイルごとに RenderToTexture で焼かれてキャッシュされ（`if (tile.getRTT(stack)) continue;`、22990 行）、fingerprint（タイルの座標と feature-state の revision）が変わるか、style・タイル付きの `data` イベントが起きない限り作り直されない（22952-22957・25060-25075 行）。`CanvasSource` の `play()` → `pause()` → `prepare()` は `texture.update` をするだけで、このどちらも起こさないので、canvas を書き換えてもカメラが動いてタイルの組が変わるまで最初に焼いた絵のまま残る | `src/map/view3d/View3d.ts` の水面（Custom Layer）。spec 07 はこの理由で 3D の流出の帯を canvas の raster として地形に貼らず、水面のシェーダで描く（`u_outflowNearest`。§9.7、spec 07 §5.2） | 本番 | 版を上げたら、上の行番号でこのキャッシュ・作り直しの条件が変わっていないか確かめる（変わっていれば、3D も 2D と同じく canvas を地形に貼る方式に戻せるか検討する） |
 
 **確認で見つかった食い違い（2026-09-18）**: 計画の下書きは「線・円のレイヤーは custom の後の 2 つ目の地形のパス（22979〜23000 行）で LEQUAL で描かれる」としていたが、`LAYERS_TO_TEXTURES`（22898〜22905 行）に `circle` は無い。circle（最低点の marker）は symbol（矢印）と同じく `getDepthModeForSublayer` 経由で深度テストなし（`DepthMode.disabled`）のまま直接描かれ、line（範囲の枠）だけが RTT の 2 つ目の地形のパスで LEQUAL になる。上の表は line だけを 2 つ目の地形のパスに残し、circle は symbol と同列にして修正した（挙動の実害は無い。`perfWater.ts` は Task 27 の時点ですでに symbol・line・circle の 3 種とも隠しており、深度テストの有無で読みが変わる心配はしていなかった）。`src/renderer/waterLayer.ts` の `resetState()` の行番号も、計画の下書きの「約 357 行」から実際の「約 381 行」に直した（Task 26〜28 でファイルが伸びたため）。
 
