@@ -742,7 +742,8 @@ interface PersistedSettings {
     verticalExaggeration: 1 | 2 | 5 | 10   // 既定 2
     waterDepthPalette: 'stepped' | 'continuous'   // stepped は 5cm 刻み（§6.6）
     showFlowVectors: boolean
-    flowVectorSpacingM: 5 | 10 | 20   // 範囲 500 m での間隔。実際の間隔は 値 × 範囲 ÷ 500（実装 spec 05 §3.3）
+    flowVectorSpacingM: 10 | 20   // 範囲 500 m での間隔。実際の間隔は 値 × 範囲 ÷ 500（実装 spec 05 §3.3）。保存済みの 5 は 10 として読む（R06-11）
+    showOutflowCells: boolean     // 既定 true。流出しているセルの表示（実装 spec 07 §5.3）
   }
   map: {
     basemap: 'std' | 'pale' | 'photo'   // 既定 'pale'
@@ -752,7 +753,7 @@ interface PersistedSettings {
 }
 ```
 
-保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。実装 spec 05 から、保存する値は**範囲 500 m での間隔**で、実際の間隔は範囲の一辺に比例させる（1000 m で 2 倍、250 m で半分。保存の形は変えていない）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。
+保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。実装 spec 05 から、保存する値は**範囲 500 m での間隔**で、実際の間隔は範囲の一辺に比例させる（1000 m で 2 倍、250 m で半分。保存の形は変えていない）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。`showOutflowCells` は実装 spec 07 で足した任意の項目で、v0.2.0 の保存値には無い。欠けていれば既定の `true` で補い、他の設定（注意事項の了解を含む）を捨てない。型が違えば、ほかの項目と同じく全体を捨てる。形は変わらないので `schemaVersion` は 1 のまま。
 
 ### バージョニング方針（決定）
 
@@ -810,11 +811,13 @@ base-spec §37 の構成に従う。
 |---|---|---|
 | `RainfallControls` | 降雨量・半径の入力 | `TextField` + `Slider` |
 | `PlaybackControls` | Play / Pause / Reset / 速度 | `Button`（文字。開始・一時停止・再開は 1 つのボタン）, `ToggleButtonGroup` |
-| `StatisticsPanel` | base-spec §38 の統計表示 | `Table` |
+| `StatisticsPanel` | base-spec §38 の統計表示 | `Table`、領域外流出量のツールチップ（`Tooltip`・`IconButton`） |
 | `CellInfoPopover` | base-spec §39 のセル情報 | `Popover` |
+| `MarkerInfoPopover` | 地図の ○（最低点・あふれ出し点）の説明と数値（実装 spec 07 §3） | `Popover`, `Divider` |
+| `MarkerLegend`・`OutflowLegend` | ○ の 2 色と流出の帯の凡例（実装 spec 07 §3.6・§5.3） | `Box`, `Typography` |
 | `DemInfoBadge` | base-spec §40 の DEM 情報 | `Chip`, `Tooltip` |
 | `DisclaimerDialog` | base-spec §59 の注意表示 | `Dialog` |
-| `DisplaySettings` | 垂直強調・水深表示・流向表示 | `Switch`, `ToggleButtonGroup`（水深の配色・矢印の間隔・背景地図・画面の配色） |
+| `DisplaySettings` | 垂直強調・水深表示・流向表示 | `Switch`（流出しているセルのスイッチ〈実装 spec 07〉を含む）, `ToggleButtonGroup`（水深の配色・矢印の間隔・背景地図・画面の配色） |
 
 列挙の選択は `ToggleButtonGroup` にし、`Select` を使わない（Menu・Popover を引き込み、`ui` チャンクが増えるため。実装 spec 04）。
 
@@ -841,6 +844,17 @@ base-spec §37 の構成に従う。
 この表示は設定で無効化できないものとする。
 
 注意事項の全文の末尾に、作成者（@terapyon）と GitHub リポジトリへのリンクの 2 行を足す（2026-09-17、公開に向けたユーザーの依頼）。
+
+実装 spec 07 で、注意事項に 4 行目『範囲の端や標高データの無い場所に達した水は、範囲の外へ流れ出たものとして扱います。』を足した（R07-3）。
+
+## 9.7 地図の印の説明と流出の表示（実装 spec 07）
+
+- **地図の ○**: 青は最低点（範囲の中で標高が最も低い有効セル）、オレンジはあふれ出し点（有意な窪地ごとの spill セル）。クリック（±4 px の矩形で `queryRenderedFeatures`）で説明と数値のポップオーバーを開く。重なった ○ は 1 つのポップオーバーに、最低点を先、あふれ出し点は窪地の id の昇順で並べる。○ の上ではカーソルを指の形にする。3D でも同じ（circle は地形に焼かれず直接描かれる。地形に隠れた ○ は MapLibre の遮蔽の扱いで薄く描かれるが、クリックは当たる）。色は `src/map/overlayColors.ts` の 1 か所に置き、地図と凡例が共有する
+- **水が減る理由**: エンジンに排水の項は無く、水が減るのは範囲の端と無効セル（海・データ欠損）への流出だけ（§6.6、base-spec §18）。統計の「領域外流出量」にツールチップで説明を付け、水深の凡例に「1 cm 未満は表示しない」の注記を置く
+- **流出しているセルの帯**: 「近傍（FlowSolver の近傍の表）にグリッドの外か無効セルを含む有効セル」のマスクを地形の読み込みのときに Worker で 1 回だけ作り（`src/simulation/outflowCells.ts`。地形の解析と同じく `TerrainPayload.outflow` で Transferable として送る）、マスクのセルから範囲の一辺の 1% の帯（多始点の幅優先探索の `nearest`）を広げる。描画のたびに、`nearest` の指すマスクのセルの水深が 1 mm 以上の帯のセルを赤紫（#c2185b、不透明度 0.9）で塗る。帯の内側のセルそのものは流出していないので、凡例は「この辺りから範囲の外へ流出中」とする
+  - 2D は canvas ソース `water-outflow`（2D の水深の直後）。塗るセルが変わった描画だけ転送する
+  - 3D は水面の Custom Layer のシェーダで描く（`u_outflowNearest` は R32F に平らな添字、smooth の varying を 0.5 で切る）。3D で canvas の raster を地形に貼ると、RenderToTexture のキャッシュで再生中に更新されない（maplibre-gl-dev.mjs 22990 ほか。spec 07 §5.2）ため
+  - 表示の切り替えは `display.showOutflowCells`（§8.3）。性能は `docs/perf/2026-09-29-outflow.md`（R07-6: spec 07 §6 の「差 0.5 fps 以内」は 1 フレームの時間で読む）
 
 ---
 

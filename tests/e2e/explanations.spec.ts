@@ -263,7 +263,8 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await hideTerrainOverlays(page)
     await switchTo3d(page)
     // ×5 では、この地点の最低点の ○（タイルの継ぎ目の深い窪みの底）が淡く描かれ（実測 #4c82be）、色で探せない。
-    // そこで ×5 はあふれ出し点の ○ を使う
+    // そこで ×5 はあふれ出し点の ○ を使う。淡くなるのは MapLibre の circle の地形による遮蔽（calculate_visibility、
+    // maplibre-gl-dev.mjs 8762・8780）で仕様どおり。queryRenderedFeatures は遮蔽を見ないので、クリックは当たる
     const cases = [
       { ex: 1, kind: 'lowest', elevation: 'marker-elevation' },
       { ex: 5, kind: 'spill', elevation: 'marker-spill-elevation' },
