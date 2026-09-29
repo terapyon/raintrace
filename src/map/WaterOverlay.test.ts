@@ -101,7 +101,7 @@ const CORNERS: Corners = [
   [0, 0],
   [0, 0],
 ]
-/** 1 行 2 列。band は 0・1（どちらも自分自身を指す）。2〜3 はグリッド外なので考えない（size は 2） */
+/** 2 × 2。帯は 1 行目の 0・1（どちらも自分自身を指す）、2 行目の 2・3 は帯の外 */
 const GEO = { size: 2, corners: CORNERS }
 const OUTFLOW: OutflowCells = {
   mask: Uint8Array.of(1, 1, 0, 0),
@@ -160,6 +160,9 @@ describe('WaterOverlay: 流出の帯（spec 07 §5.2。表示を切っている�
     flush()
     const outflow = contexts[1]
     if (outflow === undefined) throw new Error('流出の canvas の context が無い')
+    // 表示を切っている間は塗らず、setWater(null) でも消すもの（塗ったセル）が無く、表示を入れても latest が
+    // 無いので、流出の canvas には一度も転送しない（下の画素の検査が空振りでないことを、回数で明示する）
+    expect(outflow.putImageData).not.toHaveBeenCalled()
     for (const [image] of outflow.putImageData.mock.calls) {
       expect(alphaOf(image).every((a) => a === 0)).toBe(true)
     }
