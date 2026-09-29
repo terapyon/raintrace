@@ -851,7 +851,7 @@ base-spec §37 の構成に従う。
 
 - **地図の ○**: 青は最低点（範囲の中で標高が最も低い有効セル）、オレンジはあふれ出し点（有意な窪地ごとの spill セル）。クリック（±4 px の矩形で `queryRenderedFeatures`）で説明と数値のポップオーバーを開く。重なった ○ は 1 つのポップオーバーに、最低点を先、あふれ出し点は窪地の id の昇順で並べる。○ の上ではカーソルを指の形にする。3D でも同じ（circle は地形に焼かれず直接描かれる。地形に隠れた ○ は MapLibre の遮蔽の扱いで薄く描かれるが、クリックは当たる）。色は `src/map/overlayColors.ts` の 1 か所に置き、地図と凡例が共有する
 - **水が減る理由**: エンジンに排水の項は無く、水が減るのは範囲の端と無効セル（海・データ欠損）への流出だけ（§6.6、base-spec §18）。統計の「領域外流出量」にツールチップで説明を付け、水深の凡例に「1 cm 未満は表示しない」の注記を置く
-- **流出しているセルの帯**: 「近傍（FlowSolver の近傍の表）にグリッドの外か無効セルを含む有効セル」のマスクを地形の読み込みのときに Worker で 1 回だけ作り（`src/simulation/outflowCells.ts`。地形の解析と同じく `TerrainPayload.outflow` で Transferable として送る）、マスクのセルから範囲の一辺の 1% の帯（多始点の幅優先探索の `nearest`）を広げる。描画のたびに、`nearest` の指すマスクのセルの水深が 1 mm 以上の帯のセルを赤紫（#c2185b、不透明度 0.9）で塗る。帯の内側のセルそのものは流出していないので、凡例は「この辺りから範囲の外へ流出中」とする
+- **流出しているセルの帯**: 「近傍（FlowSolver の近傍の表）にグリッドの外か無効セルを含む有効セル」のマスクを地形の読み込みのときに Worker で 1 回だけ作り（`src/simulation/outflowCells.ts`。地形の解析と同じく `TerrainPayload.outflow` で Transferable として送る）、マスクのセルから範囲の一辺の 1% の帯（多始点の幅優先探索の `nearest`）を広げる。描画のたびに、`nearest` の指すマスクのセルの水深が 1 mm 以上の帯のセルを濃いピンク（#c2185b、不透明度 0.9）で塗る。帯の内側のセルそのものは流出していないので、凡例は「この辺りから範囲の外へ流出中」とする
   - 2D は canvas ソース `water-outflow`（2D の水深の直後）。塗るセルが変わった描画だけ転送する
   - 3D は水面の Custom Layer のシェーダで描く（`u_outflowNearest` は R32F に平らな添字、smooth の varying を 0.5 で切る）。3D で canvas の raster を地形に貼ると、RenderToTexture のキャッシュで再生中に更新されない（maplibre-gl-dev.mjs 22990 ほか。spec 07 §5.2）ため
   - 表示の切り替えは `display.showOutflowCells`（§8.3）。性能は `docs/perf/2026-09-29-outflow.md`（R07-6: spec 07 §6 の「差 0.5 fps 以内」は 1 フレームの時間で読む）
@@ -1411,7 +1411,7 @@ Worker ⇄ メイン:
 
 1000m 四方（1,000,000 セル）を選択した場合でも約 30MB であり、実用範囲に収まる。
 
-spec 07 は上の表に、地形ごと（一辺 N セル）の配列をメインスレッドに足す: 流出の帯の最寄りのマスクのセルの添字 `nearest`（Int32Array、4N² B）と帯のセルの添字 `band`（Int32Array、帯のセル数だけ。N² よりずっと小さい）、Worker で作る境界のマスク `mask`（Uint8Array、N² B）も転送されてここに残る（`OutflowCells`。tech-spec §9.4 の `TerrainPayload.outflow`）。3D はさらに `nearest` を Float32Array に複製した分（4N² B。`outflowNearestData`）と、そのテクスチャ（R32F）を持つ。1000 m は N ≈ 1031 で、4N² B はいずれも約 4.25 MB。
+spec 07 は上の表に、地形ごと（一辺 N セル）の配列をメインスレッドに足す: 流出の帯の最寄りのマスクのセルの添字 `nearest`（Int32Array、4N² B）と帯のセルの添字 `band`（Int32Array、帯のセル数だけ。N² よりずっと小さい）、Worker で作る境界のマスク `mask`（Uint8Array、N² B）も転送されてここに残る（`OutflowCells`。tech-spec §9.7 の `TerrainPayload.outflow`）。3D はさらに `nearest` を Float32Array に複製した分（4N² B。`outflowNearestData`）と、そのテクスチャ（R32F）を持つ。1000 m は N ≈ 1031 で、4N² B はいずれも約 4.25 MB。
 
 ## 14.4 MapLibre 6.6.0 の内部への依存（版を上げるときの確認点）
 
