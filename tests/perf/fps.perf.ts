@@ -6,7 +6,8 @@
  * 行うので、この視点は 2D に落ちない。fallback=0 は、計測の途中で実測が境界を割って 2D に落ちることが
  * 絶対に起きないようにする保険である
  *
- * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate・water-sites）・
+ * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate・isolate-500・water-sites・
+ * outflow-500・outflow-1000）・
  * RAINTRACE_FPS_REPEAT（既定 3）・
  * RAINTRACE_FPS_SITES（既定 shibuya。06 の M2 は ayase,shibuya,minatomirai。RAINTRACE_LOAD=1 のときだけ
  * nemuro〈段 2。ユーザーの裁定 R5〉も選べる）・RAINTRACE_FPS_OUT_DIR
@@ -121,6 +122,16 @@ const TERRAIN_MAIN_ONLY: readonly Variant[] = [
 ]
 
 /**
+ * 流出の帯（spec 07 §6）の前後の比較。2D（mode=2d・pitch 0。3D に切り替えない）と 3D の水面あり。
+ * 雨は範囲に内接する円（半径は範囲の半分）で、縁まで水が届き、帯の塗り分けが毎フレーム動く。
+ * 2D の行の「視点」の列は URL の z だけが効く（pitch は extra の 0、ex は 2D では使わない）
+ */
+const OUTFLOW_VARIANTS: readonly Variant[] = [
+  { label: '2D・水面あり（縁まで降雨）', water: '1', extra: { mode: '2d', pitch: '0' } },
+  { label: '3D・水面あり（縁まで降雨）', water: '1' },
+]
+
+/**
  * 計測の組（RAINTRACE_FPS_SET で選ぶ）。water の組は 05 の Task 9、isolate は 06 の §5.1、water-sites は 06 の
  * §4.1（3 地点。RAINTRACE_FPS_SITES=ayase,shibuya,minatomirai と組み合わせる）。
  * terrain-main（05 の Task 5）・terrain-tiles（05 の Task 6）は同じ中身（既存の記録が両方の名を使うため）
@@ -186,6 +197,19 @@ const SETS: Record<string, SetDef> = {
         extra: { arrowsM: '5' },
       },
     ],
+  },
+  // 流出の帯（spec 07 §6）。RAINTRACE_FPS_SITES=shibuya,minatomirai（沿岸を 1 つ含める）と組み合わせる
+  'outflow-500': {
+    sizes: ['500'],
+    views: ['z17 ×5 p60'],
+    waterRain: { mm: '500', r: '250' },
+    variants: OUTFLOW_VARIANTS,
+  },
+  'outflow-1000': {
+    sizes: ['1000'],
+    views: ['z17 ×5 p60'],
+    waterRain: { mm: '500', r: '500' },
+    variants: OUTFLOW_VARIANTS,
   },
 }
 
@@ -367,12 +391,14 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
               await page.goto(url)
               return readReport<Report>(page, 'data-fps-result', RUN_TIMEOUT_MS)
             })
-            // 3D のまま（(c) で 2D に落ちていない。フックも data-perf-error にする）
-            expect(report.view3d).toBe('3d')
+            // 2D の条件（extra の mode=2d。spec 07 §6）は 3D に切り替えないので off。3D の条件は 3D のまま
+            // （(c) で 2D に落ちていない。フックも data-perf-error にする）
+            const mode2d = variant.extra?.mode === '2d'
+            expect(report.view3d).toBe(mode2d ? 'off' : '3d')
             // 視点は厳密な一致ではなく「幅」で照合する（05 のコントローラーの裁定）。地形があると MapLibre は
             // カメラを地形の上に保つので、pitch は要求より下がる。この照合は「フックが pitch を無視した」ような
-            // 取り違えを捕まえるためのもので、角度そのものの検証ではない
-            const requestedPitch = Number(view.pitch)
+            // 取り違えを捕まえるためのもので、角度そのものの検証ではない。2D の条件は extra の pitch（0）を要求する
+            const requestedPitch = Number(variant.extra?.pitch ?? view.pitch)
             expect(report.mapPitch).toBeLessThanOrEqual(requestedPitch + 0.05)
             expect(report.mapPitch).toBeGreaterThanOrEqual(requestedPitch - 10.0)
             expect(Math.abs(report.mapZoom - Number(view.z))).toBeLessThanOrEqual(0.05)
