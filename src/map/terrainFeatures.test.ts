@@ -71,6 +71,11 @@ describe('markerFeatures', () => {
     })
     expect(collection.features.map((f) => f.properties.kind)).toEqual(['lowest', 'spill'])
     expect(collection.features[1]?.geometry.coordinates).toEqual(cellCenter(geo, 7))
+    // あふれ出し点だけ depressionId（Depression.id）を持つ（spec 07 §3.3）
+    expect(collection.features.map((f) => f.properties)).toEqual([
+      { kind: 'lowest' },
+      { kind: 'spill', depressionId: 2 },
+    ])
   })
 
   it('有効セルが無ければ最低点は出さない', () => {

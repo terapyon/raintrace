@@ -90,4 +90,16 @@ describe('CellInfoPopover（spec 04 §4）', () => {
     await userEvent.click(screen.getByRole('button', { name: strings.cellInfo.close }))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('印の説明（kind: marker）のときは開かない（MarkerInfoPopover が出す。spec 07 §3.4）', () => {
+    render(
+      <CellInfoPopover
+        popover={{ kind: 'marker', markers: [{ marker: 'lowest' }], ...position }}
+        cell={null}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('cell-info')).toBeNull()
+  })
 })

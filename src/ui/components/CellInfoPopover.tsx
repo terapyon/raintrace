@@ -35,7 +35,8 @@ function Value({ label, value, testId }: { label: string; value: number; testId:
  * スクロールも止めない。Escape は Modal が onClose に渡す（焦点がポップオーバーの中にあるとき）
  */
 export function CellInfoPopover({ popover, cell, onConfirm, onClose }: Props) {
-  const open = popover.kind !== 'closed'
+  // 印の説明（kind: marker）は MarkerInfoPopover が出す（spec 07 §3.4、計画で決めたこと 9）
+  const open = popover.kind === 'cell' || popover.kind === 'outside'
   return (
     <Popover
       open={open}
