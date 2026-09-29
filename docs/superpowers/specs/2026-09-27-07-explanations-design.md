@@ -1,6 +1,6 @@
 # Spec 07: 地図の印の説明と、流出の説明・可視化
 
-- Status: 裁定済み（2026-09-27。R07-1〜R07-4）。レビュー（raintrace-7e、2026-09-29）の must-fix 2 件・推奨 4 件・軽微 4 件を反映
+- Status: 裁定済み（2026-09-27。R07-1〜R07-4、2026-09-29 に R07-5）。レビュー（raintrace-7e、2026-09-29）の must-fix 2 件・推奨 4 件・軽微 4 件を反映
 - 日付: 2026-09-27
 - 対応: base-spec §18（境界条件）・§30（描画閾値）・§38（統計）・§59（免責）
 - 依存: 02、04、05
@@ -133,6 +133,13 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 - 仮想セルは `hj = zi`（`FlowSolver.ts:100-150`）なので `dh = w[i]` になり、`w[i] ≥ 1 mm` は θ（1e-5 m）を超える。マスクのセルは必ず外へ流し、マスクの外のセルは流出しない（レビューで裏取り済み）。
 - 描画のたびに、このマスクが 1 で、水深が表示の閾値（`OUTFLOW_VISIBLE_M` = 0.001 m、R07-1）以上のセルを「流出中」とする。
 
+**帯の幅（R07-5）**: 流出中のセルだけを塗ると、範囲全体を見る視点では 1 px 前後の線になり、ほとんど見えない（スパイク、`.handoff/07-spike-3d-outflow.md`）。そこで、流出中のセルから内側へ、範囲の一辺の 1%（`OUTFLOW_BAND_RATIO` = 0.01。500 m で約 5 m）以内の有効セルも同じ色で塗る。帯の内側のセルそのものは流出していないが、表示の意味は「この辺りから範囲の外へ抜けている」とする（凡例の文言もそれに合わせる）。
+
+- 地形を読み込んだとき、マスクと一緒に `outflowNearest: Int32Array` を 1 回だけ作る。各有効セルについて、帯の幅（セル数 = ceil(0.01 × 一辺 m ÷ セルの大きさ m)）以内にあるマスクのセルのうち最も近いもの（チェビシェフ距離。同じ距離なら添字の小さい方）の添字を入れる。帯の外は −1。マスクのセルは自分自身を指す。
+- 描画のたびに、`outflowNearest[i] ≥ 0` で、`water[outflowNearest[i]] ≥ OUTFLOW_VISIBLE_M` のセルを塗る。
+- 作り方は、マスクのセルからの多始点の幅優先探索（8 近傍の歩みで、深さを帯の幅で打ち切る）とする。1000 m（約 1031²、帯 約 10 セル）でも、帯のセルは端の 1 周 × 10 程度で、数十 ms 以内と見込む。
+- 帯は「近傍の表」とは独立の見た目の規則なので、08 で近傍が 4 になっても 8 近傍の歩みのままでよい。
+
 ソルバーの計算のループには手を入れない。Worker とのメッセージも変えない。水深のバッファは既にメインに届いている。
 
 ### 5.2 描き方
@@ -141,10 +148,10 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 
 #### 2D: canvas ソース
 
-範囲と同じ大きさの canvas ソースを 1 つ足す（`water-outflow`）。流出中のセルを赤紫（`OUTFLOW_COLOR` = #c2185b、不透明度 0.9）で塗り、それ以外は透明にする。
+範囲と同じ大きさの canvas ソースを 1 つ足す（`water-outflow`）。5.1 の帯のセルのうち塗るものを赤紫（`OUTFLOW_COLOR` = #c2185b、不透明度 0.9）で塗り、それ以外は透明にする。
 
 - 水の canvas とは別のソースにする（表示の切り替えを水と独立にするため）。
-- 再描画は水の描画と同じ rAF で行い、転送は `uploadCanvasSource` を使う（spec 06 §5.2）。マスクが 1 のセルだけを走査する。前回塗ったセルの一覧を持ち、そこだけ消す。
+- 再描画は水の描画と同じ rAF で行い、転送は `uploadCanvasSource` を使う（spec 06 §5.2）。帯のセル（`outflowNearest[i] ≥ 0`）の一覧を読み込みのときに作っておき、そこだけを走査する。前回塗ったセルの一覧を持ち、そこだけ消す。
 - **消去**: `clear()`（地点の変更）と `restore()`（ベースマップの切り替えの足し直し）に加え、`setWater(null)`（reset・start・失敗・異常終了。`WaterOverlay` の `draw` が `rgba.fill(0)` する経路）でも、流出の canvas を全部消す（推奨 R4）。
 - レイヤーの順は、`OVERLAY_LAYER_ORDER`（`src/map/layerIds.ts:23-33`）の `WATER_LAYER_IDS.water` の直後に足す。ID は `WATER_LAYER_IDS.outflow = 'water-outflow'` とする。
 - 3D の間は、水の canvas と同じく隠す（spec 05 §3.6）。
@@ -153,16 +160,19 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 
 3D では、水面の Custom Layer（`src/renderer/waterLayer.ts`・`waterShaders.ts`）で描く（R07-2）。
 
-- 5.1 のマスクを、静的なテクスチャ（R8、`u_outflowMask`）として 1 枚足す。地形を読み込んだときに 1 回だけ転送する。水深のテクスチャ（`u_depth`）は既に毎フレーム届いているので、新しい転送は増えない。
-- 頂点シェーダで、マスクが 1 で水深が `u_outflowMinDepth`（0.001 m）以上のセルに印を付け、フラグメントシェーダへ渡す（`flat` の varying）。
-- 印の付いたセルは、1 cm の discard（`v_depth < u_minDepth`）の対象から外し、`OUTFLOW_COLOR` で塗る。1 cm 以上のセルも、水の色ではなく `OUTFLOW_COLOR` で塗る。
+- 5.1 の `outflowNearest` を、静的なテクスチャ（`u_outflowNearest`。最も近いマスクのセルの列・行を RG の整数で持つ。帯の外は (−1, −1) などの印）として 1 枚足す。地形を読み込んだときに 1 回だけ転送する。水深のテクスチャ（`u_depth`）は既に毎フレーム届いているので、新しい転送は増えない。
+- 頂点シェーダで、`u_outflowNearest` の指すセルの水深を `u_depth` から texelFetch し、`u_outflowMinDepth`（0.001 m）以上なら 1、そうでなければ 0 を **smooth の varying**（`v_outflow`）で渡す。
+- フラグメントシェーダでは、`v_outflow > 0.5` なら 1 cm の discard（`v_depth < u_minDepth`）をせず、`OUTFLOW_COLOR` で塗る。1 cm 以上のセルも、水の色ではなく `OUTFLOW_COLOR` で塗る。discard の判定と塗りの判定は、同じ補間された `v_outflow` で行う（レビューの推奨 R5）。
+- `flat` の varying は使わない。頂点はセルの中心（`a_cell + 0.5`）にあり、四角形は 4 つのセルの中心を結んだものなので、`flat` は provoking vertex の値を三角形全体に使い、辺によって 0 px・1 セル幅・三角形 1 つおきのギザギザになる（スパイクで確認。`closeup-flat-*.png`）。smooth は 4 辺とも同じ太さのまっすぐな帯になる。
+- 3D の帯は、頂点がセルの中心にあるため、2D の帯より約半セル細く見える。帯の幅（5 m 前後）に比べて小さいので、揃えない。
 - 表示の切り替え（5.3）は uniform（`u_showOutflow`）で行う。プログラムのリンクはやり直さない（`u_debug` と同じ扱い）。
-- 1 cm 未満のセルは地形と同じ高さに置かれる（`h = z × 垂直強調`）。05 の z-fighting の対策（`polygonOffset`）で、地形の手前に出るはずだが、**実装の最初にスパイクで確かめる**（見える／ちらつかない、を 2 つの垂直強調で。結果はレビュアーに送る）。見えない場合は、印の付いたセルだけ数 cm 持ち上げる案を裁定に上げる。
+- 1 cm 未満のセルは地形と同じ高さに置かれる（`h = z × 垂直強調`）。05 の z-fighting の対策（`polygonOffset`）で足りる。スパイク（2026-09-29、実 GPU、渋谷・500 m）の結果: 垂直強調 ×1・×2、pitch 45・60 で見え、同じカメラで 3 回読んだ画素数は完全に一致した（ちらつき無し）。+0.02 m 持ち上げても差は ±2% で、揺らしたときの雑音と同じ程度だった。×10 は持ち上げで +32% と差が出るが、06 で受け入れ済みの「×10 では水面が沈む」と同じ現象として記録にとどめる。
+- 再生中の更新もスパイクで確かめた（smooth・×1・pitch 60 で、1 秒後から 12 秒後まで 317 → 422 px と増加）。`u_showOutflow = 0` と計測中（`u_debug.x = 1`）は 0 px になった。
 - `probe=water`（spec 06 §3）の計測のマゼンタとは色を分ける。計測の間（`u_debug.x > 0.5`）は、流出の色を出さない。
 
-#### 3D で canvas を使わない理由（レビューの must-fix M1）
+#### 3D で canvas を使わない理由（レビューの must-fix M1。スパイクで実測済み）
 
-3D は `setTerrain` を使うので、raster のレイヤーは RenderToTexture で地形のタイルごとのテクスチャに焼かれ、キャッシュされる（maplibre-gl-dev.mjs 22990 `if (tile.getRTT(stack)) continue;`）。キャッシュが捨てられるのは、fingerprint（タイルの座標と feature-state の revision）が変わるときと、style やタイル付きの `data` イベントのときだけである（22952-22957・25060-25075）。CanvasSource の `play`・`pause` から `prepare` へ進む経路は `texture.update` をするだけで、このどれも起こさない。そのため、カメラが動いてタイルの組が変わるまで、最初の絵のまま残る。05 が 3D で水の canvas を隠しているので、この経路には前例が無い。
+3D は `setTerrain` を使うので、raster のレイヤーは RenderToTexture で地形のタイルごとのテクスチャに焼かれ、キャッシュされる（maplibre-gl-dev.mjs 22990 `if (tile.getRTT(stack)) continue;`）。キャッシュが捨てられるのは、fingerprint（タイルの座標と feature-state の revision）が変わるときと、style やタイル付きの `data` イベントのときだけである（22952-22957・25060-25075）。CanvasSource の `play`・`pause` から `prepare` へ進む経路は `texture.update` をするだけで、このどれも起こさない。そのため、カメラが動いてタイルの組が変わるまで、最初の絵のまま残る。05 が 3D で水の canvas を隠しているので、この経路には前例が無い。スパイクで 2D の水の canvas を 3D に出したところ、canvas には約 22 万画素の水が描かれているのに、再生中の画面は 0 px のままで、カメラを動かすと 262,512 px 出た。
 
 ほかの 2 案は採らない。
 - 描くたびに `map.terrain.tileManager.releaseAllRTT()` を呼ぶ案は、内部 API で、全タイルの RTT（hillshade・標高など）を毎フレーム描き直すので、fps を落とす恐れが大きい。
@@ -170,7 +180,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 
 ### 5.3 切り替え
 
-`DisplaySettings` に「流出しているセル」のスイッチを足す。既定はオンとする。凡例は `MarkerLegend` の隣に「■ 範囲の外へ流出中」を足す。
+`DisplaySettings` に「流出しているセル」のスイッチを足す。既定はオンとする。凡例は `MarkerLegend` の隣に「■ この辺りから範囲の外へ流出中」を足す。
 
 設定は `persistedSettings.display.showOutflowCells: boolean` として保存する（tech-spec §8.3 に追記）。
 
@@ -193,6 +203,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 - `reduceClick`: `marker-click` で `kind: 'marker'` になり、`markers` の並びが最低点を先にした順になる。`close` で閉じる。`confirm` では何もしない。
 - `markerFeatures`: あふれ出し点に `depressionId` が付く。
 - `outflowBoundaryMask`: 端、内側の無効セルの周り、無効セルそのもの（0）、全部有効の内側（0）。近傍の表を FlowSolver から取っていること。
+- `outflowNearest`: 帯の幅（範囲の 1%）の境目、帯の外は −1、無効セルは −1、マスクのセルは自分自身、同じ距離なら添字の小さい方。
 - 流出の塗り分け（2D）: 閾値の境目、マスク外のセルは塗らない、前回の分を消す、`setWater(null)` で全部消える。
 - 水面の uniform: `u_outflowMask`・`u_outflowMinDepth`・`u_showOutflow` がシェーダの宣言と 1 対 1 で対応する（既存の `waterLayer.test.ts` の突き合わせに足す）。
 - 保存値: v0.2.0 の保存値（`showOutflowCells` が無い）を読むと、`disclaimerAcknowledgedAt` が残り、`showOutflowCells` は `true` になる。`showOutflowCells: 'yes'` なら `null`（軽微 m2）。
@@ -229,6 +240,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 | R07-2 | 流出の層を 3D でも出すか | **出す**（推奨どおり） | 3D がデモの主な見せ方なので。描き方は 5.2 のとおり、3D では水面の Custom Layer で描く（canvas の raster は地形に焼かれて更新されないため） |
 | R07-3 | 注意事項に流出の 1 行を足すか | **足す**（推奨どおり） | 免責の範囲の話なので |
 | R07-4 | 最低点とあふれ出し点が重なったとき | **両方を並べて出す**（推奨は最低点の優先） | 3.1・3.2 のとおり、当たった印をすべて 1 つのポップオーバーに並べる |
+| R07-5 | 流出の色の太さ（2026-09-29） | **範囲の一辺の 1% の帯**（推奨どおり） | 流出中のセルだけでは、範囲全体の視点で 1 px 前後になり見えない（スパイク）。5.1 の `outflowNearest` で、2D・3D とも同じ規則で塗る |
 
 ## 10. 後続への引き継ぎ
 
