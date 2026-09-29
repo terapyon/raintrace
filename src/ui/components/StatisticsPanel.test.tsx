@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSimulationStore } from '../../state/simulationStore'
+import { strings } from '../strings'
 import { StatisticsPanel } from './StatisticsPanel'
 
 afterEach(cleanup)
@@ -39,5 +41,12 @@ describe('StatisticsPanel（base-spec §38、spec 04 §6.3）', () => {
     expect(text('stat-max-depth')).toBe('0.43 m')
     expect(text('stat-flooded-area')).toBe('82 m²')
     expect(text('stat-speed')).toBe('60 step/秒')
+  })
+
+  it('領域外流出量の横の情報アイコンにツールチップが付き、説明文を出す（spec 07 §4.1）', async () => {
+    render(<StatisticsPanel simulation={createSimulationStore()} />)
+    const help = screen.getByRole('button', { name: strings.stats.outflowHelpLabel })
+    await userEvent.hover(help)
+    expect((await screen.findByRole('tooltip')).textContent).toBe(strings.stats.outflowHelp)
   })
 })

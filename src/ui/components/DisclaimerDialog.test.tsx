@@ -35,6 +35,8 @@ describe('免責表示（tech-spec §9.6）', () => {
     const user = userEvent.setup()
     expect(screen.getByRole('dialog')).toBeTruthy()
     for (const line of strings.disclaimer.lines) expect(screen.getByText(line)).toBeTruthy()
+    // 範囲の外への流出の 1 行（spec 07 §4.3、R07-3）
+    expect(strings.disclaimer.lines).toHaveLength(4)
     expect(screen.getByText(strings.disclaimer.author)).toBeTruthy()
     const sourceLink = screen.getByRole('link', { name: strings.disclaimer.sourceCode.linkText })
     expect(sourceLink).toBeTruthy()

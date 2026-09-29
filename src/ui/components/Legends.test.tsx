@@ -31,4 +31,9 @@ describe('凡例', () => {
     )
     expect(screen.getByTestId('marker-legend-spill').style.backgroundColor).toBe('rgb(239, 108, 0)')
   })
+
+  it('水深の凡例の下に、1 cm 未満は表示しないことの注記を出す（spec 07 §4.2）', () => {
+    render(<WaterLegend palette="stepped" />)
+    expect(screen.getByTestId('water-legend-note').textContent).toBe(strings.legend.waterThinNote)
+  })
 })
