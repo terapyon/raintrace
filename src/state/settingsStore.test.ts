@@ -58,6 +58,10 @@ describe('settingsStore（tech-spec §8.3）', () => {
       { ...base, display: { ...DEFAULT_SETTINGS.display, showFlowVectors: 'yes' } },
     ],
     [
+      '流出の表示が真偽値でない',
+      { ...base, display: { ...DEFAULT_SETTINGS.display, showOutflowCells: 'yes' } },
+    ],
+    [
       '矢印の間隔が候補にも 5 にも無い',
       { ...base, display: { ...DEFAULT_SETTINGS.display, flowVectorSpacingM: 15 } },
     ],
@@ -95,6 +99,23 @@ describe('settingsStore（tech-spec §8.3）', () => {
     )
     store.getState().setAreaSize(250)
     expect(store.getState().rainfall.radiusM).toBe(125)
+  })
+
+  it('v0.2.0 の保存値（showOutflowCells が無い）を読んでも、注意事項の了解と雨量は残り、流出の表示はオン（spec 07 §5.3）', () => {
+    const { showOutflowCells: _, ...display } = DEFAULT_SETTINGS.display
+    const store = createSettingsStore(
+      memoryStorage({
+        [SETTINGS_KEY]: JSON.stringify({
+          ...DEFAULT_SETTINGS,
+          rainfall: { amountMm: 80, radiusM: 15 },
+          display,
+          disclaimerAcknowledgedAt: '2026-09-20T01:02:03.000Z',
+        }),
+      }),
+    )
+    expect(store.getState().disclaimerAcknowledgedAt).toBe('2026-09-20T01:02:03.000Z')
+    expect(store.getState().rainfall).toEqual({ amountMm: 80, radiusM: 15 })
+    expect(store.getState().display.showOutflowCells).toBe(true)
   })
 })
 

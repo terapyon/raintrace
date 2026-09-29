@@ -28,6 +28,11 @@ export interface PersistedSettings {
     showFlowVectors: boolean
     /** 水の流れと地形の流向の矢印の間隔（計画で決めたこと 10） */
     flowVectorSpacingM: (typeof ARROW_SPACINGS)[number]
+    /**
+     * 流出しているセルの表示（spec 07 §5.3）。v0.2.0 の保存値には無いので、欠けていれば true で補う（型が違えば
+     * これまでどおり全体を捨てる）。足したのは任意の項目で形は変わらないので、schemaVersion は 1 のまま
+     */
+    showOutflowCells: boolean
   }
   map: { basemap: Basemap; theme: ThemeMode }
   disclaimerAcknowledgedAt: string | null
@@ -42,6 +47,7 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
     waterDepthPalette: 'stepped',
     showFlowVectors: true,
     flowVectorSpacingM: 10,
+    showOutflowCells: true,
   },
   map: { basemap: 'pale', theme: 'system' },
   disclaimerAcknowledgedAt: null,
@@ -90,7 +96,8 @@ export function clampArrowSpacing(
 /**
  * 保存値を検証する。形・型・範囲のどれかが不正、または schemaVersion が 1 でなければ null
  * （呼び出し側が既定値に戻す。schemaVersion のマイグレーションはしない。外した選択肢の値
- * （矢印の間隔 5）だけ 10 に読み替える。tech-spec §8.3。R06-11）
+ * （矢印の間隔 5）だけ 10 に読み替える。欠けた `showOutflowCells` は true で補う（spec 07）。
+ * tech-spec §8.3。R06-11）
  */
 export function parsePersistedSettings(value: unknown): PersistedSettings | null {
   if (!isRecord(value) || value.schemaVersion !== 1) return null
@@ -101,11 +108,14 @@ export function parsePersistedSettings(value: unknown): PersistedSettings | null
   const { amountMm, radiusM } = rainfall
   if (!isValidAmountMm(amountMm) || !isValidRadiusM(radiusM, sizeM)) return null
   const { verticalExaggeration, waterDepthPalette, showFlowVectors, flowVectorSpacingM } = display
+  // v0.2.0 の保存値には無い。欠けていれば既定の true で補い、了解の日時を含む他の設定を失わせない（spec 07 §5.3）
+  const showOutflowCells = display.showOutflowCells === undefined ? true : display.showOutflowCells
   if (
     !oneOf(VERTICAL_EXAGGERATIONS, verticalExaggeration) ||
     !oneOf(WATER_PALETTES, waterDepthPalette) ||
     typeof showFlowVectors !== 'boolean' ||
-    !oneOf(ARROW_SPACING_INPUTS, flowVectorSpacingM)
+    !oneOf(ARROW_SPACING_INPUTS, flowVectorSpacingM) ||
+    typeof showOutflowCells !== 'boolean'
   ) {
     return null
   }
@@ -127,6 +137,7 @@ export function parsePersistedSettings(value: unknown): PersistedSettings | null
       waterDepthPalette,
       showFlowVectors,
       flowVectorSpacingM: clampArrowSpacing(flowVectorSpacingM),
+      showOutflowCells,
     },
     map: { basemap, theme },
     disclaimerAcknowledgedAt,
