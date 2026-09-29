@@ -1,0 +1,369 @@
+import { expect, type Page, test } from '@playwright/test'
+import { hexToRgb, MARKER_COLORS } from '../../src/map/overlayColors'
+import { WATER_LAYER_IDS } from '../../src/map/WaterOverlay'
+import { strings } from '../../src/ui/strings'
+import {
+  acknowledgeDisclaimer,
+  collectErrors,
+  hideTerrainOverlays,
+  mapElement,
+  nextFrames,
+  switchTo3d,
+  tabTo,
+  waitTerrain,
+} from './support/app'
+import { routeGsi } from './support/gsi'
+import { type Blob, colorBlobs, decodePng, outflowColoredCount } from './support/png'
+
+const SHIBUYA = '/?lat=35.658000&lon=139.701600'
+/** 範囲（500 m）に内接する円の雨。縁まで水が届き、流出の帯が出る（07 のスパイクと同じ雨） */
+const EDGE_RAIN = '&mm=500&r=250'
+/** ○ を探す画面（md 未満。パネルは下で、たためる。範囲の端の ○ が右のパネルに隠れない。計画で決めたこと 14） */
+const NARROW = { width: 800, height: 900 }
+/** たたんだ下のパネルの見出しの分（px） */
+const BOTTOM_BAR_PX = 100
+/** 右のパネル（幅 320 px）の分（px） */
+const SIDE_PANEL_PX = 340
+/**
+ * ○ の色の許容（各成分）。circle の中は指定の色そのものなので小さくてよい。MUI の青（#1976d2）は最低点の青と
+ * 各成分 17〜18 違うので、12 なら区別できる。○ のテストでは雨を降らせない（水の色が最低点の色の許容に入る）
+ */
+const MARKER_TOLERANCE = 12
+/** ○ とみなす塊の最小の画素数（3D の遠い ○ は小さく描かれる） */
+const MARKER_MIN_PX = 10
+/**
+ * 流出の帯の画素のしきい値（降雨の前との差）。実測を報告に書き、しきい値は大きな余裕を取る（06 の慣習）。
+ * スパイク（実 GPU）では 500 m・1 セル幅の帯でも 3D で 240〜420 px だった。帯は 6 セル幅なので、それより多い。
+ * 実測（2026-09-29、SwiftShader、5 回）: 2D の c1 − c0 = 1139〜1955、3D の c1 − c0 = 1980〜2603
+ */
+const OUTFLOW_MIN_PX = 200
+/**
+ * t1 から t2 への増え方の下限（3D。M2）。SwiftShader の揺れ（色の分類ではほぼ 0）より十分大きく。
+ * 実測（2026-09-29、5 回）: c2 − c1 = 688〜1165。同じカメラで 3 回読んだ数は ×2・×1 とも完全に一致した
+ */
+const OUTFLOW_GROWTH_PX = 100
+/** 帯を消した後の、降雨の前との差の許容（揺れ）。実測（2026-09-29、5 回）: 2D は 0、3D は −21〜−19 */
+const OUTFLOW_NOISE_PX = 30
+
+type Clip = { x: number; y: number; width: number; height: number }
+
+/** 地図のうちパネルに隠れない部分（狭い画面は下の見出し、広い画面は右のパネルを除く） */
+async function mapClip(page: Page, narrow: boolean): Promise<Clip> {
+  const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
+  if (box === null) throw new Error('地図の canvas がありません')
+  return narrow
+    ? { x: box.x, y: box.y, width: box.width, height: box.height - BOTTOM_BAR_PX }
+    : { x: box.x, y: box.y, width: box.width - SIDE_PANEL_PX, height: box.height }
+}
+
+/** 色 hex の ○ を、狭い画面の地図の見えている部分から探す（ページの座標。大きい順） */
+async function findMarkers(page: Page, hex: string): Promise<Blob[]> {
+  const clip = await mapClip(page, true)
+  const blobs = colorBlobs(
+    decodePng(await page.screenshot({ clip })),
+    hexToRgb(hex),
+    MARKER_TOLERANCE,
+  )
+  return blobs
+    .filter((b) => b.count >= MARKER_MIN_PX)
+    .map((b) => ({ ...b, x: clip.x + b.x, y: clip.y + b.y }))
+}
+
+/** どの ○ からも 24 px 以上離れた、範囲の中の点（地図の中心の近くから探す） */
+function awayFrom(clip: Clip, markers: readonly Blob[]): { x: number; y: number } {
+  for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+    for (const fy of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+      const p = { x: clip.x + clip.width * fx, y: clip.y + clip.height * fy }
+      if (markers.every((m) => Math.hypot(m.x - p.x, m.y - p.y) >= 24)) return p
+    }
+  }
+  throw new Error('○ から離れた点が見つかりません')
+}
+
+/**
+ * 色 hex の ○ をクリックして、行 testId の説明が開くまで繰り返す（3D は垂直強調を変えた直後に ○ の位置が動く）。
+ * 見つからなければ 'no-marker' のまま時間切れになる
+ */
+async function clickMarker(page: Page, hex: string, testId: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const [blob] = await findMarkers(page, hex)
+        if (blob === undefined) return 'no-marker'
+        await page.mouse.click(blob.x, blob.y)
+        return (await page.getByTestId(testId).first().isVisible()) ? 'open' : 'closed'
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('open')
+}
+
+async function outflowCount(page: Page, clip: Clip): Promise<number> {
+  return outflowColoredCount(decodePng(await page.screenshot({ clip })))
+}
+
+/** 実測の値を標準出力に残す（しきい値の根拠。報告に書く） */
+function logMeasured(name: string, values: Record<string, number | readonly number[]>): void {
+  console.log(`[実測] ${name} ${JSON.stringify(values)}`)
+}
+
+/** 垂直強調のボタンを押す */
+async function setExaggeration(page: Page, value: number): Promise<void> {
+  const button = page
+    .getByRole('group', { name: strings.view3d.exaggeration })
+    .getByRole('button', { name: strings.view3d.exaggerationValue(value), exact: true })
+  await button.click()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+}
+
+test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () => {
+  test.describe.configure({ timeout: 90_000 })
+
+  test.beforeEach(async ({ context }) => {
+    await routeGsi(context)
+    await acknowledgeDisclaimer(context)
+  })
+
+  test('2D: 最低点の ○ の上ではカーソルが指の形になり、クリックすると説明と標高が出る。○ でない所はセル情報を開く（§3.1・§3.4・§3.5）', async ({
+    page,
+  }) => {
+    const errors = collectErrors(page)
+    await page.setViewportSize(NARROW)
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    await hideTerrainOverlays(page)
+    await page.getByRole('button', { name: strings.panel.collapse }).click()
+    await expect
+      .poll(async () => (await findMarkers(page, MARKER_COLORS.lowest)).length, { timeout: 10_000 })
+      .toBeGreaterThan(0)
+    const lowest = await findMarkers(page, MARKER_COLORS.lowest)
+    const spills = await findMarkers(page, MARKER_COLORS.spill)
+    const target = lowest[0] as Blob
+    const canvas = page.locator('canvas.maplibregl-canvas')
+    await page.mouse.move(target.x, target.y)
+    await expect(canvas).toHaveCSS('cursor', 'pointer')
+    await page.mouse.click(target.x, target.y)
+    const row = page.getByTestId('marker-info-lowest')
+    await expect(row).toContainText(strings.markerInfo.lowest.title)
+    await expect(row).toContainText(strings.markerInfo.lowest.body)
+    await expect(row.getByTestId('marker-elevation')).toHaveText(/^-?\d+\.\d{2} m$/)
+    await expect(page.getByTestId('cell-info')).toBeHidden()
+    // ○ から離れた範囲の中の点は、今までどおりセル情報（spec 07 §7.2）
+    const away = awayFrom(await mapClip(page, true), [...lowest, ...spills])
+    await page.mouse.move(away.x, away.y)
+    await expect(canvas).not.toHaveCSS('cursor', 'pointer')
+    await page.mouse.click(away.x, away.y)
+    await expect(page.getByTestId('cell-info')).toBeVisible()
+    await expect(page.getByTestId('marker-info')).toBeHidden()
+    expect(errors).toEqual([])
+  })
+
+  test('2D: あふれ出し点の ○ をクリックすると、説明と 4 つの数値が出る（§3.4）', async ({
+    page,
+  }) => {
+    await page.setViewportSize(NARROW)
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    await hideTerrainOverlays(page)
+    await page.getByRole('button', { name: strings.panel.collapse }).click()
+    await clickMarker(page, MARKER_COLORS.spill, 'marker-info-spill')
+    const row = page.getByTestId('marker-info-spill').first()
+    await expect(row).toContainText(strings.markerInfo.spill.title)
+    await expect(row).toContainText(strings.markerInfo.spill.body)
+    await expect(row.getByTestId('marker-spill-elevation')).toHaveText(/^-?\d+\.\d{2} m$/)
+    await expect(row.getByTestId('marker-max-depth')).toHaveText(/^\d+\.\d{2} m$/)
+    await expect(row.getByTestId('marker-capacity')).toHaveText(/ m³$/)
+    await expect(row.getByTestId('marker-area')).toHaveText(/^\d+ m²$/)
+  })
+
+  test('3D: ○ のクリックで説明が開く（垂直強調 ×1 は最低点、×5 はあふれ出し点。§3.1、軽微 m1）', async ({
+    page,
+  }) => {
+    test.setTimeout(150_000)
+    const errors = collectErrors(page)
+    await page.setViewportSize(NARROW)
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    await hideTerrainOverlays(page)
+    await switchTo3d(page)
+    // ×5 では、この地点の最低点の ○（タイルの継ぎ目の深い窪みの底）が淡く描かれ（実測 #4c82be）、色で探せない。
+    // そこで ×5 はあふれ出し点の ○ を使う
+    const cases = [
+      { ex: 1, kind: 'lowest', elevation: 'marker-elevation' },
+      { ex: 5, kind: 'spill', elevation: 'marker-spill-elevation' },
+    ] as const
+    for (const { ex, kind, elevation } of cases) {
+      await setExaggeration(page, ex)
+      await page.getByRole('button', { name: strings.panel.collapse }).click()
+      await clickMarker(page, MARKER_COLORS[kind], `marker-info-${kind}`)
+      await expect(page.getByTestId(elevation).first()).toHaveText(/^-?\d+\.\d{2} m$/)
+      await page.getByRole('button', { name: strings.markerInfo.close }).click()
+      await expect(page.getByTestId('marker-info')).toBeHidden()
+      await page.getByRole('button', { name: strings.panel.expand }).click()
+    }
+    expect(errors).toEqual([])
+  })
+
+  test('2D: 縁まで雨を置いて再生すると water-outflow に流出の色が出て、切ると消え、切っている間の Reset の後に入れ直しても古い帯は出ない（§5.2・§5.3、推奨 R4、Review Focus 4）', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    const errors = collectErrors(page)
+    await page.goto(`${SHIBUYA}${EDGE_RAIN}`)
+    await waitTerrain(page)
+    await hideTerrainOverlays(page)
+    const mapEl = mapElement(page)
+    const visibleLayers = async (): Promise<string> =>
+      (await mapEl.getAttribute('data-visible-overlay-layers')) ?? ''
+    await expect.poll(visibleLayers).toContain(WATER_LAYER_IDS.outflow)
+    const clip = await mapClip(page, false)
+    const c0 = await outflowCount(page, clip)
+    await page.getByRole('button', { name: strings.playback.max, exact: true }).click()
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    let c1 = 0
+    await expect
+      .poll(
+        async () => {
+          c1 = await outflowCount(page, clip)
+          return c1 - c0
+        },
+        { timeout: 60_000 },
+      )
+      .toBeGreaterThan(OUTFLOW_MIN_PX)
+    // 切ると消える
+    await page.getByLabel(strings.panel.showOutflow).uncheck()
+    await expect.poll(visibleLayers).not.toContain(WATER_LAYER_IDS.outflow)
+    await nextFrames(page)
+    const offDiff = (await outflowCount(page, clip)) - c0
+    expect(offDiff).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
+    // 切っている間に Reset（setWater(null)）。入れ直しても古い帯は出ない
+    await page.getByRole('button', { name: strings.playback.reset }).click()
+    await expect(page.getByTestId('stat-step')).toHaveText('Step 0')
+    await page.getByLabel(strings.panel.showOutflow).check()
+    await expect.poll(visibleLayers).toContain(WATER_LAYER_IDS.outflow)
+    await nextFrames(page)
+    await nextFrames(page)
+    const afterResetDiff = (await outflowCount(page, clip)) - c0
+    logMeasured('2D', { c0, c1MinusC0: c1 - c0, offDiff, afterResetDiff })
+    expect(afterResetDiff).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
+    expect(errors).toEqual([])
+  })
+
+  test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると降雨の前に戻る', async ({
+    page,
+  }) => {
+    test.setTimeout(150_000)
+    const errors = collectErrors(page)
+    await page.goto(`${SHIBUYA}${EDGE_RAIN}`)
+    await waitTerrain(page)
+    await hideTerrainOverlays(page)
+    await switchTo3d(page)
+    // ここから先はカメラを動かさない（3D の視点へ動き終えた後）
+    const clip = await mapClip(page, false)
+    // 視点へ動き終えた直後は地形のタイルの描き足しで数が少し動くので、続けて 2 回同じになるまで待つ
+    let c0 = -1
+    await expect
+      .poll(
+        async () => {
+          const previous = c0
+          await nextFrames(page)
+          c0 = await outflowCount(page, clip)
+          return c0 === previous
+        },
+        { timeout: 20_000, intervals: [500] },
+      )
+      .toBe(true)
+    await page.getByRole('button', { name: strings.playback.max, exact: true }).click()
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    await expect
+      .poll(async () => Number(await mapElement(page).getAttribute('data-water-ready')), {
+        timeout: 30_000,
+      })
+      .toBeGreaterThanOrEqual(1)
+    // t1: 帯が出るまで待つ（canvas を地形に貼る方式のように最初の絵で凍ると、ここで c0 のまま時間切れになる）
+    let c1 = 0
+    await expect
+      .poll(
+        async () => {
+          c1 = await outflowCount(page, clip)
+          return c1 - c0
+        },
+        { timeout: 60_000 },
+      )
+      .toBeGreaterThan(OUTFLOW_MIN_PX)
+    // t2: 同じカメラのまま、さらに増える（最初に描いた 1 回で凍ると、ここで c1 のまま時間切れになる）
+    let c2 = 0
+    await expect
+      .poll(
+        async () => {
+          c2 = await outflowCount(page, clip)
+          return c2 - c1
+        },
+        { timeout: 60_000 },
+      )
+      .toBeGreaterThan(OUTFLOW_GROWTH_PX)
+    // 一時停止して、同じカメラで 3 回読んだ画素数が一致する（ちらつかない）。垂直強調 ×2 と ×1（推奨 R3）。
+    // 各垂直強調で帯を切った画素数も読み、切ると帯の分が消えることを確かめる
+    await page.getByRole('button', { name: strings.playback.pause }).click()
+    const flicker: Record<string, number[]> = {}
+    const offCounts: Record<string, number> = {}
+    let offDiff = 0
+    // 既定の垂直強調は ×2（DEFAULT_SETTINGS）。c0 は ×2 で読んだので、×2 を先に読む
+    for (const ex of [2, 1] as const) {
+      await setExaggeration(page, ex)
+      await page.waitForTimeout(2_000)
+      await nextFrames(page)
+      const reads: number[] = []
+      for (let n = 0; n < 3; n++) {
+        reads.push(await outflowCount(page, clip))
+        await nextFrames(page)
+      }
+      flicker[`x${ex}`] = reads
+      expect(reads).toEqual([reads[0], reads[0], reads[0]])
+      // 切ると u_showOutflow が 0 になり、帯の分が消える
+      await page.getByLabel(strings.panel.showOutflow).uncheck()
+      await nextFrames(page)
+      let off = 0
+      await expect
+        .poll(
+          async () => {
+            off = await outflowCount(page, clip)
+            return (reads[0] as number) - off
+          },
+          { timeout: 10_000 },
+        )
+        .toBeGreaterThan(OUTFLOW_MIN_PX)
+      offCounts[`x${ex}`] = off
+      // ×2 は降雨の前（c0）と同じ視点なので、c0 と同じに戻る
+      if (ex === 2) {
+        offDiff = off - c0
+        expect(Math.abs(offDiff)).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
+      }
+      await page.getByLabel(strings.panel.showOutflow).check()
+    }
+    logMeasured('3D', {
+      c0,
+      c1MinusC0: c1 - c0,
+      c2MinusC1: c2 - c1,
+      offDiff,
+      flickerX1: flicker.x1 ?? [],
+      flickerX2: flicker.x2 ?? [],
+      offX1: offCounts.x1 ?? 0,
+      offX2: offCounts.x2 ?? 0,
+    })
+    expect(errors).toEqual([])
+  })
+
+  test('領域外流出量の説明のアイコンに Tab で焦点を移すとツールチップが出る。水深の凡例の注記と ○・流出の凡例が出る（§3.6・§4.1・§4.2）', async ({
+    page,
+  }) => {
+    await page.goto(SHIBUYA)
+    await waitTerrain(page)
+    const help = page.getByRole('button', { name: strings.stats.outflowHelpLabel })
+    await tabTo(page, help, 80)
+    await expect(page.getByRole('tooltip')).toHaveText(strings.stats.outflowHelp)
+    await expect(page.getByTestId('water-legend-note')).toHaveText(strings.legend.waterThinNote)
+    await expect(page.getByRole('img', { name: strings.legend.markersAria })).toBeVisible()
+    await expect(page.getByRole('img', { name: strings.legend.outflowAria })).toBeVisible()
+  })
+})

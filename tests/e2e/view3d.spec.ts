@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, test } from '@playwright/test'
 import { TERRAIN_LAYER_IDS } from '../../src/map/TerrainOverlay'
 import { drawnTileZoomForView, MIN_3D_DRAWN_TILE_ZOOM } from '../../src/map/view3d/drawnZoom'
 import { VIEW3D_LAYER_IDS } from '../../src/map/view3d/layerIds'
@@ -9,6 +9,8 @@ import {
   clickMap,
   collectErrors,
   collectWarnings,
+  mapElement,
+  switchTo3d,
   waitTerrain,
 } from './support/app'
 import { routeGsi } from './support/gsi'
@@ -16,21 +18,12 @@ import { decodePng, waterColoredFraction } from './support/png'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 
-const mapElement = (page: Page): Locator => page.locator('[data-map-loaded="true"]')
-
 /** 水面のすべての区画を描いた回数（data-water-ready。View3d。spec 06 §5.2、Task 17a） */
 const readyCount = async (element: Locator): Promise<number> =>
   Number(await element.getAttribute('data-water-ready'))
 
 const layersOf = async (element: Locator, name: string): Promise<string[]> =>
   (await element.getAttribute(name))?.split(',') ?? []
-
-/** パネルの「3D」を押し、3D の視点へ動き終えるまで待つ（SwiftShader では地形の用意に数秒かかる） */
-async function switchTo3d(page: Page): Promise<void> {
-  await page.getByRole('button', { name: strings.view3d.view3d, exact: true }).click()
-  await expect(mapElement(page)).toHaveAttribute('data-view3d', '3d', { timeout: 30_000 })
-  await expect(mapElement(page)).toHaveAttribute('data-view3d-framed', 'true', { timeout: 30_000 })
-}
 
 test.describe('3D の表示（spec 05 §5）', () => {
   // 一部のテストは 30 秒までの per-assertion wait を複数重ねる。Playwright の既定のテストの timeout

@@ -1,5 +1,6 @@
 import { type BrowserContext, expect, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS, SETTINGS_KEY } from '../../../src/state/persistedSettings'
+import { strings } from '../../../src/ui/strings'
 
 /**
  * 免責の了解を済ませた設定を、ページのスクリプトより前に書く。保存が無いときだけ書くので、
@@ -63,4 +64,35 @@ export function collectWarnings(page: Page): string[] {
     warnings.push(text)
   })
   return warnings
+}
+
+export const mapElement = (page: Page): Locator => page.locator('[data-map-loaded="true"]')
+
+/** パネルの「3D」を押し、3D の視点へ動き終えるまで待つ（SwiftShader では地形の用意に数秒かかる） */
+export async function switchTo3d(page: Page): Promise<void> {
+  await page.getByRole('button', { name: strings.view3d.view3d, exact: true }).click()
+  await expect(mapElement(page)).toHaveAttribute('data-view3d', '3d', { timeout: 30_000 })
+  await expect(mapElement(page)).toHaveAttribute('data-view3d-framed', 'true', { timeout: 30_000 })
+}
+
+/** 標高・窪地・地形の流向・水の流れの矢印を切る（画素の色の判定を汚さない。spec 07 の E2E） */
+export async function hideTerrainOverlays(page: Page): Promise<void> {
+  for (const label of [
+    strings.panel.showElevation,
+    strings.panel.showDepressions,
+    strings.panel.showFlow,
+    strings.panel.showWaterFlow,
+  ]) {
+    await page.getByLabel(label, { exact: true }).uncheck()
+  }
+}
+
+/** 描画フレームを 2 つ待つ（rAF で描く canvas・シェーダの変化が画面に出るまで） */
+export async function nextFrames(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  )
 }
