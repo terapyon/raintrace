@@ -135,7 +135,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 
 **帯の幅（R07-5）**: 流出中のセルだけを塗ると、範囲全体を見る視点では 1 px 前後の線になり、ほとんど見えない（スパイク、`.handoff/07-spike-3d-outflow.md`）。そこで、流出中のセルから内側へ、範囲の一辺の 1%（`OUTFLOW_BAND_RATIO` = 0.01。500 m で約 5 m）以内の有効セルも同じ色で塗る。帯の内側のセルそのものは流出していないが、表示の意味は「この辺りから範囲の外へ抜けている」とする（凡例の文言もそれに合わせる）。
 
-- 地形を読み込んだとき、マスクと一緒に `outflowNearest: Int32Array` を 1 回だけ作る。各有効セルについて、帯の幅（セル数 = ceil(0.01 × 一辺 m ÷ セルの大きさ m)）以内にあるマスクのセルのうち最も近いもの（チェビシェフ距離。同じ距離なら添字の小さい方）の添字を入れる。帯の外は −1。マスクのセルは自分自身を指す。
+- 地形を読み込んだとき、マスクと一緒に `outflowNearest: Int32Array` を 1 回だけ作る。各有効セルについて、帯の幅（セル数 = ceil(0.01 × 一辺 m ÷ セルの大きさ m)）以内で、幅優先探索で最初に届いたマスクのセルの添字を入れる（始点のマスクのセルは添字の昇順でキューに入れる。これで結果は決定的になる。レビューの軽微 m6 の (b)）。帯の外は −1。マスクのセルは自分自身を指す。
 - 描画のたびに、`outflowNearest[i] ≥ 0` で、`water[outflowNearest[i]] ≥ OUTFLOW_VISIBLE_M` のセルを塗る。
 - 作り方は、マスクのセルからの多始点の幅優先探索（8 近傍の歩みで、深さを帯の幅で打ち切る）とする。1000 m（約 1031²、帯 約 10 セル）でも、帯のセルは端の 1 周 × 10 程度で、数十 ms 以内と見込む。
 - 帯は「近傍の表」とは独立の見た目の規則なので、08 で近傍が 4 になっても 8 近傍の歩みのままでよい。
@@ -160,7 +160,7 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 
 3D では、水面の Custom Layer（`src/renderer/waterLayer.ts`・`waterShaders.ts`）で描く（R07-2）。
 
-- 5.1 の `outflowNearest` を、静的なテクスチャ（`u_outflowNearest`。最も近いマスクのセルの列・行を RG の整数で持つ。帯の外は (−1, −1) などの印）として 1 枚足す。地形を読み込んだときに 1 回だけ転送する。水深のテクスチャ（`u_depth`）は既に毎フレーム届いているので、新しい転送は増えない。
+- 5.1 の `outflowNearest` を、静的なテクスチャ（`u_outflowNearest`。既存の `floatTexture`〈`waterLayer.ts:100`。R32F、NearestFilter、ミップマップ無し〉で、1 チャンネルに平らに並べた添字を入れる。帯の外は −1。float32 は 2^24 までの整数を正確に表せ、1000 m でも 1031² ≈ 106 万なので足りる。シェーダでは `int k = int(texelFetch(u_outflowNearest, cell, 0).r)`、`k >= 0` なら `ivec2(k % u_size, k / u_size)` で `u_depth` を引く。整数テクスチャは、フィルタの指定を誤ると黙って 0 を返す罠があり、使う利点が無いので使わない）として 1 枚足す。地形を読み込んだときに 1 回だけ転送する。水深のテクスチャ（`u_depth`）は既に毎フレーム届いているので、新しい転送は増えない。
 - 頂点シェーダで、`u_outflowNearest` の指すセルの水深を `u_depth` から texelFetch し、`u_outflowMinDepth`（0.001 m）以上なら 1、そうでなければ 0 を **smooth の varying**（`v_outflow`）で渡す。
 - フラグメントシェーダでは、`v_outflow > 0.5` なら 1 cm の discard（`v_depth < u_minDepth`）をせず、`OUTFLOW_COLOR` で塗る。1 cm 以上のセルも、水の色ではなく `OUTFLOW_COLOR` で塗る。discard の判定と塗りの判定は、同じ補間された `v_outflow` で行う（レビューの推奨 R5）。
 - `flat` の varying は使わない。頂点はセルの中心（`a_cell + 0.5`）にあり、四角形は 4 つのセルの中心を結んだものなので、`flat` は provoking vertex の値を三角形全体に使い、辺によって 0 px・1 セル幅・三角形 1 つおきのギザギザになる（スパイクで確認。`closeup-flat-*.png`）。smooth は 4 辺とも同じ太さのまっすぐな帯になる。
@@ -191,7 +191,8 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 ## 6. 性能
 
 - 5.1 のマスクは、地形の読み込みのときに 1 回、O(N²) で作る。1000 m（約 1031²）でも数 ms と見込む。
-- 2D の描画は、マスクのセル数に比例する。端の 1 周は 1000 m で約 4,100 セルだが、沿岸の地点（みなとみらいなど）では無効セルの縁がそれより長くなりうる。「数千セル」は目安にすぎない（軽微 m4）。
+- 2D の描画は、帯のセル数に比例する。1000 m で端の 1 周（約 4,100）× 帯の幅（約 10 セル）≈ 4 万セルで、沿岸の地点（みなとみらいなど）では無効セルの縁の分だけさらに増える（軽微 m4・m7）。
+- 3D は頂点ごとに texelFetch が 1 回増える（1000 m で約 106 万頂点）。
 - 2D の canvas の転送は、水の canvas と同じ大きさのものがもう 1 つ増える。3D はテクスチャが 1 枚増え（地形の読み込みのときに 1 回だけ転送）、シェーダの分岐が増える。
 - 06 の fps probe（500 m・1000 m、2D と 3D）で、変更前と差が 0.5 fps 以内であることを確かめる。対象に沿岸の地点を 1 つ含める。2D で超えたら、転送を流出セルが変わった描画だけに絞る。
 - 初回の読み込みの予算（initial 500 KB）を超えないこと。
@@ -203,9 +204,9 @@ type MarkerRef = { marker: 'lowest' } | { marker: 'spill'; depressionId: number 
 - `reduceClick`: `marker-click` で `kind: 'marker'` になり、`markers` の並びが最低点を先にした順になる。`close` で閉じる。`confirm` では何もしない。
 - `markerFeatures`: あふれ出し点に `depressionId` が付く。
 - `outflowBoundaryMask`: 端、内側の無効セルの周り、無効セルそのもの（0）、全部有効の内側（0）。近傍の表を FlowSolver から取っていること。
-- `outflowNearest`: 帯の幅（範囲の 1%）の境目、帯の外は −1、無効セルは −1、マスクのセルは自分自身、同じ距離なら添字の小さい方。
+- `outflowNearest`: 帯の幅（範囲の 1%）の境目、帯の外は −1、無効セルは −1、マスクのセルは自分自身、始点を添字の昇順で入れた幅優先探索で最初に届いたもの（決定的であること）。
 - 流出の塗り分け（2D）: 閾値の境目、マスク外のセルは塗らない、前回の分を消す、`setWater(null)` で全部消える。
-- 水面の uniform: `u_outflowMask`・`u_outflowMinDepth`・`u_showOutflow` がシェーダの宣言と 1 対 1 で対応する（既存の `waterLayer.test.ts` の突き合わせに足す）。
+- 水面の uniform: `u_outflowNearest`・`u_outflowMinDepth`・`u_showOutflow` がシェーダの宣言と 1 対 1 で対応する（既存の `waterLayer.test.ts` の突き合わせに足す）。
 - 保存値: v0.2.0 の保存値（`showOutflowCells` が無い）を読むと、`disclaimerAcknowledgedAt` が残り、`showOutflowCells` は `true` になる。`showOutflowCells: 'yes'` なら `null`（軽微 m2）。
 - `MarkerInfoPopover`: 2 種類の文言と数値。
 - `StatisticsPanel`: ツールチップの文言。`WaterLegend`: 注記。`MarkerLegend`。
