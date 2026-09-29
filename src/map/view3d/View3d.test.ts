@@ -59,6 +59,7 @@ describe('View3d.afterRender（R1: スタイルの読み込み中は境界の判
       basemap: 'pale',
       exaggeration: 1,
       palette: 'stepped',
+      showOutflow: true,
       onRendering: () => {},
     })
     const anyView = view as unknown as {
@@ -92,6 +93,7 @@ describe('View3d.afterRender（R1: スタイルの読み込み中は境界の判
       basemap: 'pale',
       exaggeration: 1,
       palette: 'stepped',
+      showOutflow: true,
       onRendering: () => {},
     })
     const anyView = view as unknown as {
@@ -138,6 +140,7 @@ describe('View3d.dispose（横断レビュー m4: コンテキスト喪失の間
       basemap: 'pale',
       exaggeration: 1,
       palette: 'stepped',
+      showOutflow: true,
       onRendering: () => {},
     })
     const internals = view as unknown as {
@@ -183,6 +186,7 @@ describe('View3d の onWaterDebug（計測用の受け口。spec 06 §3、着手
       basemap: 'pale',
       exaggeration: 1,
       palette: 'stepped',
+      showOutflow: true,
       onRendering: () => {},
     })
     const internals = view as unknown as { water: unknown }

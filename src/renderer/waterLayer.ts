@@ -25,6 +25,7 @@ import {
   Scene,
   UnsignedByteType,
   Vector2,
+  Vector4,
   WebGLRenderer,
 } from 'three'
 import { type GridPlacement, gridModelMatrix, multiplyMat4 } from './matrix'
@@ -58,6 +59,17 @@ export function debugDepthTest(mode: WaterDebugMode): boolean {
   return mode !== 'mask-nodepth'
 }
 
+/** 流出の帯（spec 07 §5.2）。値は View3d が map の定数から作って渡す（renderer は map を import しない） */
+export interface WaterOutflow {
+  /** 各セルの帯の中の最も近いマスクのセルの平らな添字。帯の外は −1。長さが N² でなければ帯なしとして扱う */
+  nearest: Int32Array
+  /** 流出の色（0〜1。premultiplied にする前） */
+  rgb: readonly [number, number, number]
+  opacity: number
+  /** 流出中とみなす水深（m。R07-1） */
+  minDepthM: number
+}
+
 export interface WaterLayerOptions {
   id: string
   /** 一辺のセル数 N */
@@ -68,6 +80,9 @@ export interface WaterLayerOptions {
   /** 標高（N × N、m）。無効セルは埋めた後（地形のタイルと同じもの。計画で決めたこと 5） */
   elevation: Float32Array
   lut: WaterLut
+  outflow: WaterOutflow
+  /** 流出しているセルを出すか（設定の display.showOutflowCells。spec 07 §5.3） */
+  showOutflow: boolean
   exaggeration: number
   /**
    * 水深のテクスチャを setWater の何回に 1 回転送するか（1 は毎回）。計測の depthEvery=N（spec 06 §5.1）で、
@@ -90,6 +105,8 @@ export interface WaterLayer {
   /** 垂直強調（地形の setTerrain と同じ値。spec 05 §3.2） */
   setExaggeration(value: number): void
   setLut(lut: WaterLut): void
+  /** 流出しているセルの表示（uniform なので、プログラムのリンクをやり直さない） */
+  setShowOutflow(show: boolean): void
   /** 計測用（probe=water）。通常の描画では呼ばない */
   setDebug(debug: WaterDebug): void
   /** three の資源を捨てる（onRemove・コンテキスト喪失）。2 回呼んでもよい */
@@ -133,6 +150,26 @@ export interface WaterUniforms {
   u_epsilon: { value: number }
   u_alpha: { value: number }
   u_debug: { value: Vector2 }
+  u_outflowNearest: { value: DataTexture }
+  u_outflowMinDepth: { value: number }
+  u_showOutflow: { value: number }
+  u_outflowColor: { value: Vector4 }
+}
+
+/**
+ * u_outflowNearest（R32F）に入れる値（計画で決めたこと 6）。float32 は 2^24 までの整数を正確に表し、1000 m でも
+ * 1031² ≈ 106 万なので足りる。長さが N² でなければ全部 −1（帯なし）
+ */
+export function outflowNearestData(nearest: Int32Array, n: number): Float32Array {
+  if (nearest.length !== n * n) return new Float32Array(n * n).fill(-1)
+  return Float32Array.from(nearest)
+}
+
+/** 流出の色の uniform（premultiplied。MapLibre のブレンドは ONE, ONE_MINUS_SRC_ALPHA） */
+export function outflowColorUniform(outflow: Pick<WaterOutflow, 'rgb' | 'opacity'>): Vector4 {
+  const [r, g, b] = outflow.rgb
+  const a = outflow.opacity
+  return new Vector4(r * a, g * a, b * a, a)
 }
 
 /**
@@ -156,7 +193,8 @@ export function buildUniforms(
   elevationTexture: DataTexture,
   depthTexture: DataTexture,
   lut: DataTexture,
-  options: Pick<WaterLayerOptions, 'size' | 'exaggeration' | 'lut'>,
+  outflowNearestTexture: DataTexture,
+  options: Pick<WaterLayerOptions, 'size' | 'exaggeration' | 'lut' | 'outflow' | 'showOutflow'>,
 ): WaterUniforms {
   return {
     u_matrix: { value: new Matrix4() },
@@ -171,6 +209,10 @@ export function buildUniforms(
     u_epsilon: { value: options.lut.epsilonM },
     u_alpha: { value: options.lut.alpha },
     u_debug: { value: new Vector2(0, 0) },
+    u_outflowNearest: { value: outflowNearestTexture },
+    u_outflowMinDepth: { value: options.outflow.minDepthM },
+    u_showOutflow: { value: options.showOutflow ? 1 : 0 },
+    u_outflowColor: { value: outflowColorUniform(options.outflow) },
   }
 }
 
@@ -273,9 +315,11 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
   const zeros = new Float32Array(n * n)
   const elevationTexture = floatTexture(options.elevation, n)
   const depthTexture = floatTexture(zeros, n)
+  // 流出の帯の最も近いマスクのセル（spec 07 §5.2）。地形ごとに 1 回だけ転送する（水面を作るとき）
+  const outflowTexture = floatTexture(outflowNearestData(options.outflow.nearest, n), n)
   let lut = lutTexture(options.lut)
   const model = gridModelMatrix(options.placement, options.metersToMercator)
-  const uniforms = buildUniforms(elevationTexture, depthTexture, lut, options)
+  const uniforms = buildUniforms(elevationTexture, depthTexture, lut, outflowTexture, options)
   const material = new RawShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: WATER_VERTEX,
@@ -337,6 +381,7 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
     material.dispose()
     elevationTexture.dispose()
     depthTexture.dispose()
+    outflowTexture.dispose()
     lut.dispose()
     // 失ったコンテキストの上でも呼べる（WebGL の呼び出しは何もしない）。three が canvas に付けた購読も外す
     renderer?.dispose()
@@ -428,6 +473,11 @@ export function createWaterLayer(map: MapLibreMap, options: WaterLayerOptions): 
       uniforms.u_epsilon.value = next.epsilonM
       uniforms.u_alpha.value = next.alpha
       uniforms.u_minDepth.value = next.minDepthM
+      map.triggerRepaint()
+    },
+    setShowOutflow(show) {
+      if (gate.disposed()) return
+      uniforms.u_showOutflow.value = show ? 1 : 0
       map.triggerRepaint()
     },
     setDebug(debug) {

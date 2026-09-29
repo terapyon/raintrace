@@ -13,6 +13,7 @@ import type { TerrainPayload } from '../../shared/protocol'
 import type { Basemap } from '../basemapStyle'
 import { beforeLayerId } from '../layerIds'
 import type { MapController } from '../MapController'
+import { outflowLayerSpec } from '../outflowPaint'
 import { type WaterPalette, waterLutSpec } from '../waterColormap'
 import {
   boundaryDecision,
@@ -34,6 +35,8 @@ export interface View3dInit {
   basemap: Basemap
   exaggeration: number
   palette: WaterPalette
+  /** 流出しているセルを出すか（設定の display.showOutflowCells。spec 07 §5.3） */
+  showOutflow: boolean
   onRendering: (rendering: View3dRendering) => void
 }
 
@@ -56,6 +59,7 @@ export class View3d {
   private water: WaterLayer | null = null
   private waterLoading = false
   private terrain: TerrainPayload | null = null
+  private showOutflow: boolean
   /** terrain の無効セルを埋めた標高。3D で描くときに初めて作る（2D の間は作らない） */
   private range: RangeElevation | null = null
   private enabled = false
@@ -94,6 +98,7 @@ export class View3d {
     this.basemap = init.basemap
     this.exaggeration = init.exaggeration
     this.palette = init.palette
+    this.showOutflow = init.showOutflow
     this.terrain3d = new Terrain3d(
       controller.map,
       createMainTileGenerator(),
@@ -149,6 +154,12 @@ export class View3d {
   setPalette(palette: WaterPalette): void {
     this.palette = palette
     this.water?.setLut(waterLutSpec(palette))
+  }
+
+  /** 流出しているセルの表示（spec 07 §5.3）。水面を作り直すときも今の値で作る（Review Focus 5） */
+  setShowOutflow(show: boolean): void {
+    this.showOutflow = show
+    this.water?.setShowOutflow(show)
   }
 
   /** 垂直強調は地形（setTerrain）と水面のシェーダに同じ値を渡す（spec 05 §3.2） */
@@ -284,6 +295,9 @@ export class View3d {
       ]).meterInMercatorCoordinateUnits(),
       elevation: range.elevation,
       lut: waterLutSpec(this.palette),
+      // 流出の帯（spec 07 §5.2。3D では canvas を地形に貼ると更新されないので、水面のシェーダで描く。must-fix M1）
+      outflow: outflowLayerSpec(terrain.outflow.nearest),
+      showOutflow: this.showOutflow,
       exaggeration: this.exaggeration,
       depthUploadEvery: this.options.depthUploadEvery ?? 1,
       onRenderTime: this.options.onRenderTime,

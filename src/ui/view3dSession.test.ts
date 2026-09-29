@@ -28,6 +28,7 @@ function fakeView() {
     setBasemap: vi.fn(),
     setWater: vi.fn(),
     setPalette: vi.fn(),
+    setShowOutflow: vi.fn(),
     restore: vi.fn(),
     dispose: vi.fn(),
   } satisfies View3dLike
@@ -281,5 +282,15 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
     expect(view.setPalette).toHaveBeenLastCalledWith('continuous')
     simulation.terrainCleared()
     expect(view.setWater).toHaveBeenLastCalledWith(null)
+  })
+
+  it('流出の表示: 3D を作る前に変えた設定を作るときに渡し、その後の変化も渡す（spec 07 §5.3、Review Focus 5）', async () => {
+    const { settings, app, view, inits } = setup()
+    settings.getState().setDisplay({ showOutflowCells: false })
+    app.getState().setViewMode('3d')
+    await vi.waitFor(() => expect(inits).toHaveLength(1))
+    expect(inits[0]?.showOutflow).toBe(false)
+    settings.getState().setDisplay({ showOutflowCells: true })
+    expect(view.setShowOutflow).toHaveBeenLastCalledWith(true)
   })
 })

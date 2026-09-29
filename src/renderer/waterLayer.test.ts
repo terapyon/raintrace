@@ -12,6 +12,8 @@ import {
   createCompileGate,
   debugDepthTest,
   debugUniform,
+  outflowColorUniform,
+  outflowNearestData,
   patchesToReveal,
   resolveDepthData,
   shouldUploadDepth,
@@ -68,18 +70,33 @@ describe('uniform の名前がシェーダの宣言とマテリアルで一致�
       alpha: 0.8,
       minDepthM: 0.01,
     }
-    const options: Pick<WaterLayerOptions, 'size' | 'exaggeration' | 'lut'> = {
+    const options: Pick<
+      WaterLayerOptions,
+      'size' | 'exaggeration' | 'lut' | 'outflow' | 'showOutflow'
+    > = {
       size: 2,
       exaggeration: 2,
       lut,
+      outflow: {
+        nearest: new Int32Array(4).fill(-1),
+        rgb: [0.5, 0.1, 0.3],
+        opacity: 0.9,
+        minDepthM: 0.001,
+      },
+      showOutflow: true,
     }
-    const uniforms = buildUniforms(dummyTexture, dummyTexture, dummyTexture, options)
+    const uniforms = buildUniforms(dummyTexture, dummyTexture, dummyTexture, dummyTexture, options)
     const built = new Set(Object.keys(uniforms))
     // 双方向（余分も欠落も許さない）
     expect(built).toEqual(declared)
     // u_matrix は 3D 座標変換の要で、頂点シェーダにしか出ない。false になれば宣言の拾い方自体が壊れている
     expect(declaredUniformNames(WATER_VERTEX)).toContain('u_matrix')
     expect(declaredUniformNames(WATER_FRAGMENT)).toContain('u_lut')
+    // 流出の帯の uniform（spec 07 §7.1）
+    expect(declaredUniformNames(WATER_VERTEX)).toEqual(
+      expect.arrayContaining(['u_outflowNearest', 'u_outflowMinDepth', 'u_showOutflow']),
+    )
+    expect(declaredUniformNames(WATER_FRAGMENT)).toContain('u_outflowColor')
   })
 
   it('a_cell（頂点の格子座標の attribute）が頂点シェーダに宣言され、geometry に渡す名前（CELL_ATTRIBUTE）と一致する', () => {
@@ -311,5 +328,58 @@ describe('計測用の setDebug の値（probe=water。spec 06 §3）', () => {
     expect(debugDepthTest('off')).toBe(true)
     expect(debugDepthTest('mask')).toBe(true)
     expect(debugDepthTest('mask-nodepth')).toBe(false)
+  })
+})
+
+describe('流出の帯の uniform の値（spec 07 §5.2、計画で決めたこと 5・6）', () => {
+  it('outflowNearestData: 平らな添字を float32 にそのまま入れる（帯の外は −1）', () => {
+    expect(Array.from(outflowNearestData(Int32Array.of(-1, 0, 3, 1_062_960), 2))).toEqual([
+      -1, 0, 3, 1_062_960,
+    ])
+  })
+
+  it('outflowNearestData: 長さが N² でなければ全部 −1（帯なし）', () => {
+    expect(Array.from(outflowNearestData(new Int32Array(0), 2))).toEqual([-1, -1, -1, -1])
+  })
+
+  it('outflowColorUniform: premultiplied（rgb × 不透明度、不透明度）', () => {
+    const color = outflowColorUniform({ rgb: [1, 0.5, 0], opacity: 0.9 })
+    expect(color.toArray()).toEqual([0.9, 0.45, 0, 0.9])
+  })
+
+  it('buildUniforms: u_showOutflow は表示なら 1・非表示なら 0、u_outflowMinDepth は渡した値', () => {
+    const texture = new DataTexture(new Float32Array(1), 1, 1, RedFormat, FloatType)
+    const lut: WaterLut = {
+      rgb: new Uint8Array([1, 2, 3]),
+      bandsPerM: 20,
+      maxIndex: 0,
+      epsilonM: 0.001,
+      alpha: 0.8,
+      minDepthM: 0.01,
+    }
+    const outflow = {
+      nearest: new Int32Array(1),
+      rgb: [1, 0, 0] as const,
+      opacity: 0.9,
+      minDepthM: 0.001,
+    }
+    const on = buildUniforms(texture, texture, texture, texture, {
+      size: 1,
+      exaggeration: 1,
+      lut,
+      outflow,
+      showOutflow: true,
+    })
+    const off = buildUniforms(texture, texture, texture, texture, {
+      size: 1,
+      exaggeration: 1,
+      lut,
+      outflow,
+      showOutflow: false,
+    })
+    expect(on.u_showOutflow.value).toBe(1)
+    expect(off.u_showOutflow.value).toBe(0)
+    expect(on.u_outflowMinDepth.value).toBe(0.001)
+    expect(on.u_outflowNearest.value).toBe(texture)
   })
 })

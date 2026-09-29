@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearOutflow, createOutflowPainted, paintOutflow } from './outflowPaint'
+import { clearOutflow, createOutflowPainted, outflowLayerSpec, paintOutflow } from './outflowPaint'
 
 /**
  * 1 行 6 セルの範囲。帯は 0・1・2（0 と 1 は 0 を、2 は 2 を指す）。3〜5 は帯の外
@@ -64,5 +64,17 @@ describe('clearOutflow（setWater(null) の経路。推奨 R4）', () => {
     expect(alpha(rgba)).toEqual([0, 0, 0, 0, 0, 0])
     expect(painted.count).toBe(0)
     expect(clearOutflow(rgba, painted)).toBe(false)
+  })
+})
+
+describe('outflowLayerSpec（3D の水面に渡す値。計画で決めたこと 4）', () => {
+  it('色は OUTFLOW_COLOR を 0〜1 にしたもの、不透明度 0.9、閾値 1 mm。nearest はそのまま、null なら空', () => {
+    const nearest = Int32Array.of(0, -1)
+    const spec = outflowLayerSpec(nearest)
+    expect(spec.nearest).toBe(nearest)
+    expect(spec.rgb).toEqual([194 / 255, 24 / 255, 91 / 255])
+    expect(spec.opacity).toBe(0.9)
+    expect(spec.minDepthM).toBe(0.001)
+    expect(outflowLayerSpec(null).nearest).toHaveLength(0)
   })
 })

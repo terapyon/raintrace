@@ -31,3 +31,37 @@ describe('水面のシェーダ（spec 05 §3.1）', () => {
     )
   })
 })
+
+describe('流出の帯のシェーダ（spec 07 §5.2、推奨 R5）', () => {
+  it('頂点シェーダ: u_outflowNearest の平らな添字 k を読み、k のセルの水深を u_depth から引く。非表示と計測の間は読まない', () => {
+    expect(WATER_VERTEX).toContain('if (u_showOutflow > 0.5 && u_debug.x <= 0.5) {')
+    expect(WATER_VERTEX).toContain('int k = int(texelFetch(u_outflowNearest, cell, 0).r);')
+    expect(WATER_VERTEX).toContain(
+      'texelFetch(u_depth, ivec2(k % u_size, k / u_size), 0).r >= u_outflowMinDepth',
+    )
+    // 高さの式は変えない（持ち上げない。スパイクの判定 (e)）
+    expect(WATER_VERTEX).toContain('(z + (d >= u_minDepth ? d : 0.0) + lift) * u_exaggeration')
+  })
+
+  it('varying は smooth（provoking vertex で辺ごとに見え方が変わる flat は使わない）', () => {
+    expect(WATER_VERTEX).toContain('smooth out float v_outflow;')
+    expect(WATER_FRAGMENT).toContain('smooth in float v_outflow;')
+    expect(WATER_VERTEX).not.toMatch(/\bflat\b/)
+    expect(WATER_FRAGMENT).not.toMatch(/\bflat\b/)
+  })
+
+  it('フラグメントシェーダ: v_outflow > 0.5 なら 1 cm の discard より先に、流出の色（premultiplied）を出す', () => {
+    expect(WATER_FRAGMENT).toContain('if (v_outflow > 0.5) {')
+    expect(WATER_FRAGMENT).toContain('fragColor = u_outflowColor;')
+    expect(WATER_FRAGMENT.indexOf('v_outflow > 0.5')).toBeLessThan(
+      WATER_FRAGMENT.indexOf('discard'),
+    )
+  })
+
+  it('スパイク専用の uniform は入れない', () => {
+    for (const name of ['u_outflowGround', 'u_outflowLift', 'u_outflowMask', 'OUTFLOW_QUALIFIER']) {
+      expect(WATER_VERTEX).not.toContain(name)
+      expect(WATER_FRAGMENT).not.toContain(name)
+    }
+  })
+})

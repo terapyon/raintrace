@@ -2,8 +2,9 @@
  * 2D の流出の帯の塗り分け（spec 07 §5.1・§5.2）。WaterOverlay が描画フレームごとに呼ぶ。帯のセル（band）だけを
  * 走査し、前回塗ったセルの一覧を持って、そこだけを消す。maplibre-gl を import しない純粋なモジュール
  */
+import type { WaterOutflow } from '../renderer/waterLayer'
 import type { OutflowCells } from '../simulation/outflowCells'
-import { hexToRgb, OUTFLOW_COLOR, OUTFLOW_VISIBLE_M } from './overlayColors'
+import { hexToRgb, OUTFLOW_COLOR, OUTFLOW_OPACITY, OUTFLOW_VISIBLE_M } from './overlayColors'
 
 const [R, G, B] = hexToRgb(OUTFLOW_COLOR)
 
@@ -62,4 +63,14 @@ export function paintOutflow(
   painted.cells = next
   painted.count = count
   return true
+}
+
+/** 3D の水面（renderer）に渡す流出の値（計画で決めたこと 4）。nearest が無ければ空（帯なし） */
+export function outflowLayerSpec(nearest: Int32Array | null): WaterOutflow {
+  return {
+    nearest: nearest ?? new Int32Array(0),
+    rgb: [R / 255, G / 255, B / 255],
+    opacity: OUTFLOW_OPACITY,
+    minDepthM: OUTFLOW_VISIBLE_M,
+  }
 }
