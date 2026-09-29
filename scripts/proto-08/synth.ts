@@ -474,6 +474,106 @@ if (on('eq')) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// 再レビュー M1: 満水との一致の 3 つの地形を、§9.1 の止め方（水深の変化 < 0.1 mm/h）で単独に回した実時間
+if (which === 'fill') {
+  console.log(
+    '## §9.1 の満水との一致: 止め方（流れによる水深の変化 < 0.1 mm/h）までの実時間（素の Node、単独）',
+  )
+  console.log('')
+  console.log(
+    '| 地形 | n | step | シミュレーションの時間 | 実時間（s） | ms/step | 池のセルの max|H − F|（mm） | 池の外の最大水深（mm） |',
+  )
+  console.log('|---|---:|---:|---|---:|---:|---:|---:|')
+  const fills: [string, Terrain][] = [
+    [
+      '凹凸（24 × 24、セル 1 m）',
+      buildTerrain(
+        24,
+        24,
+        1,
+        (x, y) => 10 + 0.5 * Math.sin(x * 0.7) * Math.cos(y * 0.6) + 0.02 * x,
+      ),
+    ],
+    [
+      '凹凸と無効セル（24 × 20、セル 3.9 m）',
+      buildTerrain(24, 20, 3.9, (x, y) =>
+        x >= 9 && x <= 11 && y >= 8 && y <= 10
+          ? Number.NaN
+          : 10 + 0.8 * Math.sin(x * 0.9) * Math.sin(y * 0.8),
+      ),
+    ],
+    [
+      '入れ子の窪地（20 × 20、セル 1 m）',
+      buildTerrain(20, 20, 1, (x, y) => {
+        if (x === 0 || y === 0 || x === 19 || y === 19) return x === 19 && y === 10 ? 1.5 : 3
+        const bowl = 0.1 * Math.hypot(x - 9.5, y - 9.5)
+        const pitA = Math.hypot(x - 6, y - 6) < 2 ? -0.5 : 0
+        const pitB = Math.hypot(x - 13, y - 12) < 2.5 ? -0.3 : 0
+        return bowl + pitA + pitB
+      }),
+    ],
+  ]
+  const small: [string, Terrain][] = [
+    [
+      '凹凸・小（12 × 12、セル 1 m）',
+      buildTerrain(
+        12,
+        12,
+        1,
+        (x, y) => 10 + 0.5 * Math.sin(x * 0.7) * Math.cos(y * 0.6) + 0.02 * x,
+      ),
+    ],
+    [
+      '凹凸と無効セル・小（12 × 12、セル 3.9 m）',
+      buildTerrain(12, 12, 3.9, (x, y) =>
+        x >= 5 && x <= 6 && y >= 5 && y <= 6
+          ? Number.NaN
+          : 10 + 0.8 * Math.sin(x * 0.9) * Math.sin(y * 0.8),
+      ),
+    ],
+    [
+      '入れ子の窪地・小（12 × 12、セル 1 m）',
+      buildTerrain(12, 12, 1, (x, y) => {
+        if (x === 0 || y === 0 || x === 11 || y === 11) return x === 11 && y === 6 ? 1.5 : 3
+        const bowl = 0.1 * Math.hypot(x - 5.5, y - 5.5)
+        const pitA = Math.hypot(x - 3.5, y - 3.5) < 1.5 ? -0.5 : 0
+        const pitB = Math.hypot(x - 8, y - 7.5) < 1.6 ? -0.3 : 0
+        return bowl + pitA + pitB
+      }),
+    ],
+  ]
+  if (process.argv[4] === 'small') fills.splice(0, fills.length, ...small)
+  const ns = (process.argv[3] ?? '0.1,0.03').split(',').map(Number)
+  const stops = (process.argv[5] ?? '0.1').split(',').map(Number)
+  for (const [label, t] of fills) {
+    const an = analyzeDepressions4(t.elevation, t.validMask, t.width, t.height, t.cellSizeM)
+    for (const n of ns)
+      for (const stopMmH of stops) {
+        const e = engine(t, { manningN: n })
+        e.setRainAll(2000, 0)
+        const t0 = performance.now()
+        let s: StepInfo | null = null
+        for (let k = 0; k < 2_000_000; k++) {
+          s = e.step()
+          if (s.dhMax < stopMmH / 3.6e6) break
+        }
+        const wall = (performance.now() - t0) / 1000
+        let pond = 0
+        let outside = 0
+        for (let i = 0; i < e.h.length; i++) {
+          if (t.validMask[i] === 0) continue
+          if (an.labels[i] !== 0) pond = Math.max(pond, Math.abs(e.z[i]! + e.h[i]! - an.fill[i]!))
+          else outside = Math.max(outside, e.h[i]!)
+        }
+        console.log(
+          `| ${label}（止め方 < ${stopMmH} mm/h） | ${n} | ${s?.step} | ${fmtTime(e.t)} | ${wall.toFixed(2)} | ${((wall * 1000) / e.stepCount).toFixed(4)} | ${(pond * 1000).toFixed(2)} | ${(outside * 1000).toFixed(2)} |`,
+        )
+      }
+  }
+  console.log('')
+}
+
+// ---------------------------------------------------------------------------------------------
 // U7: 静水の保存（§9.2 の (a)(b)）
 if (on('u7')) {
   console.log('## U7: 静水の保存（ランダムな地形 40 × 40、置き方 (a)、雨なしで 500 step）')
