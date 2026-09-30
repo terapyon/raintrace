@@ -11,3 +11,11 @@ export const NEIGHBOR_DY: readonly number[] = [0, 1, 1, 1, 0, -1, -1, -1]
 export const NEIGHBOR_DISTANCE: readonly number[] = NEIGHBOR_DX.map((dx, k) =>
   dx !== 0 && NEIGHBOR_DY[k] !== 0 ? Math.SQRT2 : 1,
 )
+
+/**
+ * 4 近傍の固定の順序（東から時計回り: 東・南・西・北）。y は南向きが正。窪地解析（Priority-Flood）だけが使う
+ * （spec 08 §3.7、R08-2。水の計算〈FlowSolver の面の表〉と同じく上下左右だけでつなぐ）。D8 の流向は地形の表示なので、
+ * 上の 8 近傍の表のまま
+ */
+export const NEIGHBOR4_DX: readonly number[] = [1, 0, -1, 0]
+export const NEIGHBOR4_DY: readonly number[] = [0, 1, 0, -1]

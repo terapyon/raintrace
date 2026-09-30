@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { gridFromRows, indexOf } from '../testing/terrainGrids.test-support.ts'
 import { analyzeDepressions, isSignificant } from './analyzeDepressions.ts'
+import { d8FlowDirection } from './d8FlowDirection.ts'
 import type { Depression } from './types.ts'
 
 // 周囲 10 の縁、北の縁の中央だけ 9、内側 3×3 が 8、中央が 7 の単一の窪地
@@ -132,5 +133,58 @@ describe('isSignificant（R02-3）', () => {
 
   it('面積が 10m² 未満なら significant でない', () => {
     expect(isSignificant({ maxDepthM: 1, areaM2: 9.99 })).toBe(false)
+  })
+})
+
+describe('4 近傍の窪地解析（spec 08 §3.7、R08-2）', () => {
+  it('斜めにだけ低い所へ抜ける窪地は、4 近傍では窪地になり、spill 標高は 4 近傍の値（8 近傍なら斜めに抜けて窪地にならない）', () => {
+    // (2,2) の 1 は、斜め（南東）の (3,3) の 0 を経て、さらに斜めの角 (4,4) の 0（グリッドの端）へ抜ける。
+    // 上下左右はすべて 5 なので、水は上下左右の面を通ってしか動けない 4 近傍では 5 まで溜まる
+    const grid = gridFromRows([
+      [5, 5, 5, 5, 5],
+      [5, 5, 5, 5, 5],
+      [5, 5, 1, 5, 5],
+      [5, 5, 5, 0, 5],
+      [5, 5, 5, 5, 0],
+    ])
+    const { depressions, fill, labels } = analyzeDepressions(grid)
+    expect(labels[indexOf(grid, 2, 2)]).not.toBe(0)
+    expect(fill[indexOf(grid, 2, 2)]).toBe(5)
+    const pit = depressions.find((d) => d.pitIndex === indexOf(grid, 2, 2))
+    expect(pit?.spillElevation).toBe(5)
+    // (3,3) も上下左右は 5 なので、4 近傍では別の窪地になる（(2,2) とは斜めにしか接しない）
+    expect(labels[indexOf(grid, 3, 3)]).not.toBe(0)
+    expect(labels[indexOf(grid, 3, 3)]).not.toBe(labels[indexOf(grid, 2, 2)])
+  })
+
+  it('無効セルに斜めにだけ接するセルは起点にならない（上下左右で接するセルは起点）', () => {
+    const grid = gridFromRows([
+      [5, 5, 5, 5, 5, 5],
+      [5, 5, 5, 5, 5, 5],
+      [5, 5, null, 5, 5, 5],
+      [5, 5, 5, 1, 5, 5],
+      [5, 5, 5, 5, 5, 5],
+      [5, 5, 5, 5, 5, 5],
+    ])
+    const { depressions } = analyzeDepressions(grid)
+    // (3,3) は無効セル (2,2) に斜めにだけ接する。起点にならないので、周りの 5 まで溜まる窪地になる
+    expect(depressions).toHaveLength(1)
+    expect(depressions[0]).toMatchObject({
+      pitIndex: indexOf(grid, 3, 3),
+      spillElevation: 5,
+      cellCount: 1,
+    })
+  })
+
+  it('D8 の流向は 8 近傍のまま（斜めの最急の向きを指す。窪地の中から斜めに外を指す矢印を受け入れる。レビュー 1 の m4）', () => {
+    const grid = gridFromRows([
+      [5, 5, 5, 5, 5],
+      [5, 5, 5, 5, 5],
+      [5, 5, 1, 5, 5],
+      [5, 5, 5, 0, 5],
+      [5, 5, 5, 5, 0],
+    ])
+    // 東から時計回りの 8 近傍（neighbors.ts）の 2 番目 = 南東。D8 の番号は index + 1
+    expect(d8FlowDirection(grid)[indexOf(grid, 2, 2)]).toBe(2)
   })
 })
