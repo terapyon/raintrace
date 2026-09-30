@@ -54,7 +54,10 @@ export interface StepStats {
   maxDepth: number
   /** 水深が描画閾値（1cm）以上のセルの面積（m²） */
   floodedArea: number
-  /** この step の終わりの時点で雨が終わっていて、すべての面の流速が停止の流速未満（spec 08 §3.9）。雨の間は常に false */
+  /**
+   * 雨が終わっていて、すべての面の流速が停止の流速未満という状態が SETTLE_HOLD_S 続いた（どのセルの水深も
+   * DRY_DEPTH_M 以下ならすぐ。spec 08 §3.9）。雨の間は常に false
+   */
   settled: boolean
   /** totalWater − storedWater − outflowWater（m³） */
   massError: number
