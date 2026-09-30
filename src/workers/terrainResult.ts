@@ -6,7 +6,7 @@ import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain'
 /**
  * メインスレッドへ送る地形を作る。標高・validMask は複製（.slice()）して送る（tech-spec §5.4）。
  * 元の grid は Worker がエンジンに渡す（エンジンが複製を持つので、Worker は grid を保持しない。spec 04）。
- * 流出の表（spec 07 §5.1）は Worker が作ったものをそのまま移す（Worker は持ち続けない）
+ * 流出の表（nearest・band。spec 08 §5.3 で mask は外した）は Worker が作ったものをそのまま移す（Worker は持ち続けない）
  */
 export function packTerrain(
   grid: AssembledGrid,
@@ -25,7 +25,6 @@ export function packTerrain(
     analysis.flowDirection.buffer as ArrayBuffer,
     analysis.fill.buffer as ArrayBuffer,
     analysis.labels.buffer as ArrayBuffer,
-    outflow.mask.buffer as ArrayBuffer,
     outflow.nearest.buffer as ArrayBuffer,
     outflow.band.buffer as ArrayBuffer,
   ]

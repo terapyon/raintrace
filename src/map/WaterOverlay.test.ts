@@ -104,7 +104,6 @@ const CORNERS: Corners = [
 /** 2 × 2。帯は 1 行目の 0・1（どちらも自分自身を指す）、2 行目の 2・3 は帯の外 */
 const GEO = { size: 2, corners: CORNERS }
 const OUTFLOW: OutflowCells = {
-  mask: Uint8Array.of(1, 1, 0, 0),
   nearest: Int32Array.of(0, 1, -1, -1),
   band: Int32Array.of(0, 1),
 }

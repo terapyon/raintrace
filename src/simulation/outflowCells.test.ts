@@ -212,14 +212,17 @@ describe('buildOutflowCells', () => {
     expect(Array.from(cells.band)).toEqual(expected)
     // n = 20 は帯の幅 1（端の 1 周 = 76 セル）
     expect(cells.band.length).toBe(76)
-    expect(cells.mask.length).toBe(n * n)
+    // マスクは送らない（メインで読まれていない。spec 08 §5.3、N8）
+    expect(Object.keys(cells).sort()).toEqual(['band', 'nearest'])
   })
 
   it('全部無効なら、マスクも帯も空で、nearest はすべて −1（Review Focus 2）', () => {
     const n = 8
     const cells = buildOutflowCells(new Uint8Array(n * n), n)
     expect(cells.band.length).toBe(0)
-    expect(Array.from(cells.mask).every((v) => v === 0)).toBe(true)
+    expect(Array.from(outflowBoundaryMask(new Uint8Array(n * n), n, n)).every((v) => v === 0)).toBe(
+      true,
+    )
     expect(Array.from(cells.nearest).every((v) => v === -1)).toBe(true)
   })
 

@@ -38,7 +38,6 @@ const depression = makeDepression({ spillElevation: 3 })
 /** 2 × 2 の範囲の流出の表（中身は packTerrain が触れないので、形だけ合わせる） */
 function makeOutflow(): OutflowCells {
   return {
-    mask: Uint8Array.from([1, 1, 1, 0]),
     nearest: Int32Array.from([0, 1, 2, -1]),
     band: Int32Array.from([0, 1, 2]),
   }
@@ -65,7 +64,7 @@ describe('packTerrain', () => {
     expect(payload.validMask.buffer).not.toBe(grid.validMask.buffer)
   })
 
-  it('transfer は payload の elevation・validMask と analysis の flowDirection・fill・labels と流出の表の mask・nearest・band の buffer を含み、grid の buffer を含まない（grid はエンジンに渡す）', () => {
+  it('transfer は payload の elevation・validMask と analysis の flowDirection・fill・labels と流出の表の nearest・band（mask は送らない。spec 08 §5.3）の buffer を含み、grid の buffer を含まない（grid はエンジンに渡す）', () => {
     const grid = makeGrid()
     const analysis = makeAnalysis()
     const outflow = makeOutflow()
@@ -76,7 +75,6 @@ describe('packTerrain', () => {
       analysis.flowDirection.buffer,
       analysis.fill.buffer,
       analysis.labels.buffer,
-      outflow.mask.buffer,
       outflow.nearest.buffer,
       outflow.band.buffer,
     ])

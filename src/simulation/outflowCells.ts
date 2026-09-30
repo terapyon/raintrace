@@ -3,9 +3,10 @@
  * 1 回だけ作り（workers/simulation.worker.ts）、TerrainPayload.outflow でメインへ送る。エンジンの計算には使わない。
  *
  * 仮想セル（グリッドの外・無効セル）は元のセルと同じ標高で水深 0 として扱われる（spec 03 §3.3、FlowSolver.ts）。
- * そのため「近傍にグリッドの外か無効セルを含む有効セル」は、仮想セルとの面の水深 h_f が DRY_DEPTH_M を
- * 超えればその step に必ず外へ流す。近傍の定義は FlowSolver の 4 近傍の面の表 NEIGHBOR_DX・NEIGHBOR_DY
- * （北・西・東・南）をそのまま使う。帯の広げ方は見た目の規則なので、FlowSolver の表とは独立に 8 近傍で歩く
+ * そのため「上下左右にグリッドの外か無効セルを含む有効セル」は、面を通れる水深が DRY_DEPTH_M を超えれば、
+ * その step に必ず外へ流す（spec 08 §3.6）。近傍の定義は FlowSolver の 4 近傍の面の表 NEIGHBOR_DX・
+ * NEIGHBOR_DY（北・西・東・南）をそのまま使う。帯の広げ方は見た目の規則なので、FlowSolver の表とは
+ * 独立に 8 近傍で歩く
  */
 import { NEIGHBOR_DX, NEIGHBOR_DY } from './FlowSolver.ts'
 
@@ -17,13 +18,12 @@ const BAND_DX = [-1, 0, 1, -1, 1, -1, 0, 1]
 const BAND_DY = [-1, -1, -1, 0, 0, 1, 1, 1]
 
 export interface OutflowCells {
-  /** 有効セルのうち、近傍にグリッドの外か無効セルを含むものが 1 */
-  mask: Uint8Array
   /** 各セルが帯の中なら、幅優先探索で最初に届いたマスクのセルの添字。マスクのセルは自分自身。帯の外・無効セルは −1 */
   nearest: Int32Array
   /** nearest が 0 以上のセルの添字（昇順）。2D の描画はここだけを走査する */
   band: Int32Array
 }
+// マスク（outflowBoundaryMask）は nearest を作るためだけに使い、メインへは送らない（メインは nearest と band だけを読む。spec 08 §5.3、N8）
 
 /** 有効セルのうち、近傍（FlowSolver の表）にグリッドの外か無効セルを含むものを 1 にする */
 export function outflowBoundaryMask(
@@ -109,5 +109,5 @@ export function buildOutflowCells(validMask: Uint8Array, size: number): OutflowC
   for (let i = 0; i < nearest.length; i++) if (nearest[i] >= 0) count++
   const band = new Int32Array(count)
   for (let i = 0, k = 0; i < nearest.length; i++) if (nearest[i] >= 0) band[k++] = i
-  return { mask, nearest, band }
+  return { nearest, band }
 }

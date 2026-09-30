@@ -51,4 +51,14 @@ describe('thinFlowArrows（spec 04 §5.1）', () => {
     }
     expect(bearing).toBeCloseTo(90, 3)
   })
+
+  it('流速が ARROW_MIN_VELOCITY_M_PER_S（0.005 m/s）未満のセルは出さない（ほとんど止まった水に矢印を出さない。spec 08 §3.10）', () => {
+    // 4 × 1・セル 1 m・間隔 1 m。0.0049 と 0.0049（南）は出さず、0.0051 と 0.01 は出す
+    const vx = Float32Array.of(0.0049, 0.0051, 0.01, 0)
+    const vy = Float32Array.of(0, 0, 0, 0.0049)
+    const arrows = thinFlowArrows(vx, vy, 4, 1, 1, 1)
+    const columns: number[] = []
+    for (let k = 0; k < arrows.length; k += 4) columns.push(arrows[k] ?? -1)
+    expect(columns).toEqual([1, 2])
+  })
 })

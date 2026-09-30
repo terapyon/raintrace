@@ -88,7 +88,7 @@ export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
 /**
  * 水深と統計（spec 04 §5.1、tech-spec §5.2）。terrainId はその地形を読み込んだ loadTerrain の requestId。
  * water は Float32 × N² の転送バッファで、メインは次の frame を受けたら returnBuffer で返す。
- * arrows は [列, 行, 方位（度。北が 0、時計回り）, 大きさ（m／step）] の並び。null は前の矢印のまま。
+ * arrows は [列, 行, 方位（度。北が 0、時計回り）, 大きさ（m/s。spec 08 §3.10）] の並び。null は前の矢印のまま。
  * stats.events は前に送った frame からの越流イベントの累計（見送った frame の分を含む）。
  * runId はこの frame を生んだ直前の start・reset の通し番号（SimulationCommand の説明を参照）。
  * loadTerrain の直後は 0（まだ実行が始まっていない）。

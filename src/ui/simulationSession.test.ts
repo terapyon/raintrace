@@ -32,7 +32,6 @@ const geo = {
 const terrain = {
   geo,
   outflow: {
-    mask: new Uint8Array(geo.size * geo.size),
     nearest: new Int32Array(geo.size * geo.size).fill(-1),
     band: new Int32Array(0),
   },
