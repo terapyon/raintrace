@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { FROUDE_MAX, GRAVITY, massTolerance, SETTLE_CAP_S } from './constants.ts'
+import { FROUDE_MAX, GRAVITY, massTolerance, SETTLE_CAP_S, SETTLE_HOLD_S } from './constants.ts'
 import type { TsSimulationEngine } from './TsSimulationEngine.ts'
 import {
   buildTerrain,
   cellCenter,
   cone,
   engineOn,
+  runUntilStopped,
+  sheetDepth,
+  sheetOnSlope,
   type Terrain,
   walledBasin,
 } from './testing/fixtures.test-support.ts'
@@ -235,4 +238,51 @@ describe('自動停止（spec 08 §3.9・§9.3、R08-6、Q1 = (a)）', () => {
     expect((s?.timeS ?? 0) - 600).toBeGreaterThanOrEqual(SETTLE_CAP_S)
     expect((previous?.timeS ?? 0) - 600).toBeLessThan(SETTLE_CAP_S)
   }, 30_000)
+
+  // 勾配 1e-3・1e-4 の斜面に一度に置いた水が初めの step で止まらないこと（750 ms を超える）は physics.slow.test.ts
+
+  it('平らな床に一度に置いた水は動かず、止まる条件が SETTLE_HOLD_S 続いたところで settled になる', () => {
+    const engine = engineOn(sheetOnSlope(0))
+    engine.setInitialWater(sheetDepth(0.05))
+    const s = runUntilStopped(engine, 100_000)
+    expect(s.stopReason).toBe('settled')
+    expect(s.timeS).toBeGreaterThanOrEqual(SETTLE_HOLD_S)
+    expect(s.timeS - s.dtS).toBeLessThan(SETTLE_HOLD_S)
+  }, 30_000)
+
+  it.each([
+    ['継続時間 0 の雨', 'rain'],
+    ['setInitialWater（雨なし）', 'initial'],
+  ])(
+    '止まらない条件で水を一度に置く（%s）と、cap は t = 0 から数えて SETTLE_CAP_S で付く',
+    (_, how) => {
+      const t = walledBasin(8, 0, 10)
+      const engine = engineOn(t, { settleVelocityMPerS: 0 })
+      if (how === 'rain') {
+        engine.setRainfall({
+          ...cellCenter(4, 4, 1),
+          radiusM: 2,
+          intensityMmPerH: 50,
+          durationS: 0,
+          wholeRange: false,
+        })
+      } else {
+        const h = new Float64Array(64)
+        for (let y = 1; y < 7; y++) for (let x = 1; x < 7; x++) h[y * 8 + x] = 0.05
+        engine.setInitialWater(h)
+      }
+      let previous: StepStats | null = null
+      let s: StepStats | null = null
+      for (let n = 0; n < 200_000; n++) {
+        s = engine.step()
+        if (s.stopReason !== null) break
+        previous = s
+      }
+      expect(s?.stopReason).toBe('cap')
+      expect(s?.settled).toBe(false)
+      expect(s?.timeS ?? 0).toBeGreaterThanOrEqual(SETTLE_CAP_S)
+      expect(previous?.timeS ?? 0).toBeLessThan(SETTLE_CAP_S)
+    },
+    30_000,
+  )
 })

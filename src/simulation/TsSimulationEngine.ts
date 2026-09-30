@@ -2,7 +2,14 @@
  * SimulationEngine の TypeScript 実装（tech-spec §6.2、spec 08 §3〜§5.1）。4 近傍の局所慣性式で、
  * 時間刻み dt はエンジンが毎 step 決める
  */
-import { MANNING_N, SETTLE_CAP_S, SETTLE_VELOCITY_M_PER_S, SPILL_TOLERANCE_M } from './constants.ts'
+import {
+  DRY_DEPTH_M,
+  MANNING_N,
+  SETTLE_CAP_S,
+  SETTLE_HOLD_S,
+  SETTLE_VELOCITY_M_PER_S,
+  SPILL_TOLERANCE_M,
+} from './constants.ts'
 import {
   applyFaceFlows,
   cellVelocities,
@@ -78,6 +85,8 @@ export class TsSimulationEngine implements SimulationEngine {
   private hMax = 0
   /** 前の step の面の流速の最大（spec 08 §3.3） */
   private uMax = 0
+  /** 雨が終わっていて、面の流速がすべて停止の流速未満の状態が続いている時間（s。spec 08 §3.9） */
+  private calmS = 0
   /** flowVectors の出力（使い回す。loadTerrain で捨てる。spec 06 §5.2） */
   private flow: FlowVectors | undefined = undefined
 
@@ -198,7 +207,12 @@ export class TsSimulationEngine implements SimulationEngine {
     const storedWater = summary.depthSum * area
     const totalWater = this.placedWater + this.rainVolume(area)
     const rainingAfter = rain !== null && this.timeS < rainEnd
-    const settled = !rainingAfter && uMax < this.settleVelocityMPerS
+    // 停止の条件（雨が終わっていて、すべての面の流速が停止の流速未満）が SETTLE_HOLD_S 続いたら settled（spec 08
+    // §3.9）。一度に置いた水の動き出しと、閉じた範囲の水の揺れの谷で止めないため。どのセルの水深も DRY_DEPTH_M
+    // 以下なら、どの面の h_f もそれ以下で流量は 0 のまま変わらないので、続く時間を待たずに settled
+    const calm = !rainingAfter && uMax < this.settleVelocityMPerS
+    this.calmS = calm ? this.calmS + dt : 0
+    const settled = calm && (this.calmS >= SETTLE_HOLD_S || summary.maxDepth <= DRY_DEPTH_M)
     const stopReason: StopReason | null = settled
       ? 'settled'
       : !rainingAfter && this.timeS - rainEnd >= SETTLE_CAP_S
@@ -328,6 +342,7 @@ export class TsSimulationEngine implements SimulationEngine {
     this.timeS = 0
     this.hMax = 0
     this.uMax = 0
+    this.calmS = 0
   }
 
   private require(): Loaded {

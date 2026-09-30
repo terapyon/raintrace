@@ -105,6 +105,39 @@ export function walledBasin(size: number, floor: number, rim: number): Terrain {
   )
 }
 
+/** 自動停止のテストの斜面（spec 08 §9.3）: 40 × 40・セル 1 m、外周は高さ 10 m の壁。内側は西から東へ勾配 slope で下がる */
+export function sheetOnSlope(slope: number): Terrain {
+  const n = SHEET_SIZE
+  return buildTerrain(n, n, 1, (x, y) =>
+    x === 0 || y === 0 || x === n - 1 || y === n - 1 ? 10 : slope * (n - x),
+  )
+}
+
+/** sheetOnSlope の内側（壁を除く）に一様な深さ depth（m）の水を置く、setInitialWater に渡す配列 */
+export function sheetDepth(depth: number): Float64Array {
+  const n = SHEET_SIZE
+  const h = new Float64Array(n * n)
+  for (let y = 1; y < n - 1; y++) for (let x = 1; x < n - 1; x++) h[y * n + x] = depth
+  return h
+}
+
+const SHEET_SIZE = 40
+
+/** 面の流速 |q| / h_f の最大（m/s。テスト用の faceFlows から数える） */
+export function faceSpeedMax(engine: TsSimulationEngine): number {
+  const { qx, qy, hfx, hfy } = engine.faceFlows()
+  let u = 0
+  const scan = (q: Float64Array, hf: Float64Array): void => {
+    for (let i = 0; i < q.length; i++) {
+      const v = q[i] ?? 0
+      if (v !== 0) u = Math.max(u, Math.abs(v) / (hf[i] ?? 0))
+    }
+  }
+  scan(qx, hfx)
+  scan(qy, hfy)
+  return u
+}
+
 /** 中心 (c, c) からの距離に比例して高くなるすり鉢。外周 1 セルは rim */
 export function cone(size: number, slope: number, rim: number): Terrain {
   const c = (size - 1) / 2

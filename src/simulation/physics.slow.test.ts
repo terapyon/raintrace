@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { MANNING_N, massTolerance } from './constants.ts'
+import { MANNING_N, massTolerance, SETTLE_HOLD_S, SETTLE_VELOCITY_M_PER_S } from './constants.ts'
 import { planRainfall } from './Rainfall.ts'
 import type { TsSimulationEngine } from './TsSimulationEngine.ts'
 import {
   buildTerrain,
   engineOn,
+  faceSpeedMax,
+  sheetDepth,
+  sheetOnSlope,
   type Terrain,
   walledBasin,
 } from './testing/fixtures.test-support.ts'
@@ -182,4 +185,37 @@ describe('斜面の定常流（Manning。spec 08 §9.3、M0 の U5、重いテ�
       expect(Math.abs(vy - u) / u).toBeLessThanOrEqual(0.1)
     }
   }, 120_000)
+})
+
+describe('自動停止（spec 08 §3.9・§9.3、R08-6、重いテスト。Task 8 のレビューの修正ラウンド 1）', () => {
+  // 一度に置いた水は面の流量 0 から動き出すので、初めの step では面の流速が 1 cm/s 未満でも、水は流れ出したところ。
+  // 勾配 1e-3・1e-4 では流速がのちに 1 cm/s を超え、閉じた範囲の中で揺れて 1 cm/s の前後を行き来する
+  it.each([1e-3, 1e-4])(
+    '一度に置いた水（勾配 %f の斜面に深さ 5 cm）は、初めの step では止まらず、止まった後は流速が 1 cm/s に戻らない',
+    (slope) => {
+      const engine = engineOn(sheetOnSlope(slope))
+      engine.setInitialWater(sheetDepth(0.05))
+      let s: StepStats | null = null
+      let lastFast = -1
+      for (let n = 0; n < 100_000; n++) {
+        s = engine.step()
+        if (faceSpeedMax(engine) >= SETTLE_VELOCITY_M_PER_S) lastFast = s.timeS
+        if (s.timeS < 30) {
+          expect(s.settled).toBe(false)
+          expect(s.stopReason).toBeNull()
+        }
+        if (s.stopReason !== null) break
+      }
+      expect(lastFast).toBeGreaterThan(0)
+      expect(s?.stopReason).toBe('settled')
+      const settledAt = s?.timeS ?? 0
+      expect(settledAt - lastFast).toBeGreaterThanOrEqual(SETTLE_HOLD_S)
+      // 止まった後も 1 時間回し、流速が 1 cm/s に戻らないこと（止め方が早すぎない）
+      while ((s?.timeS ?? 0) < settledAt + 3600) {
+        s = engine.step()
+        expect(faceSpeedMax(engine)).toBeLessThan(SETTLE_VELOCITY_M_PER_S)
+      }
+    },
+    120_000,
+  )
 })
