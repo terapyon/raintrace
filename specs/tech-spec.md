@@ -901,6 +901,7 @@ base-spec §37 の構成に従う。
 | `DisplaySettings` | 垂直強調・水深表示・流向表示 | `Switch`（流出しているセルのスイッチ〈実装 spec 07〉を含む）, `ToggleButtonGroup`（水深の配色・矢印の間隔・背景地図・画面の配色） |
 
 列挙の選択は `ToggleButtonGroup` にし、`Select` を使わない（Menu・Popover を引き込み、`ui` チャンクが増えるため。実装 spec 04）。
+例外として、選択肢の多い列挙（降雨の継続時間の 7 つ。実装 spec 08 §4.1）はブラウザの select である `NativeSelect` にしてよい（`NativeSelect` は Menu・Popover を読まないので `ui` チャンクに引き込まない。実装 spec 08 の計画で承認）。
 
 ## 9.4 文言と多言語化
 
