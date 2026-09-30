@@ -87,7 +87,10 @@ export function MarkerInfoPopover({ popover, rows, onClose }: Props) {
       disableEnforceFocus
       slotProps={{
         root: { sx: { pointerEvents: 'none' } },
-        paper: { sx: { pointerEvents: 'auto' } },
+        // 閉じた後も消える間（transition）は紙が開いた位置に残る。そこでクリックを受けると、同じ位置の地図の
+        // クリックが紙に吸われて届かない（spec 08 Task 14 の修正ラウンド 1。閉じた直後の同じ点のクリックが
+        // 開かなかった）。開いている間だけ受ける
+        paper: { sx: { pointerEvents: open ? 'auto' : 'none' } },
       }}
     >
       <Box data-testid="marker-info" sx={{ p: 1.5, minWidth: 220, maxWidth: 320 }}>

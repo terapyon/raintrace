@@ -160,17 +160,10 @@ test.describe('降雨と再生（spec 08 §9.4 の 4・5・10）', () => {
     await expect(page.getByLabel(strings.rainfall.intensity)).toBeEnabled()
     // セル情報は SimulationClient の手元の水深を読む。Worker が reset を処理して step 0 の frame（水深 0）を
     // 送ったときだけ 0 になる（04 の最終レビューの重要な指摘）
-    // 全体の E2E の負荷の下で、Reset の直後のクリックでポップオーバーが開かないことが 1 回あった（Task 14）。
-    // 開くまでクリックし直す（読む値の判定は変えない）
-    await expect
-      .poll(
-        async () => {
-          await page.mouse.click(wet.x, wet.y)
-          return page.getByTestId('cell-depth').isVisible()
-        },
-        { timeout: 15_000, intervals: [500] },
-      )
-      .toBe(true)
+    // 同じ点のポップオーバーは findWetPoint で閉じたばかり。閉じた後の消える間の紙がクリックを吸うと開かない
+    // （Task 14 で負荷の下に 1 回あった。アプリの不具合で、修正ラウンド 1 で紙は開いている間だけクリックを受ける
+    // ようにした。CellInfoPopover.test.tsx）ので、クリックし直さない
+    await page.mouse.click(wet.x, wet.y)
     await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
     await page.getByRole('button', { name: strings.cellInfo.close }).click()
     // もう一度開始すると、新しい runId の frame が届いて統計が 0 から進む（runId の食い違い・バッファの取りこぼしが

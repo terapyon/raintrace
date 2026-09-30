@@ -54,6 +54,19 @@ describe('MarkerInfoPopover（spec 07 §3.4）', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('閉じた後の消える間（transition）の紙はクリックを受けず、同じ位置の地図のクリックを塞がない（spec 08 Task 14 の修正ラウンド 1）', () => {
+    const { rerender } = render(
+      <MarkerInfoPopover popover={marker} rows={[lowest]} onClose={vi.fn()} />,
+    )
+    const paper = screen.getByTestId('marker-info').parentElement
+    if (paper === null) throw new Error('紙がありません')
+    expect(getComputedStyle(paper).pointerEvents).toBe('auto')
+    rerender(<MarkerInfoPopover popover={{ kind: 'closed' }} rows={[lowest]} onClose={vi.fn()} />)
+    // 消える間は紙がまだ DOM にあり、開いた位置（クリックした点）に残っている
+    expect(screen.getByTestId('marker-info').parentElement).toBe(paper)
+    expect(getComputedStyle(paper).pointerEvents).toBe('none')
+  })
+
   it('「ここを降雨中心にする」は出さない（spec 07 §3.2）', () => {
     render(<MarkerInfoPopover popover={marker} rows={[lowest]} onClose={vi.fn()} />)
     expect(screen.queryByRole('button', { name: strings.cellInfo.useAsCenter })).toBeNull()
