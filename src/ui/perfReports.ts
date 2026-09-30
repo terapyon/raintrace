@@ -2,6 +2,7 @@
  * 計測の結果の形（spec 06 §3）。tests/perf/ は型だけを import する（tsconfig.node.json は vite/client の型を
  * 持たないので、TerrainSession などに届く import を tests から張らない。計画で決めたこと 14）
  */
+import type { RainfallSettings } from '../state/persistedSettings'
 import type { DisplayStats } from '../state/simulationStore'
 import type {
   LongTaskSample,
@@ -17,7 +18,7 @@ export interface StepsReport {
   /** 測ったときの 3D の状態（data-view3d。2D なら off） */
   view3d: string
   sizeM: number
-  rain: { amountMm: number; radiusM: number }
+  rain: RainfallSettings
   terrain: { demLevel: number; cellSizeM: number; invalidRatio: number } | null
   /** 平衡に届いたか（until=settle で cap に届いた、または until=window で窓が終わったら false） */
   settled: boolean

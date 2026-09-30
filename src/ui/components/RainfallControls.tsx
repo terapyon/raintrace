@@ -1,22 +1,35 @@
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import FormHelperText from '@mui/material/FormHelperText'
 import InputLabel from '@mui/material/InputLabel'
+import NativeSelect from '@mui/material/NativeSelect'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Slider from '@mui/material/Slider'
+import Switch from '@mui/material/Switch'
 import { useId } from 'react'
-import { AMOUNT_MM, RADIUS_MIN_M } from '../../state/persistedSettings'
+import {
+  DURATIONS_MIN,
+  type DurationMin,
+  INTENSITY_MM_PER_H,
+  isDurationMin,
+  RADIUS_MIN_M,
+} from '../../state/persistedSettings'
 import { strings } from '../strings'
 
 interface Props {
-  amountText: string
+  intensityText: string
   radiusText: string
+  durationMin: DurationMin
+  wholeRange: boolean
   maxRadiusM: number
-  amountInvalid: boolean
+  intensityInvalid: boolean
   radiusInvalid: boolean
   /** 開始の後はリセットするまで入力できない（spec 04 §3） */
   disabled: boolean
-  onAmountChange: (text: string) => void
+  onIntensityChange: (text: string) => void
+  onDurationChange: (minutes: DurationMin) => void
+  onWholeRangeChange: (on: boolean) => void
   onRadiusChange: (text: string) => void
 }
 
@@ -61,40 +74,89 @@ function NumberField(props: NumberFieldProps) {
   )
 }
 
-/** 雨量と半径（base-spec §10、spec 04 §9）。入力欄とスライダーは同じ値を持つ */
+/**
+ * 継続時間（spec 08 §4.1）。ブラウザの select（NativeSelect）にする。MUI の Select は Menu・Popover を静的に読み、
+ * ui のチャンクを押し上げる（NumberField と同じ理由。計画で決めたこと 19）。キーボードの上下の矢印でも選べる
+ */
+function DurationField(props: {
+  value: DurationMin
+  disabled: boolean
+  onChange: (minutes: DurationMin) => void
+}) {
+  const id = useId()
+  return (
+    <FormControl size="small" variant="outlined" disabled={props.disabled}>
+      <InputLabel htmlFor={id} shrink>
+        {strings.rainfall.duration}
+      </InputLabel>
+      <NativeSelect
+        value={props.value}
+        input={<OutlinedInput label={strings.rainfall.duration} notched />}
+        inputProps={{ id }}
+        onChange={(event) => {
+          const minutes = Number(event.target.value)
+          if (isDurationMin(minutes)) props.onChange(minutes)
+        }}
+      >
+        {DURATIONS_MIN.map((minutes) => (
+          <option key={minutes} value={minutes}>
+            {strings.rainfall.durationValue(minutes)}
+          </option>
+        ))}
+      </NativeSelect>
+    </FormControl>
+  )
+}
+
+/**
+ * 雨（spec 08 §4.1、base-spec §10）: 時間雨量（入力欄とスライダー）・継続時間（選択）・範囲全体に降らせる（スイッチ）・
+ * 半径（入力欄とスライダー。範囲全体の間は無効）
+ */
 export function RainfallControls(props: Props) {
-  const { amountText, radiusText, maxRadiusM, amountInvalid, radiusInvalid, disabled } = props
+  const { intensityText, radiusText, durationMin, wholeRange, maxRadiusM, disabled } = props
   const sliderValue = (text: string, min: number, max: number): number => {
     const value = Number(text)
     return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min
   }
+  const radiusDisabled = disabled || wholeRange
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
       <NumberField
-        label={strings.rainfall.amount}
-        value={amountText}
+        label={strings.rainfall.intensity}
+        value={intensityText}
         disabled={disabled}
-        error={amountInvalid}
-        helperText={amountInvalid ? strings.rainfall.amountError : undefined}
+        error={props.intensityInvalid}
+        helperText={props.intensityInvalid ? strings.rainfall.intensityError : undefined}
         inputMode="numeric"
-        onChange={props.onAmountChange}
+        onChange={props.onIntensityChange}
       />
       <Slider
-        aria-label={strings.rainfall.amountSlider}
+        aria-label={strings.rainfall.intensitySlider}
         size="small"
-        min={AMOUNT_MM.min}
-        max={AMOUNT_MM.max}
+        min={INTENSITY_MM_PER_H.min}
+        max={INTENSITY_MM_PER_H.max}
         step={1}
         disabled={disabled}
-        value={sliderValue(amountText, AMOUNT_MM.min, AMOUNT_MM.max)}
-        onChange={(_, value) => props.onAmountChange(String(value))}
+        value={sliderValue(intensityText, INTENSITY_MM_PER_H.min, INTENSITY_MM_PER_H.max)}
+        onChange={(_, value) => props.onIntensityChange(String(value))}
+      />
+      <DurationField value={durationMin} disabled={disabled} onChange={props.onDurationChange} />
+      <FormControlLabel
+        disabled={disabled}
+        control={
+          <Switch
+            checked={wholeRange}
+            onChange={(_, checked) => props.onWholeRangeChange(checked)}
+          />
+        }
+        label={strings.rainfall.wholeRange}
       />
       <NumberField
         label={strings.rainfall.radius}
         value={radiusText}
-        disabled={disabled}
-        error={radiusInvalid}
-        helperText={radiusInvalid ? strings.rainfall.radiusError(maxRadiusM) : undefined}
+        disabled={radiusDisabled}
+        error={props.radiusInvalid}
+        helperText={props.radiusInvalid ? strings.rainfall.radiusError(maxRadiusM) : undefined}
         inputMode="decimal"
         onChange={props.onRadiusChange}
       />
@@ -104,7 +166,7 @@ export function RainfallControls(props: Props) {
         min={RADIUS_MIN_M}
         max={maxRadiusM}
         step={1}
-        disabled={disabled}
+        disabled={radiusDisabled}
         value={sliderValue(radiusText, RADIUS_MIN_M, maxRadiusM)}
         onChange={(_, value) => props.onRadiusChange(String(value))}
       />

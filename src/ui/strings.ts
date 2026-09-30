@@ -70,17 +70,21 @@ export const strings = {
   },
   rainfall: {
     title: '降雨',
-    amount: '雨量（mm）',
-    amountSlider: '雨量のスライダー',
+    intensity: '時間雨量（mm/h）',
+    intensitySlider: '時間雨量のスライダー',
+    intensityError: '1〜300 の整数で入力してください',
+    duration: '継続時間',
+    /** 継続時間の選択肢（spec 08 §4.1）: 60 分未満は「N 分」、以上は「N 時間」 */
+    durationValue: (minutes: number) => (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 時間`),
+    wholeRange: '範囲全体に降らせる',
     radius: '半径（m）',
     radiusSlider: '半径のスライダー',
-    amountError: '1〜1000 の整数で入力してください',
     radiusError: (maxM: number) => `1〜${maxM} m の範囲で入力してください`,
     rangeSize: '範囲の大きさ',
     rangeSizeValue: (sizeM: number) => `${sizeM} m`,
-    // 1000 m は 1 step の所要時間が基準を超える（tech-spec §14.1）。ユーザー裁定（2026-09-18、M6）:
-    // 選択肢は残し、注意書きを出す
-    rangeSizeHeavyHint: '範囲 1000 m は動作が重くなることがあります。',
+    // 1000 m は計算に時間がかかる（tech-spec §14.1、spec 08 §7.2）。ユーザー裁定（2026-09-18、M6）: 選択肢は残し、注意書きを出す
+    rangeSizeHeavyHint:
+      '範囲 1000 m は計算に時間がかかることがあります（雨を範囲全体に降らせると特に）。',
   },
   playback: {
     title: '再生',

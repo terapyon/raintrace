@@ -6,6 +6,7 @@ import type { WaterPalette } from '../map/waterColormap'
 import { waterArrowFeatures } from '../map/waterFeatures'
 import type { PlaybackSpeed, TerrainPayload } from '../shared/protocol'
 import { arrowSpacingForRange } from '../state/arrowSpacing'
+import type { RainfallSettings } from '../state/persistedSettings'
 import type { SettingsState, SettingsStore } from '../state/settingsStore'
 import type { DisplayStats, SimulationStore } from '../state/simulationStore'
 import { createThrottle, type Throttle } from '../state/throttle'
@@ -193,13 +194,20 @@ export class SimulationSession {
     this.overlay?.setDepthVisible(visible)
   }
 
-  start(amountMm: number, radiusM: number): void {
+  /** 雨を登録して再生を始める（spec 08 §4.2）。継続時間は分から秒にする */
+  start(rain: RainfallSettings): void {
     if (this.terrain === null || this.center === null) return
     const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)
     this.runId += 1
-    // M1 の暫定（計画で決めたこと 3）: 雨量 amountMm を開始のときに一度に置く。Task 12 で時間雨量・継続時間にする
     this.client.start(
-      { x, y, radiusM, intensityMmPerH: amountMm, durationS: 0, wholeRange: false },
+      {
+        x,
+        y,
+        radiusM: rain.radiusM,
+        intensityMmPerH: rain.intensityMmPerH,
+        durationS: rain.durationMin * 60,
+        wholeRange: rain.wholeRange,
+      },
       this.runId,
     )
     this.clearWater()

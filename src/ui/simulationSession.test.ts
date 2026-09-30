@@ -80,6 +80,8 @@ function fakeController(): MapController {
   return { map: {}, whenLoaded: (run: () => void) => run() } as unknown as MapController
 }
 
+const RAIN = { intensityMmPerH: 100, durationMin: 60, radiusM: 10, wholeRange: false } as const
+
 function setup() {
   const worker = new FakeWorker()
   const client = new SimulationClient(() => worker)
@@ -93,9 +95,9 @@ function setup() {
 }
 
 describe('SimulationSession: 命令（spec 04 §3）', () => {
-  it('start は降雨中心をグリッドの北西端からの m にして送り、再生中にする', () => {
+  it('start は降雨中心をグリッドの北西端からの m にし、継続時間は秒にして送り、再生中にする', () => {
     const { worker, store, session } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     expect(worker.posted.at(-1)).toEqual({
       type: 'start',
       rain: {
@@ -103,7 +105,7 @@ describe('SimulationSession: 命令（spec 04 §3）', () => {
         y: (pc.y - geo.originY) * geo.cellSizeM,
         radiusM: 10,
         intensityMmPerH: 100,
-        durationS: 0,
+        durationS: 3600,
         wholeRange: false,
       },
       runId: 1,
@@ -114,14 +116,14 @@ describe('SimulationSession: 命令（spec 04 §3）', () => {
   it('地形が無ければ start しない', () => {
     const { worker, store, session } = setup()
     session.terrainCleared()
-    session.start(100, 10)
+    session.start(RAIN)
     expect(worker.posted.some((m) => m.type === 'start')).toBe(false)
     expect(store.getState().status).toBe('idle')
   })
 
   it('pause・resume・reset・setSpeed はストアにも反映する', () => {
     const { store, session } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     session.pause()
     expect(store.getState().status).toBe('paused')
     session.resume()
@@ -161,7 +163,7 @@ describe('SimulationSession: 地形の読み込み中は再生の命令を送ら
     const { worker, session } = setup()
     session.terrainCleared()
     const postedBefore = worker.posted.length
-    session.start(100, 10)
+    session.start(RAIN)
     session.resume()
     session.step()
     expect(worker.posted.slice(postedBefore)).toEqual([])
@@ -195,7 +197,7 @@ describe('SimulationSession: Worker の作り直しの後の速度の立て直�
       void client.loadTerrain(CENTER.lon, CENTER.lat, 500)
       worker.loaded(terrain)
       session.terrainReady(terrain, CENTER)
-      session.start(100, 10) // runId 1
+      session.start(RAIN) // runId 1
       session.reset() // runId 2
 
       worker.crash()
@@ -215,7 +217,7 @@ describe('SimulationSession: frame → ストア', () => {
   it('再生中の統計は 10Hz に間引く（最初はすぐ、次は間隔の終わりに最新のもの）', () => {
     vi.useFakeTimers()
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     worker.reply(frameMessage(terrainId, 1))
     worker.reply(frameMessage(terrainId, 2))
     worker.reply(frameMessage(terrainId, 3))
@@ -227,7 +229,7 @@ describe('SimulationSession: frame → ストア', () => {
   it('settled の frame で「平衡」にし、その統計を間引かずに入れる', () => {
     vi.useFakeTimers()
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     worker.reply(frameMessage(terrainId, 1))
     worker.reply(
       frameMessage(terrainId, 40, { stats: statsAt(40, { settled: true, stopReason: 'settled' }) }),
@@ -239,7 +241,7 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('越流イベントは間引かずに一覧へ足す', () => {
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     const events = [
       {
         type: 'spill' as const,
@@ -255,7 +257,7 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('止まっている間の frame（Step）はすぐに入れる。idle の間は settled でも状態を変えない', () => {
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     session.pause()
     worker.reply(frameMessage(terrainId, 11, { runId: 1 }))
     expect(store.getState().stats?.step).toBe(11)
@@ -274,7 +276,7 @@ describe('SimulationSession: frame → ストア', () => {
       '統計・越流イベントを入れない。reset の runId の frame が届くと通常に戻る（重要な指摘）',
     () => {
       const { worker, store, session, terrainId } = setup()
-      session.start(100, 10) // runId 1
+      session.start(RAIN) // runId 1
       worker.reply(frameMessage(terrainId, 5, { runId: 1 }))
       session.reset() // runId 2
       expect(store.getState()).toMatchObject({ status: 'idle', stats: null, spills: [] })
@@ -302,9 +304,9 @@ describe('SimulationSession: frame → ストア', () => {
       '扱われる（重要な指摘が見つけた回帰: congestion で reset の step 0 の frame が消えるケース）',
     () => {
       const { worker, store, session, terrainId } = setup()
-      session.start(100, 10) // runId 1
+      session.start(RAIN) // runId 1
       session.reset() // runId 2。この frame は 1 枚も届かない想定（congestion で discardPending に消える）
-      session.start(200, 5) // runId 3
+      session.start({ ...RAIN, intensityMmPerH: 200, radiusM: 5 }) // runId 3
       worker.reply(frameMessage(terrainId, 1, { runId: 3 }))
       expect(store.getState()).toMatchObject({ status: 'running' })
       expect(store.getState().stats?.step).toBe(1)
@@ -317,7 +319,7 @@ describe('SimulationSession: frame → ストア', () => {
     worker.reply(frameMessage(terrainId, 0, { runId: 0, stats: statsAt(0) }))
     expect(store.getState().stats?.step).toBe(0)
 
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     worker.reply(frameMessage(terrainId, 1, { runId: 1 }))
     expect(store.getState().stats?.step).toBe(1)
 
@@ -335,7 +337,7 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('simFailed は理由をストアに入れ、idle に戻す', () => {
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     worker.reply(simFailedMessage(terrainId, { reason: 'no-elevation-at-rain-center' }))
     expect(store.getState()).toMatchObject({
       status: 'idle',
@@ -345,7 +347,7 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('今の実行と runId が違う simFailed は無視する', () => {
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     session.reset() // runId 2
     // runId 1（前の実行）の simFailed が遅れて届いても、idle のまま・エラーも付かない
     worker.reply(simFailedMessage(terrainId, { runId: 1, reason: 'no-elevation-at-rain-center' }))
@@ -355,7 +357,7 @@ describe('SimulationSession: frame → ストア', () => {
   it('simFailed が届く前に間引き待ちだった統計を、後から上書きしない（間引きを止める）', () => {
     vi.useFakeTimers()
     const { worker, store, session, terrainId } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     worker.reply(frameMessage(terrainId, 1))
     worker.reply(frameMessage(terrainId, 2))
     worker.reply(simFailedMessage(terrainId, { reason: 'no-elevation-at-rain-center' }))
@@ -366,7 +368,7 @@ describe('SimulationSession: frame → ストア', () => {
 
   it('Worker が異常終了すると worker のエラーにする（「再読み込み」を出す。spec 04 §10）', () => {
     const { worker, store, session } = setup()
-    session.start(100, 10)
+    session.start(RAIN)
     worker.crash()
     expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
   })
@@ -376,10 +378,10 @@ describe('SimulationSession: frame → ストア', () => {
       'エラーも消さない（コントローラー追加の裁定）',
     () => {
       const { worker, store, session } = setup()
-      session.start(100, 10)
+      session.start(RAIN)
       worker.crash()
       expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
-      session.start(100, 10)
+      session.start(RAIN)
       expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
       session.resume()
       expect(store.getState()).toMatchObject({ status: 'idle', error: 'worker' })
@@ -434,7 +436,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     const { worker, session, terrainId } = setup()
     const overlay = fakeOverlay()
     session.attach(fakeController(), () => overlay)
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     const water = new Float32Array(4).fill(0.1)
     worker.reply(
       frameMessage(terrainId, 1, {
@@ -456,7 +458,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
       const { worker, session, terrainId } = setup()
       const overlay = fakeOverlay()
       session.attach(fakeController(), () => overlay)
-      session.start(100, 10) // runId 1
+      session.start(RAIN) // runId 1
       session.reset() // runId 2
       // reset 自身が水を消す（setWater(null)）。ここから先の古い frame で呼ばれないことを見る
       overlay.setWater.mockClear()
@@ -477,7 +479,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     const { worker, session, terrainId } = setup()
     const overlay = fakeOverlay()
     session.attach(fakeController(), () => overlay)
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     worker.reply(frameMessage(terrainId, 1, { arrows: Float32Array.of(0, 0, 90, 0.1) }))
     overlay.setWater.mockClear()
     worker.reply(simFailedMessage(terrainId, { runId: 1, reason: 'no-elevation-at-rain-center' }))
@@ -489,7 +491,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     const { worker, session, terrainId } = setup()
     const overlay = fakeOverlay()
     session.attach(fakeController(), () => overlay)
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     worker.reply(frameMessage(terrainId, 1, { arrows: Float32Array.of(0, 0, 90, 0.1) }))
     overlay.setWater.mockClear()
     overlay.clearArrows.mockClear()
@@ -504,7 +506,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     overlay.setWater.mockClear()
     overlay.clearArrows.mockClear()
 
-    session.start(100, 10) // runId 3
+    session.start(RAIN) // runId 3
     expect(overlay.setWater).toHaveBeenCalledWith(null)
     expect(overlay.clearArrows).toHaveBeenCalled()
   })
@@ -518,7 +520,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     worker.reply(frameMessage(terrainId, 1, { runId: 0, arrows: Float32Array.of(0, 0, 90, 0.1) }))
     worker.reply(frameMessage(terrainId, 2, { runId: 0, arrows: Float32Array.of(1, 1, 90, 0.1) }))
     overlay.setArrows.mockClear()
-    session.start(100, 10)
+    session.start(RAIN)
     vi.advanceTimersByTime(STATS_INTERVAL_MS * 2)
     expect(overlay.setArrows).not.toHaveBeenCalled()
   })
@@ -527,7 +529,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     const { worker, session, terrainId } = setup()
     const overlay = fakeOverlay()
     session.attach(fakeController(), () => overlay)
-    session.start(100, 10) // runId 1
+    session.start(RAIN) // runId 1
     session.reset() // runId 2
     // reset 自身が水と矢印を消す。ここから先の古い simFailed で呼ばれないことを見る
     overlay.setWater.mockClear()
@@ -541,7 +543,7 @@ describe('SimulationSession: attach と frame → WaterOverlay・矢印（追加
     const { worker, session } = setup()
     const overlay = fakeOverlay()
     session.attach(fakeController(), () => overlay)
-    session.start(100, 10)
+    session.start(RAIN)
     worker.crash()
     expect(overlay.setWater).toHaveBeenCalledWith(null)
     expect(overlay.clearArrows).toHaveBeenCalled()
@@ -614,7 +616,7 @@ describe('SimulationSession: 3D への水深の受け渡し（spec 05 §3.1、�
     const { worker, session, terrainId } = setup()
     const seen: (Float32Array | null)[] = []
     session.onWater((water) => seen.push(water))
-    session.start(100, 10) // runId 1。start は水を消す（null）
+    session.start(RAIN) // runId 1。start は水を消す（null）
     worker.reply(frameMessage(terrainId, 1, { runId: 0, stats: statsAt(1) }))
     worker.reply(frameMessage(terrainId, 2, { runId: 1, stats: statsAt(2) }))
     session.reset()

@@ -84,7 +84,7 @@ test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
     await page.getByRole('button', { name: strings.playback.reset }).click()
     await expect(page.getByTestId('stat-total')).toHaveText('0.00 m³')
     await expect(page.getByTestId('stat-step')).toHaveText('Step 0')
-    await expect(page.getByLabel(strings.rainfall.amount)).toBeEnabled()
+    await expect(page.getByLabel(strings.rainfall.intensity)).toBeEnabled()
     // セル情報は SimulationClient の手元の水深を読む。client は runId に関わらず届いた frame の水深を持つので、
     // Worker が reset を処理して step 0 の frame（水深 0）を送ったときだけ 0 になる。Worker が reset を無視して
     // 前の実行を続けると、session が捨てる frame の水が残り、ここで落ちる（最終レビューの重要な指摘）
@@ -129,7 +129,7 @@ test.describe('URL と設定（spec 04 §7）', () => {
 
   test('?mm=50&r=20 を付けて開くと、入力欄にその値が入っている（§11.2 の 7）', async ({ page }) => {
     await page.goto(`${SHIBUYA}&mm=50&r=20`)
-    await expect(page.getByLabel(strings.rainfall.amount)).toHaveValue('50')
+    await expect(page.getByLabel(strings.rainfall.intensity)).toHaveValue('50')
     await expect(page.getByLabel(strings.rainfall.radius)).toHaveValue('20')
     await waitTerrain(page)
     await expect(page).toHaveURL(/size=500&mm=50&r=20/)
@@ -140,10 +140,10 @@ test.describe('URL と設定（spec 04 §7）', () => {
   }) => {
     await page.goto(SHIBUYA)
     await waitTerrain(page)
-    await page.getByLabel(strings.rainfall.amount).fill('80')
+    await page.getByLabel(strings.rainfall.intensity).fill('80')
     await expect(page).toHaveURL(/mm=80/)
     await page.goto('/')
-    await expect(page.getByLabel(strings.rainfall.amount)).toHaveValue('80')
+    await expect(page.getByLabel(strings.rainfall.intensity)).toHaveValue('80')
   })
 
   test('範囲の大きさを 250 m にすると、読み込み直して URL に size=250 が入る', async ({ page }) => {
@@ -262,7 +262,7 @@ test('キーボードだけで、雨量・半径の入力から Start・Pause・
   await page.goto(SHIBUYA)
   await waitTerrain(page)
   // 起点として雨量の入力欄に焦点を置く。ここから先はキーボードだけ
-  const amount = page.getByLabel(strings.rainfall.amount)
+  const amount = page.getByLabel(strings.rainfall.intensity)
   await amount.focus()
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.type('120')

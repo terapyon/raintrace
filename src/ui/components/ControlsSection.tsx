@@ -8,17 +8,22 @@ import Typography from '@mui/material/Typography'
 import { useId, useState } from 'react'
 import { useStore } from 'zustand'
 import type { PlaybackSpeed } from '../../shared/protocol'
-import { maxRadiusM, RANGE_SIZES, type RangeSizeM } from '../../state/persistedSettings'
+import {
+  maxRadiusM,
+  RANGE_SIZES,
+  type RainfallSettings,
+  type RangeSizeM,
+} from '../../state/persistedSettings'
 import type { SettingsStore } from '../../state/settingsStore'
 import type { SimulationStore } from '../../state/simulationStore'
 import { strings } from '../strings'
-import { parseAmountMm, parseRadiusM } from '../validation'
+import { parseIntensityMmPerH, parseRadiusM } from '../validation'
 import { PlaybackControls } from './PlaybackControls'
 import { RainfallControls } from './RainfallControls'
 
 /** 再生の命令。SimulationSession がそのまま満たす */
 export interface PlaybackActions {
-  start(amountMm: number, radiusM: number): void
+  start(rain: RainfallSettings): void
   pause(): void
   resume(): void
   step(): void
@@ -37,35 +42,41 @@ interface Props {
 }
 
 /**
- * 降雨・範囲の大きさ・再生・平衡とエラーの知らせ。入力中の文字列はここに置き、有効な値だけを
- * 設定のストアに書く（計画で決めたこと 9）。範囲外の値は入力欄にエラーを出し、開始を押せなくする（spec 04 §9）
+ * 降雨・範囲の大きさ・再生・自動停止とエラーの知らせ。入力中の文字列はここに置き、有効な値だけを
+ * 設定のストアに書く（spec 04 の計画で決めたこと 9）。範囲外の値は入力欄にエラーを出し、開始を押せなくする
+ * （spec 08 §6.3）。範囲全体に降らせる間は半径を検証しない（開始に渡すのは保存値の半径。Review Focus 5）
  */
 export function ControlsSection({ settings, simulation, hasTerrain, actions, onReload }: Props) {
   const rangeSizeHintId = useId()
   const sizeM = useStore(settings, (s) => s.area.sizeM)
+  const durationMin = useStore(settings, (s) => s.rainfall.durationMin)
+  const wholeRange = useStore(settings, (s) => s.rainfall.wholeRange)
   const status = useStore(simulation, (s) => s.status)
   const speed = useStore(simulation, (s) => s.speed)
   const error = useStore(simulation, (s) => s.error)
   const settledStep = useStore(simulation, (s) =>
     s.status === 'settled' ? (s.stats?.step ?? 0) : null,
   )
-  const [amountText, setAmountText] = useState(() => String(settings.getState().rainfall.amountMm))
+  const [intensityText, setIntensityText] = useState(() =>
+    String(settings.getState().rainfall.intensityMmPerH),
+  )
   const [radiusText, setRadiusText] = useState(() => String(settings.getState().rainfall.radiusM))
-  const amountMm = parseAmountMm(amountText)
+  const intensity = parseIntensityMmPerH(intensityText)
   const radiusM = parseRadiusM(radiusText, sizeM)
-  const canStart = hasTerrain && amountMm !== null && radiusM !== null && error !== 'worker'
+  const radiusOk = wholeRange || radiusM !== null
+  const canStart = hasTerrain && intensity !== null && radiusOk && error !== 'worker'
 
-  const onAmountChange = (text: string): void => {
-    setAmountText(text)
-    const value = parseAmountMm(text)
-    if (value !== null)
-      settings.getState().setRainfall({ ...settings.getState().rainfall, amountMm: value })
+  const setRainfall = (patch: Partial<RainfallSettings>): void =>
+    settings.getState().setRainfall({ ...settings.getState().rainfall, ...patch })
+  const onIntensityChange = (text: string): void => {
+    setIntensityText(text)
+    const value = parseIntensityMmPerH(text)
+    if (value !== null) setRainfall({ intensityMmPerH: value })
   }
   const onRadiusChange = (text: string): void => {
     setRadiusText(text)
     const value = parseRadiusM(text, sizeM)
-    if (value !== null)
-      settings.getState().setRainfall({ ...settings.getState().rainfall, radiusM: value })
+    if (value !== null) setRainfall({ radiusM: value })
   }
   const onSizeChange = (next: RangeSizeM): void => {
     // 設定のストアが半径を新しい範囲の半分に収めるので、入力欄も合わせる。範囲の読み込み直しは TerrainSession
@@ -77,13 +88,17 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
     <Box sx={{ display: 'grid', gap: 1.5 }}>
       <Typography variant="subtitle2">{strings.rainfall.title}</Typography>
       <RainfallControls
-        amountText={amountText}
+        intensityText={intensityText}
         radiusText={radiusText}
+        durationMin={durationMin}
+        wholeRange={wholeRange}
         maxRadiusM={maxRadiusM(sizeM)}
-        amountInvalid={amountMm === null}
-        radiusInvalid={radiusM === null}
+        intensityInvalid={intensity === null}
+        radiusInvalid={!wholeRange && radiusM === null}
         disabled={status !== 'idle'}
-        onAmountChange={onAmountChange}
+        onIntensityChange={onIntensityChange}
+        onDurationChange={(minutes) => setRainfall({ durationMin: minutes })}
+        onWholeRangeChange={(on) => setRainfall({ wholeRange: on })}
         onRadiusChange={onRadiusChange}
       />
       <Box>
@@ -118,7 +133,8 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
         canStart={canStart}
         speed={speed}
         onStart={() => {
-          if (amountMm !== null && radiusM !== null) actions.start(amountMm, radiusM)
+          // 有効な入力だけが設定のストアに入っているので、保存値をそのまま渡す
+          if (canStart) actions.start(settings.getState().rainfall)
         }}
         onPause={() => actions.pause()}
         onResume={() => actions.resume()}

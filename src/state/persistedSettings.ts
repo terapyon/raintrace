@@ -11,15 +11,29 @@ export const BASEMAPS = ['std', 'pale', 'photo'] as const
 export type Basemap = (typeof BASEMAPS)[number]
 export const THEME_MODES = ['light', 'dark', 'system'] as const
 export type ThemeMode = (typeof THEME_MODES)[number]
+/** 継続時間の選択肢（分。spec 08 §4.1、R08-7） */
+export const DURATIONS_MIN = [10, 20, 30, 60, 120, 180, 360] as const
+export type DurationMin = (typeof DURATIONS_MIN)[number]
 
-/** 入力の範囲（spec 04 §9、R04-6） */
-export const AMOUNT_MM = { min: 1, max: 1000 } as const
+/** 入力の範囲（spec 08 §4.1・§6.3、R08-7。半径は R04-6 のまま） */
+export const INTENSITY_MM_PER_H = { min: 1, max: 300 } as const
 export const RADIUS_MIN_M = 1
 export const maxRadiusM = (sizeM: RangeSizeM): number => sizeM / 2
 
+/** 雨の設定（spec 08 §6.4） */
+export interface RainfallSettings {
+  /** 時間雨量（mm/h）。1〜300 の整数 */
+  intensityMmPerH: number
+  durationMin: DurationMin
+  /** 円の半径（m）。範囲全体に降らせる間は使わないが、値は残す */
+  radiusM: number
+  /** 範囲全体に降らせる（R08-4） */
+  wholeRange: boolean
+}
+
 export interface PersistedSettings {
-  schemaVersion: 1
-  rainfall: { amountMm: number; radiusM: number }
+  schemaVersion: 2
+  rainfall: RainfallSettings
   area: { sizeM: RangeSizeM }
   display: {
     verticalExaggeration: (typeof VERTICAL_EXAGGERATIONS)[number]
@@ -28,19 +42,24 @@ export interface PersistedSettings {
     showFlowVectors: boolean
     /** 水の流れと地形の流向の矢印の間隔（計画で決めたこと 10） */
     flowVectorSpacingM: (typeof ARROW_SPACINGS)[number]
-    /**
-     * 流出しているセルの表示（spec 07 §5.3）。v0.2.0 の保存値には無いので、欠けていれば true で補う（型が違えば
-     * これまでどおり全体を捨てる）。足したのは任意の項目で形は変わらないので、schemaVersion は 1 のまま
-     */
+    /** 流出しているセルの表示（spec 07 §5.3）。v0.2.0 の保存値には無いので、欠けていれば true で補う */
     showOutflowCells: boolean
   }
   map: { basemap: Basemap; theme: ThemeMode }
   disclaimerAcknowledgedAt: string | null
 }
 
+/** 既定の雨（100 mm/h × 1 時間、半径 10 m、円。spec 08 §4.1。総量は 04 の既定の 100 mm と同じ） */
+export const DEFAULT_RAINFALL: RainfallSettings = {
+  intensityMmPerH: 100,
+  durationMin: 60,
+  radiusM: 10,
+  wholeRange: false,
+}
+
 export const DEFAULT_SETTINGS: PersistedSettings = {
-  schemaVersion: 1,
-  rainfall: { amountMm: 100, radiusM: 10 },
+  schemaVersion: 2,
+  rainfall: DEFAULT_RAINFALL,
   area: { sizeM: 500 },
   display: {
     verticalExaggeration: 2,
@@ -53,13 +72,17 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   disclaimerAcknowledgedAt: null,
 }
 
-export function isValidAmountMm(value: unknown): value is number {
+export function isValidIntensityMmPerH(value: unknown): value is number {
   return (
     typeof value === 'number' &&
     Number.isInteger(value) &&
-    value >= AMOUNT_MM.min &&
-    value <= AMOUNT_MM.max
+    value >= INTENSITY_MM_PER_H.min &&
+    value <= INTENSITY_MM_PER_H.max
   )
+}
+
+export function isDurationMin(value: unknown): value is DurationMin {
+  return DURATIONS_MIN.includes(value as DurationMin)
 }
 
 export function isValidRadiusM(value: unknown, sizeM: RangeSizeM): value is number {
@@ -84,8 +107,7 @@ const ARROW_SPACING_INPUTS = [5, ...ARROW_SPACINGS] as const
 
 /**
  * 矢印の間隔を選べる値に丸める。5（選択肢から外れた値）は 10 として読む（移行）。
- * ARROW_SPACING_INPUTS で検証した後の値だけを渡す（parsePersistedSettings と perfHook.ts が呼ぶ。
- * R06-11 の裁定 (a2): すべての範囲で矢印の 1 辺の本数の上限を 50 にする。計画で決めたこと 19）
+ * ARROW_SPACING_INPUTS で検証した後の値だけを渡す（parsePersistedSettings と perfHook.ts が呼ぶ。R06-11）
  */
 export function clampArrowSpacing(
   value: (typeof ARROW_SPACING_INPUTS)[number],
@@ -94,19 +116,39 @@ export function clampArrowSpacing(
 }
 
 /**
- * 保存値を検証する。形・型・範囲のどれかが不正、または schemaVersion が 1 でなければ null
- * （呼び出し側が既定値に戻す。schemaVersion のマイグレーションはしない。外した選択肢の値
- * （矢印の間隔 5）だけ 10 に読み替える。欠けた `showOutflowCells` は true で補う（spec 07）。
- * tech-spec §8.3。R06-11）
+ * 保存値を検証する（tech-spec §8.3、spec 08 §6.4）。返すのは常に schemaVersion 2 の形。
+ * - schemaVersion 2: すべての項目を検証し、どれかが欠けるか不正なら null（呼び出し側が既定値に戻す）
+ * - schemaVersion 1（v0.2.0・07）: 雨量（amountMm）は読まず、時間雨量・継続時間・範囲全体を既定にする
+ *   （R08-8、N1）。半径（radiusM）は R04-6 の検証を通れば残す。雨量以外の項目は今までと同じ規則で検証し、
+ *   不正なら null（N2）
+ * - それ以外の schemaVersion: null
+ * どちらの版でも、欠けた showOutflowCells は true で補い（spec 07）、矢印の間隔 5 は 10 に読む（R06-11）
  */
 export function parsePersistedSettings(value: unknown): PersistedSettings | null {
-  if (!isRecord(value) || value.schemaVersion !== 1) return null
+  if (!isRecord(value)) return null
+  const version = value.schemaVersion
+  if (version !== 1 && version !== 2) return null
   const { rainfall, area, display, map, disclaimerAcknowledgedAt } = value
   if (!isRecord(rainfall) || !isRecord(area) || !isRecord(display) || !isRecord(map)) return null
   const { sizeM } = area
   if (!oneOf(RANGE_SIZES, sizeM)) return null
-  const { amountMm, radiusM } = rainfall
-  if (!isValidAmountMm(amountMm) || !isValidRadiusM(radiusM, sizeM)) return null
+  const { radiusM } = rainfall
+  if (!isValidRadiusM(radiusM, sizeM)) return null
+  let rain: RainfallSettings
+  if (version === 2) {
+    const { intensityMmPerH, durationMin, wholeRange } = rainfall
+    if (
+      !isValidIntensityMmPerH(intensityMmPerH) ||
+      !isDurationMin(durationMin) ||
+      typeof wholeRange !== 'boolean'
+    ) {
+      return null
+    }
+    rain = { intensityMmPerH, durationMin, radiusM, wholeRange }
+  } else {
+    // v1: 雨量は読み替えない（R08-8）。雨量だけを既定に戻し、半径は残す（N1）
+    rain = { ...DEFAULT_RAINFALL, radiusM }
+  }
   const { verticalExaggeration, waterDepthPalette, showFlowVectors, flowVectorSpacingM } = display
   // v0.2.0 の保存値には無い。欠けていれば既定の true で補い、了解の日時を含む他の設定を失わせない（spec 07 §5.3）
   const showOutflowCells = display.showOutflowCells === undefined ? true : display.showOutflowCells
@@ -129,8 +171,8 @@ export function parsePersistedSettings(value: unknown): PersistedSettings | null
     return null
   }
   return {
-    schemaVersion: 1,
-    rainfall: { amountMm, radiusM },
+    schemaVersion: 2,
+    rainfall: rain,
     area: { sizeM },
     display: {
       verticalExaggeration,

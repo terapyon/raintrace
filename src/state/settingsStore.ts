@@ -2,11 +2,14 @@ import { type PersistStorage, persist } from 'zustand/middleware'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import {
   DEFAULT_SETTINGS,
-  isValidAmountMm,
+  type DurationMin,
+  isDurationMin,
+  isValidIntensityMmPerH,
   isValidRadiusM,
   maxRadiusM,
   type PersistedSettings,
   parsePersistedSettings,
+  type RainfallSettings,
   type RangeSizeM,
   SETTINGS_KEY,
 } from './persistedSettings'
@@ -55,15 +58,17 @@ export function safeLocalStorage(): SyncStorage {
   }
 }
 
-/** URL から読んだ値（tech-spec §3.3）。無い・読めない項目は null */
+/** URL から読んだ値（tech-spec §3.3、spec 08 §6.4）。無い・読めない項目は null */
 export interface UrlSettings {
   sizeM: RangeSizeM | null
-  amountMm: number | null
+  intensityMmPerH: number | null
+  durationMin: DurationMin | null
+  wholeRange: boolean | null
   radiusM: number | null
 }
 
 export interface SettingsActions {
-  setRainfall(rainfall: PersistedSettings['rainfall']): void
+  setRainfall(rainfall: RainfallSettings): void
   /** 範囲の大きさ。半径は新しい範囲の半分に収める */
   setAreaSize(sizeM: RangeSizeM): void
   setDisplay(patch: Partial<PersistedSettings['display']>): void
@@ -114,13 +119,17 @@ export function createSettingsStore(storage: SyncStorage): SettingsStore {
         setDisplay: (patch) => set((s) => ({ display: { ...s.display, ...patch } })),
         setMap: (patch) => set((s) => ({ map: { ...s.map, ...patch } })),
         acknowledgeDisclaimer: (at) => set({ disclaimerAcknowledgedAt: at }),
-        applyUrl: ({ sizeM, amountMm, radiusM }) =>
+        applyUrl: ({ sizeM, intensityMmPerH, durationMin, wholeRange, radiusM }) =>
           set((s) => {
             const size = sizeM ?? s.area.sizeM
             return {
               area: { sizeM: size },
               rainfall: {
-                amountMm: isValidAmountMm(amountMm) ? amountMm : s.rainfall.amountMm,
+                intensityMmPerH: isValidIntensityMmPerH(intensityMmPerH)
+                  ? intensityMmPerH
+                  : s.rainfall.intensityMmPerH,
+                durationMin: isDurationMin(durationMin) ? durationMin : s.rainfall.durationMin,
+                wholeRange: typeof wholeRange === 'boolean' ? wholeRange : s.rainfall.wholeRange,
                 radiusM: isValidRadiusM(radiusM, size)
                   ? radiusM
                   : clampRadius(s.rainfall.radiusM, size),
@@ -132,14 +141,15 @@ export function createSettingsStore(storage: SyncStorage): SettingsStore {
         name: SETTINGS_KEY,
         storage: settingsStorage(storage),
         partialize: (s): PersistedSettings => ({
-          schemaVersion: 1,
+          schemaVersion: 2,
           rainfall: s.rainfall,
           area: s.area,
           display: s.display,
           map: s.map,
           disclaimerAcknowledgedAt: s.disclaimerAcknowledgedAt,
         }),
-        // 不正な値・schemaVersion の不一致なら既定値のまま（tech-spec §8.3）。zustand の version は使わない
+        // 不正な値・schemaVersion の不一致なら既定値のまま（tech-spec §8.3）。zustand の version は使わない。
+        // v1 は雨量だけを既定に戻して読む（spec 08 §6.4）。保存するときは常に v2 の形
         merge: (persistedState, current) => {
           const parsed = parsePersistedSettings(persistedState)
           return parsed === null ? current : { ...current, ...parsed }

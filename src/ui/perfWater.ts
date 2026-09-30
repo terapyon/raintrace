@@ -204,9 +204,8 @@ export async function runWaterProbe(
   // Task 17a (ii) の後、水面はリンクの後に区画ごとに数フレームで出る。作った印（waterBuilds）では足りず、
   // すべての区画を描いた印（waterReady）まで待つ（画素を読む前に水面の全体が描かれている）
   await waitForDataset(container, (dataset) => Number(dataset.waterReady ?? '0') >= 1)
-  const { amountMm, radiusM } = settings.getState().rainfall
   simulation.setSpeed('max')
-  simulation.start(amountMm, radiusM)
+  simulation.start(settings.getState().rainfall)
   await sleep(params.wetMs)
   simulation.pause()
   // 止めた後の最後の frame（水面の転送）を流す

@@ -116,15 +116,20 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
   })
 
   it('バッファが 2 枚とも手元に無ければ frame を見送り、返却されると最新の状態で送る', () => {
+    const engineStep = vi.spyOn(TsSimulationEngine.prototype, 'step')
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     h.run(6)
     expect(h.frames()).toHaveLength(2)
     const sent = h.frames()[1]?.step ?? 0
+    // 見送りの間もエンジンは進む。返却の時点のエンジンの最新の step
+    const latest = engineStep.mock.results.at(-1)?.value.step
+    expect(latest).toBeGreaterThan(sent)
     h.returnAll()
     expect(h.frames()).toHaveLength(3)
-    expect(h.frames()[2]?.step ?? 0).toBeGreaterThan(sent)
+    // 遅れて送る 3 枚目は、見送った途中の状態ではなく最新の状態
+    expect(h.frames()[2]?.step).toBe(latest)
   })
 
   it('frame に実際の倍率（simSecondsPerSecond）を載せる。再生の最初の 1 秒は 0', () => {

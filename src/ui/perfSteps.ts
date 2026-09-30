@@ -131,7 +131,7 @@ export async function runStepsProbe(
   simulation.setSpeed('max')
   const limitMs = params.until === 'settle' ? params.capMs : params.durationMs
   const start = performance.now()
-  simulation.start(rainfall.amountMm, rainfall.radiusM)
+  simulation.start(rainfall)
   const settled = await waitSettled(simulation.store, limitMs)
   const elapsedMs = performance.now() - start
   if (!settled) simulation.pause()
@@ -145,7 +145,7 @@ export async function runStepsProbe(
     params,
     view3d: map.getContainer().dataset.view3d ?? 'off',
     sizeM: area.sizeM,
-    rain: { amountMm: rainfall.amountMm, radiusM: rainfall.radiusM },
+    rain: rainfall,
     terrain:
       summary === null
         ? null

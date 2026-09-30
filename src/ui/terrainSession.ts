@@ -265,7 +265,9 @@ export class TerrainSession {
       point: this.store.getState().selected,
       zoom: this.controller?.map.getZoom() ?? null,
       sizeM: area.sizeM,
-      amountMm: rainfall.amountMm,
+      intensityMmPerH: rainfall.intensityMmPerH,
+      durationMin: rainfall.durationMin,
+      wholeRange: rainfall.wholeRange,
       radiusM: rainfall.radiusM,
     })
     window.history.replaceState(
