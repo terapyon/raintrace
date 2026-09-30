@@ -13,7 +13,13 @@ import {
   waitTerrain,
 } from './support/app'
 import { routeGsi } from './support/gsi'
-import { type Blob, colorBlobs, decodePng, outflowColoredCount } from './support/png'
+import {
+  type Blob,
+  colorBlobs,
+  decodePng,
+  outflowBandCount,
+  outflowColoredCount,
+} from './support/png'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 /** 範囲（500 m）に内接する円の雨。縁まで水が届き、流出の帯が出る（07 のスパイクと同じ雨） */
@@ -48,7 +54,14 @@ const OUTFLOW_GROWTH_PX = 100
 const T1_MAX_STEPS = 60
 /** t1 から t2 までに進める step 数（3D。M2）。決まった量だけ進め、再生の速さと競争しない */
 const T2_STEPS = 30
-/** 帯を消した後の、降雨の前との差の許容（揺れ）。実測（2026-09-29）: 2D は 0、3D は −21〜−16 */
+/**
+ * 帯を消した後の許容（揺れ）。2D は降雨の前との差で、実測（2026-09-29）0。
+ * 3D は降雨の前との差ではなく、切った後に残る帯そのものの色の画素の数（outflowBandCount。枠・降雨マーカーの赤を
+ * 色で除く）と比べる。3D の降雨の前との差は、帯と関係のない枠の赤の増減を含む（spec 08 Task 9 の修正ラウンド 1）:
+ * 持ち上がった水面が範囲の枠の赤い線の一部を覆って減り（07 の実測 −21〜−16、08 の流れで −37）、負荷が高いと
+ * 降雨の前の読みが 3D の枠を描き終わる前になって、枠の分だけ増えて見える（+500〜+1000）。
+ * 実測（2026-09-30）: 切った後の帯の色 = 0、切る前の帯の色 = 2474。帯が消えなければ 2400 前後が残る
+ */
 const OUTFLOW_NOISE_PX = 30
 
 type Clip = { x: number; y: number; width: number; height: number }
@@ -326,7 +339,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     expect(errors).toEqual([])
   })
 
-  test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると降雨の前に戻る', async ({
+  test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると帯の色が残らない', async ({
     page,
   }) => {
     test.setTimeout(150_000)
@@ -375,6 +388,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     const flicker: Record<string, number[]> = {}
     const offCounts: Record<string, number> = {}
     let offDiff = 0
+    const offBands: Record<string, number> = {}
     // 既定の垂直強調は ×2（DEFAULT_SETTINGS）。c0 は ×2 で読んだので、×2 を先に読む
     let previousShot: Buffer | null = null
     for (const ex of [2, 1] as const) {
@@ -400,21 +414,23 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
       await page.getByLabel(strings.panel.showOutflow).uncheck()
       await nextFrames(page)
       let off = 0
+      let band = 0
       await expect
         .poll(
           async () => {
-            off = await outflowCount(page, clip)
+            const image = decodePng(await page.screenshot({ clip }))
+            off = outflowColoredCount(image)
+            band = outflowBandCount(image)
             return (reads[0] as number) - off
           },
           { timeout: 10_000 },
         )
         .toBeGreaterThan(OUTFLOW_MIN_PX)
       offCounts[`x${ex}`] = off
-      // ×2 は降雨の前（c0）と同じ視点なので、c0 と同じに戻る
-      if (ex === 2) {
-        offDiff = off - c0
-        expect(Math.abs(offDiff)).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
-      }
+      // 帯の色は残らない（降雨の前の c0 との差は参考に記録するだけ。OUTFLOW_NOISE_PX の説明）
+      if (ex === 2) offDiff = off - c0
+      offBands[`x${ex}`] = band
+      expect(band).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
       await page.getByLabel(strings.panel.showOutflow).check()
       await nextFrames(page)
       previousShot = await page.screenshot({ clip })
@@ -429,6 +445,8 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
       c1MinusC0: c1 - c0,
       c2MinusC1: c2 - c1,
       offDiff,
+      offBandX1: offBands.x1 ?? 0,
+      offBandX2: offBands.x2 ?? 0,
       flickerX1: flicker.x1 ?? [],
       flickerX2: flicker.x2 ?? [],
       offX1: offCounts.x1 ?? 0,

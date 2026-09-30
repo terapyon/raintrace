@@ -1,9 +1,17 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { TERRAIN_LAYER_IDS } from '../../src/map/TerrainOverlay'
 import { WATER_LAYER_IDS } from '../../src/map/WaterOverlay'
 import { strings } from '../../src/ui/strings'
-import { acknowledgeDisclaimer, clickMap, collectErrors, tabTo, waitTerrain } from './support/app'
+import {
+  acknowledgeDisclaimer,
+  clickMap,
+  collectErrors,
+  nextFrames,
+  tabTo,
+  waitTerrain,
+} from './support/app'
 import { routeGsi } from './support/gsi'
+import { clearOfMarkers, findAllMarkers } from './support/markers'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 /** ダークのときに <html> に付くクラス（Task 10 Step 5 で実ブラウザで確かめた名前。違えばここを直す） */
@@ -148,6 +156,34 @@ test.describe('URL と設定（spec 04 §7）', () => {
   })
 })
 
+/**
+ * 画面の割合 (fx, fy) の点に近く、どの ○ からも離れた点（ページの座標）。4 px 刻みで ±40 px まで、近い順に探す。
+ * accept で追加の条件を付けられる。○ の位置は窪地の解析で変わる（spec 08 で 4 近傍になり、(0.4, 0.4) が
+ * あふれ出し点の ○ に当たるようになった）ので、決まった点ではなく ○ を避けた点をクリックする（spec 07 の
+ * Review Focus 1 と同じ扱い。アプリの挙動は変えない）
+ */
+async function pointClearOfMarkers(
+  page: Page,
+  fx: number,
+  fy: number,
+  accept: (p: { x: number; y: number }) => boolean = () => true,
+): Promise<{ x: number; y: number }> {
+  const markers = await findAllMarkers(page)
+  const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
+  if (box === null) throw new Error('地図の canvas がありません')
+  const base = { x: box.x + box.width * fx, y: box.y + box.height * fy }
+  const candidates: { x: number; y: number }[] = []
+  for (let dx = -40; dx <= 40; dx += 4) {
+    for (let dy = -40; dy <= 40; dy += 4) candidates.push({ x: base.x + dx, y: base.y + dy })
+  }
+  candidates.sort(
+    (a, b) => Math.hypot(a.x - base.x, a.y - base.y) - Math.hypot(b.x - base.x, b.y - base.y),
+  )
+  const found = candidates.find((p) => clearOfMarkers(p, markers) && accept(p))
+  if (found === undefined) throw new Error(`(${fx}, ${fy}) の近くに ○ から離れた点がありません`)
+  return found
+}
+
 test.describe('地図のクリック（spec 04 §4、R04-1）', () => {
   test.beforeEach(async ({ context }) => {
     await routeGsi(context)
@@ -160,15 +196,26 @@ test.describe('地図のクリック（spec 04 §4、R04-1）', () => {
     await page.goto(SHIBUYA)
     await waitTerrain(page)
     const before = await page.getByTestId('selected-point').textContent()
-    // fitBounds の後、範囲は画面の中央の正方形（1280 × 720 なら横 320〜960）。右のパネルに隠れない位置
-    await clickMap(page, 0.4, 0.4)
+    // fitBounds の後、範囲は画面の中央の正方形（1280 × 720 なら横 320〜960）。右のパネルに隠れない位置。
+    // ○ に当たると印の説明が開くので、(0.4, 0.4) の近くで ○ から離れた点を選ぶ（2 点目も先に選んでおく）
+    // ○ が描かれてから選ぶ（描かれる前の絵では ○ を避けられない）
+    await expect.poll(async () => (await findAllMarkers(page)).length).toBeGreaterThan(0)
+    await nextFrames(page)
+    const p1 = await pointClearOfMarkers(page, 0.4, 0.4)
+    const p2 = await pointClearOfMarkers(
+      page,
+      0.3,
+      0.3,
+      (p) => p.x <= p1.x - 100 && p.y <= p1.y - 50,
+    )
+    await page.mouse.click(p1.x, p1.y)
     await expect(page.getByTestId('cell-info')).toBeVisible()
     await expect(page.getByTestId('cell-elevation')).toHaveText(/^\d+\.\d{2} m$/)
     await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
     // ポップオーバーは背景を持たないので、開いたまま範囲の別の場所（ポップオーバーの左上の外）をクリックすると、
     // そこに開き直す（Task 8。384 × 216 は範囲の中）
     const first = await page.getByTestId('cell-info').boundingBox()
-    await clickMap(page, 0.3, 0.3)
+    await page.mouse.click(p2.x, p2.y)
     await expect
       .poll(async () => (await page.getByTestId('cell-info').boundingBox())?.x ?? 0)
       .toBeLessThan((first?.x ?? 0) - 50)

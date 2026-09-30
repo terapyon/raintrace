@@ -115,16 +115,35 @@ export function waterColoredFraction(img: DecodedPng): number {
  * 範囲の枠と降雨マーカーの赤（#d32f2f）も当たるので、呼び出し側は同じ視点で降雨の前に数えた値との差で使う
  */
 export function outflowColoredCount(img: DecodedPng): number {
-  const { width, height, channels, data } = img
   let count = 0
-  for (let i = 0; i < width * height; i++) {
-    const o = i * channels
-    const r = data[o] ?? 0
-    const g = data[o + 1] ?? 0
-    const b = data[o + 2] ?? 0
-    if (r >= 140 && g <= 90 && b >= 40 && b <= 150 && r - b >= 60) count++
+  for (let i = 0; i < img.width * img.height; i++) if (isOutflowColored(img, i)) count++
+  return count
+}
+
+/**
+ * 流出の帯そのものの色の画素の数。outflowColoredCount の判定のうち、青が緑より十分大きい（b − g ≥ 40）ものだけ。
+ * 帯（#c2185b、b − g = 67）は水の上に 0.9 で重ねても b − g が 50〜69 に入り、範囲の枠と降雨マーカーの赤
+ * （#d32f2f、b − g = 0）とその縁のにじみは 20 未満だった（2026-09-30 の実測、spec 08 Task 9 の修正ラウンド 1）。
+ * 枠の赤は降雨の前との差に頼らず除けるので、帯を切った後に帯が残っていないかを、降雨の前の画面の描かれ具合
+ * （負荷で 3D の枠が描き終わる前に読むことがある）や水面が枠を覆う分に左右されずに確かめられる
+ */
+export function outflowBandCount(img: DecodedPng): number {
+  let count = 0
+  for (let i = 0; i < img.width * img.height; i++) {
+    const o = i * img.channels
+    const g = img.data[o + 1] ?? 0
+    const b = img.data[o + 2] ?? 0
+    if (isOutflowColored(img, i) && b - g >= 40) count++
   }
   return count
+}
+
+function isOutflowColored(img: DecodedPng, i: number): boolean {
+  const o = i * img.channels
+  const r = img.data[o] ?? 0
+  const g = img.data[o + 1] ?? 0
+  const b = img.data[o + 2] ?? 0
+  return r >= 140 && g <= 90 && b >= 40 && b <= 150 && r - b >= 60
 }
 
 /** 同じ色の画素の塊（4 連結）。x・y は画素の中心の平均（画像の中の座標） */
