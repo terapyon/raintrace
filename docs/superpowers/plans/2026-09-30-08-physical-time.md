@@ -87,6 +87,9 @@ spec が明示していないが、使う人に最も効きそうな入力・状
 32. **計測のファイルの URL の書き換え**: spec §9.4 の表の 4 か所（`fps.perf.ts`・`shots.perf.ts`）に加え、`water.perf.ts` の `mm: '500'` も `mmh: '250', dur: '120'` にする（`mm` は読まれなくなるため）。`steps.perf.ts` は Task 15 で雨の組ごと作り直す
 33. **E2E の 9 番の継続時間**: `<select>` に焦点を置いて上矢印を 3 回（1 時間 → 10 分）。Linux の Chromium では閉じたままの `<select>` の値が矢印キーで変わる
 34. **M1 の旧 `properties.test.ts` の扱い**: Task 5 では最小の直し（雨の形の変換と、局所慣性式では成り立たない最大値原理のテストの削除）にとどめ、Task 7 で §9.2 の形に書き直す
+35. **投入水量（`totalWater`）の雨の分は閉じた式で持つ**（計画のレビュー 1 の R1、コーディネーターの裁定 2026-09-30）: `totalWater = 置いた水（一度に置く雨・setInitialWater の和） + ρ·|S|·A·(min(t, T_rain) − t₀)`（t₀ は雨を登録した時刻。reset の後の登録なら 0）。21,600 回の足し算の丸め（最悪 2.4e-12）を避け、計画で決めたこと 8（雨の終わりの step は t = T_rain）と合わせて、雨が終わった時点で `I·T·πr²·|S|/|C|` に式どおり一致する。セルに実際に足した水と式の差は `massError`（許容 1e-9）が見る。雨の途中で登録し直したときは、それまでの雨の分を置いた水に移してから置き換える
+36. **重いテストの置き場所と timeout**（計画のレビュー 1 の M1）: `physics.test.ts` は Task 6 Step 4 と同じ規則（素の Node の verbose で 750 ms を超えるテストは `physics.slow.test.ts`〈timeout 120,000〉へ）で、残すテストにはすべて明示の timeout 30,000 を付ける。降雨の総量の重い組 [0.98 m, 100 m, 100 mm/h, 600 s] は 60 s に縮める（各値を 1 回以上使うことは保つ）。`properties.test.ts` は Task 7 Step 2 で所要を測り、750 ms を超える性質だけ timeout 120,000 を付ける
+37. **07 の帯の E2E の雨の強さ**（計画のレビュー 1 の R2）: spec §9.4 の `mmh=250&dur=120&all=1` では縁が約 15 step で 1 mm に届き、帯が一度に飽和して M2 の「t1 → t2 で増える」が取れない恐れがある。範囲全体（`all=1`）のまま、強さを下げる（最初の候補 20 mm/h。縁が 1 mm に届くのが約 180 step）。Task 14 Step 7 の前に帯の画素数の時刻ごとの推移を 1 回取り、縁が 1 mm に届く時刻が t1〜t2 の間に来る強さと `T2_STEPS` を決める。spec §9.4 の URL からの逸脱として PR に書く
 
 ## ファイル構成
 
@@ -1594,6 +1597,19 @@ describe('setRainfall（spec 08 §4.2）', () => {
     expect(s.rainDepthMm).toBe(100)
   })
 
+  it('投入水量の雨の分は閉じた式 ρ·|S|·A·min(t, T_rain)（足し算の丸めを積まない。計画で決めたこと 35）。セルに足した水との差は質量誤差に出る', () => {
+    const engine = engineOn(walledBasin(20, 0, 10))
+    engine.setRainfall(circle(10, 10, 3, 100, 600.5))
+    let s = engine.step()
+    while (s.raining) s = engine.step()
+    const expected = (100 / 1000 / 3600) * 600.5 * Math.PI * 9
+    expect(s.timeS).toBe(600.5)
+    expect(Math.abs(s.totalWater - expected) / expected).toBeLessThanOrEqual(1e-14)
+    expect(Math.abs(s.massError)).toBeLessThanOrEqual(massTolerance(s.totalWater))
+    // 雨の後は増えない
+    expect(engine.step().totalWater).toBe(s.totalWater)
+  })
+
   it('2 回目の登録は前の登録を置き換える', () => {
     const engine = engineOn(buildTerrain(20, 20, 1, () => 0))
     engine.setRainfall(circle(10, 10, 3, 100, 600))
@@ -2045,8 +2061,14 @@ export class TsSimulationEngine implements SimulationEngine {
   private depressions: Depression[] = []
   private notified = new Uint8Array(0)
   private rain: Rain | null = null
+  /** 雨を登録した時刻（s）。reset の後の登録なら 0 */
+  private rainStartS = 0
   private stepCount = 0
-  private totalWater = 0
+  /**
+   * 置いた水（一度に置く雨・setInitialWater・登録し直す前の雨の分。m³）。投入水量は、これに今の雨の分を
+   * 閉じた式で足したもの（計画で決めたこと 35）
+   */
+  private placedWater = 0
   private outflowWater = 0
   private timeS = 0
   /** この step の始めの最大水深（前の step の endStep の値。spec 08 §3.3） */
@@ -2099,14 +2121,18 @@ export class TsSimulationEngine implements SimulationEngine {
   setRainfall(rain: RainfallInput): void {
     const { terrain, meta, grid } = this.require()
     const plan = planRainSchedule(rain, terrain.validMask, meta)
+    const area = meta.cellSizeM * meta.cellSizeM
+    // 登録し直すときは、それまでの雨の分を置いた水に移してから置き換える（計画で決めたこと 35）
+    this.placedWater += this.rainVolume(area)
     this.rain = { ...plan, intensityMmPerH: rain.intensityMmPerH }
+    this.rainStartS = this.timeS
     grid.include(plan.x0, plan.y0, plan.x1, plan.y1)
     if (plan.instantDepthM > 0) {
       for (const i of plan.cells) {
         grid.current[i] += plan.instantDepthM
         if (grid.current[i] > this.hMax) this.hMax = grid.current[i]
       }
-      this.totalWater += plan.instantDepthM * plan.cells.length * meta.cellSizeM * meta.cellSizeM
+      this.placedWater += plan.instantDepthM * plan.cells.length * area
     }
   }
 
@@ -2130,7 +2156,7 @@ export class TsSimulationEngine implements SimulationEngine {
       sum += d
     }
     grid.include(0, 0, terrain.width, terrain.height)
-    this.totalWater += sum * meta.cellSizeM * meta.cellSizeM
+    this.placedWater += sum * meta.cellSizeM * meta.cellSizeM
   }
 
   step(): StepStats {
@@ -2149,10 +2175,10 @@ export class TsSimulationEngine implements SimulationEngine {
     limitOutflows(terrain, grid.current, grid, faces, dt, dx)
     const outflowQ = applyFaceFlows(terrain, grid.current, grid.next, grid, faces, dt, dx)
     if (raining && rain !== null) {
-      // 雨のセルは登録のときに走査範囲に含め、降っている間は濡れているので範囲に残る（spec 08 §4.2）
+      // 雨のセルは登録のときに走査範囲に含め、降っている間は濡れているので範囲に残る（spec 08 §4.2）。
+      // 投入水量は足した量の和ではなく閉じた式で持つ（rainVolume。計画で決めたこと 35）
       const add = rain.rateMPerS * dt
       for (const i of rain.cells) grid.next[i] += add
-      this.totalWater += add * rain.cells.length * area
     }
     const uMax = faceVelocityMax(grid, faces)
     const summary = grid.endStep()
@@ -2165,6 +2191,7 @@ export class TsSimulationEngine implements SimulationEngine {
     const outflowM3 = outflowQ * dx * dt
     this.outflowWater += outflowM3
     const storedWater = summary.depthSum * area
+    const totalWater = this.placedWater + this.rainVolume(area)
     const rainingAfter = rain !== null && this.timeS < rainEnd
     const settled = !rainingAfter && uMax < this.settleVelocityMPerS
     const stopReason: StopReason | null = settled
@@ -2174,13 +2201,14 @@ export class TsSimulationEngine implements SimulationEngine {
         : null
     return {
       step: this.stepCount,
-      totalWater: this.totalWater,
+      totalWater,
       storedWater,
       outflowWater: this.outflowWater,
       maxDepth: summary.maxDepth,
       floodedArea: summary.floodedCells * area,
       settled,
-      massError: this.totalWater - storedWater - this.outflowWater,
+      // セルに実際に足した水と、閉じた式の投入水量の差もここに出る（許容 1e-9。計画で決めたこと 35）
+      massError: totalWater - storedWater - this.outflowWater,
       events: this.detectSpills(terrain.elevation, grid.current),
       timeS: this.timeS,
       dtS: dt,
@@ -2244,6 +2272,18 @@ export class TsSimulationEngine implements SimulationEngine {
     return this.flow
   }
 
+  /**
+   * 今の雨の登録で降った水の量（m³）= ρ·|S|·A·(min(t, T_rain) − t₀)（計画で決めたこと 35）。雨の終わりの step の
+   * 時刻は T_rain そのもの（計画で決めたこと 8）なので、雨が終わった時点で ρ·|S|·A·T_rain に式どおり一致する。
+   * durationS = 0 の雨は ρ = 0（置いた水は placedWater に入れてある）
+   */
+  private rainVolume(area: number): number {
+    const rain = this.rain
+    if (rain === null) return 0
+    const fallenS = Math.max(0, Math.min(this.timeS, rain.endS) - this.rainStartS)
+    return rain.rateMPerS * rain.cells.length * area * fallenS
+  }
+
   /** 累積雨量（mm）。durationS = 0 の雨は置いた量（計画で決めたこと 5） */
   private rainDepthMm(): number {
     const rain = this.rain
@@ -2278,9 +2318,10 @@ export class TsSimulationEngine implements SimulationEngine {
 
   private resetCounters(): void {
     this.stepCount = 0
-    this.totalWater = 0
+    this.placedWater = 0
     this.outflowWater = 0
     this.timeS = 0
+    this.rainStartS = 0
     this.hMax = 0
     this.uMax = 0
   }
@@ -2689,7 +2730,7 @@ Expected: PASS。`scenarios.test.ts` の平衡の 3 件は、試作で 1,741〜7
 - [ ] **Step 12: ゲート**
 
 Run: `pnpm format && pnpm lint && pnpm typecheck && pnpm depcheck && pnpm test:coverage`
-Expected: すべて成功。`pnpm depcheck` で `Faces` などの型の import が規則に触れないこと。ユニットの件数を報告に書く
+Expected: すべて成功。`pnpm depcheck` で `Faces` などの型の import が規則に触れないこと。ユニットは 856 件（Task 4 の後）から 844 件・87 ファイルの見込み: `TsSimulationEngine.test.ts` 23 → 25（+2。閉じた式の投入水量のテストを含む）、`FlowSolver.test.ts` の旧い describe 13 件を消して面の表の 1 件を足す（−12）、`WaterGrid.test.ts` の `beginStep` の 1 件（−1）、`properties.test.ts` の最大値原理の 1 件（−1）。`scenarios.test.ts`（5 件）・`spillEvents.test.ts`・`constants.test.ts`・`outflowCells.test.ts` の件数は変わらない。違えば内訳を報告に書く
 
 Run: `pnpm build && pnpm size`
 Expected: 初期ロードは Task 1 の値と同じ（エンジンは Worker のチャンク）。Worker のチャンクの大きさの差を報告に書く
@@ -2818,7 +2859,7 @@ describe('満水との一致（spec 08 §9.1、4 近傍の analyzeDepressions）
 Run: `pnpm vitest run src/simulation/fillMatch.test.ts --reporter=verbose`
 Expected: 3 件とも PASS。各テストの所要（ms）を報告に書く。試作の素の Node（spec §9.1 の表）は 0.50・0.19・0.28 秒、池の `|H − F|` の最大 4.69・4.20・3.62 mm、池の外の最大 3.36・3.03・2.60 mm
 
-実測の `pond`・`outside`・step 数も報告に書くため、一時的に `console.log(label, pond, outside)` を足して 1 回回し、控えたら消す（コミットに残さない）。
+実測の `pond`・`outside`・step 数も報告に書くため、一時的に `console.log(label, pond, outside)` を足して 1 回回し、控えたら**消す**（Biome の lint が `console` を咎めうるので、Step 5 のゲートの前に必ず消したことを `grep -n console src/simulation/fillMatch.test.ts` が何も返さないことで確かめる。コミットに残さない）。
 
 - [ ] **Step 3: 許容を外れたときの分岐（M0 の承認の軽微 m2。許容は変えない）**
 
@@ -3159,8 +3200,8 @@ describe('性質のテスト（spec 08 §9.2、tech-spec §11.3）', () => {
 
 - [ ] **Step 2: 回す**
 
-Run: `pnpm vitest run src/simulation/properties.test.ts`
-Expected: PASS（7 件）。落ちたら fast-check の反例（種と縮めた入力）を報告に書いて止める。とくに「走査範囲」「静水の保存」が落ちたら、エンジンの θ 重み付けの隣の読み方（計画で決めたこと 10）か、面の不変条件の片付け（`clearFacesOutside`）を疑う
+Run: `pnpm vitest run src/simulation/properties.test.ts --reporter=verbose`
+Expected: PASS（7 件）。各性質の所要（ms）を報告に書く（計画のレビュー 1 の M1。16²・200 step・fast-check の既定 100 回で、1 step は旧い式の約 2 倍）。既定の timeout 5 秒に対し、750 ms（× 40 で 30 秒）を超える性質があれば、その `it` の第 3 引数に timeout 120_000 を付け（`numRuns` は変えない）、付けたものを報告に書く（計画で決めたこと 36）。落ちたら fast-check の反例（種と縮めた入力）を報告に書いて止める。とくに「走査範囲」「静水の保存」が落ちたら、エンジンの θ 重み付けの隣の読み方（計画で決めたこと 10）か、面の不変条件の片付け（`clearFacesOutside`）を疑う
 
 - [ ] **Step 3: ゲート**
 
@@ -3179,6 +3220,7 @@ git commit -m "spec 08 Task 7: 性質のテストを §9.2 の形に書き直す
 
 **Files:**
 - Create: `src/simulation/physics.test.ts`
+- 条件付きで Create: `src/simulation/physics.slow.test.ts`（Step 2 の分岐）
 
 **Interfaces:**
 - Consumes: `TsSimulationEngine`（Task 5。`setRainfall`・`setInitialWater`・`faceFlows`・`flowVectors`・`EngineOptions`）、`planRainfall`、定数 `FROUDE_MAX`・`GRAVITY`・`MANNING_N`・`SETTLE_CAP_S`・`massTolerance`
@@ -3243,7 +3285,8 @@ describe('降雨の総量（spec 08 §4.2・§9.3）', () => {
   const CASES: [number, number, number, number][] = [
     [0.98, 1, 300, 3600],
     [0.98, 10, 1, 21_600],
-    [0.98, 100, 100, 600],
+    // 重い組（約 4.2 万セル）は 60 秒に縮める（計画のレビュー 1 の M1。各値を 1 回以上使うことは保つ）
+    [0.98, 100, 100, 60],
     [3.9, 1, 100, 21_600],
     [3.9, 10, 300, 600.5],
     [3.9, 100, 1, 3600],
@@ -3265,7 +3308,7 @@ describe('降雨の総量（spec 08 §4.2・§9.3）', () => {
     30_000,
   )
 
-  it('円がグリッドの西の端で切れると、総量は I·T·πr²·|S|/|C|（R04-8。Review Focus 1）', () => {
+  it('円がグリッドの西の端で切れると、総量は I·T·πr²·|S|/|C|（R04-8。Review Focus 1）', { timeout: 30_000 }, () => {
     const t = buildTerrain(250, 250, 1, () => 0)
     const engine = engineOn(t)
     engine.setRainfall({ x: 0, y: 125, radiusM: 10, intensityMmPerH: 100, durationS: 3600, wholeRange: false })
@@ -3277,7 +3320,7 @@ describe('降雨の総量（spec 08 §4.2・§9.3）', () => {
     expect(expected).toBeLessThan(mmhToMps(100) * 3600 * Math.PI * 100 * 0.6)
   })
 
-  it('無効セル（海）のある範囲全体の雨の総量は I·T·有効セル数·A（無効セルには降らない。Review Focus 1）', () => {
+  it('無効セル（海）のある範囲全体の雨の総量は I·T·有効セル数·A（無効セルには降らない。Review Focus 1）', { timeout: 30_000 }, () => {
     const t = buildTerrain(30, 30, 2, (x) => (x < 5 ? Number.NaN : 0.01 * x))
     const engine = engineOn(t)
     engine.setRainfall(wholeRange(100, 600))
@@ -3291,7 +3334,7 @@ describe('降雨の総量（spec 08 §4.2・§9.3）', () => {
 })
 
 describe('雨の終わり（spec 08 §3.3・§9.3）', () => {
-  it('最後の step で raining が false になり、その step の timeS は継続時間にちょうど等しく、rainDepthMm は総量。その後は投入しない', () => {
+  it('最後の step で raining が false になり、その step の timeS は継続時間にちょうど等しく、rainDepthMm は総量。その後は投入しない', { timeout: 30_000 }, () => {
     const engine = engineOn(cone(21, 0.1, 5))
     const durationS = 600.5
     engine.setRainfall({ ...cellCenter(10, 10, 1), radiusM: 3, intensityMmPerH: 100, durationS, wholeRange: false })
@@ -3310,7 +3353,7 @@ describe('雨の終わり（spec 08 §3.3・§9.3）', () => {
 })
 
 describe('平らな盆地と流出の速さ（spec 08 §4.3・§9.3）', () => {
-  it('縁で囲んだ平らな盆地に範囲全体の雨 100 mm/h × 2 時間: 雨の終わりに盆地の水深は平らで 0.2 m 以上、流出は縁に降った量以下。Σ 流出の速さ × dt = 領域外流出量', () => {
+  it('縁で囲んだ平らな盆地に範囲全体の雨 100 mm/h × 2 時間: 雨の終わりに盆地の水深は平らで 0.2 m 以上、流出は縁に降った量以下。Σ 流出の速さ × dt = 領域外流出量', { timeout: 30_000 }, () => {
     // 30 × 30・セル 1 m、縁（外周 1 セル）は高さ 5 m の有効セル。範囲全体の雨は縁にも降り、その大半は盆地へ、
     // 一部はグリッドの外へ流れる（盆地の水深は 0.2 m ちょうどにはならない。試作 0.22882 m。spec 08 §9.3）
     const size = 30
@@ -3398,12 +3441,12 @@ describe('斜面の定常流（Manning。spec 08 §9.3、M0 の U5）', () => {
         expect(Math.abs(vy - u) / u).toBeLessThanOrEqual(0.1)
       }
     },
-    60_000,
+    30_000,
   )
 })
 
 describe('重力波の速さ（spec 08 §3.2・§9.3）', () => {
-  it('平らな水面（深さ 0.5 m）に 1 cm の段差を置くと、段差は √(g·h) の速さで伝わる（到達時刻が 20% 以内）', () => {
+  it('平らな水面（深さ 0.5 m）に 1 cm の段差を置くと、段差は √(g·h) の速さで伝わる（到達時刻が 20% 以内）', { timeout: 30_000 }, () => {
     // 201 × 3・セル 1 m の水路。行 0・2 と両端（列 0・200）は高さ 10 m の壁。列 1〜99 は 0.51 m、列 100〜199 は 0.5 m
     const W = 201
     const t = buildTerrain(W, 3, 1, (x, y) => (y !== 1 || x === 0 || x === W - 1 ? 10 : 0))
@@ -3500,10 +3543,10 @@ describe('自動停止（spec 08 §3.9・§9.3、R08-6、Q1 = (a)）', () => {
 })
 ```
 
-- [ ] **Step 2: 回す**
+- [ ] **Step 2: 回して、重いテストを分ける（計画で決めたこと 36、計画のレビュー 1 の M1）**
 
 Run: `pnpm vitest run src/simulation/physics.test.ts --reporter=verbose`
-Expected: PASS。試作（M0）の値: 平らな盆地の水深 0.22882 m・差 6e-8 m、斜面の流出の差 0.000%・水深 +0.57%・95% の到達 513 秒（t_e 511 秒）、重力波の到達 22.8 秒（見込み 22.8 秒）、自動停止は雨の後 308〜2,002 step。実測（到達時刻・水深の差・停止までの step）と各テストの所要を報告に書く。落ちたら数値を報告に書いて止める（許容を変えない）
+Expected: PASS。各テストの所要（ms）を読む。**750 ms（× 40 で 30 秒。カバレッジと並列の下の見込み）を超えるテスト**（見込み: Manning の斜面 約 2 秒、平らな盆地 約 1.1 秒）は、`src/simulation/physics.slow.test.ts`（新規。同じ import と補助関数〈`mmhToMps`・`wholeRange`・`runRain`〉を写し、describe の名前の末尾に「（重いテスト。計画で決めたこと 36）」、各テストの timeout を 120_000）へ移す。`physics.test.ts` に残すテストの timeout は 30_000 のまま（すべてに明示してある）。分けたテストと所要を報告に書く。試作（M0）の値: 平らな盆地の水深 0.22882 m・差 6e-8 m、斜面の流出の差 0.000%・水深 +0.57%・95% の到達 513 秒（t_e 511 秒）、重力波の到達 22.8 秒（見込み 22.8 秒）、自動停止は雨の後 308〜2,002 step。実測（到達時刻・水深の差・停止までの step）と各テストの所要を報告に書く。落ちたら数値を報告に書いて止める（許容を変えない）
 
 - [ ] **Step 3: ゲート**
 
@@ -3514,6 +3557,8 @@ Expected: すべて成功。`physics.test.ts` の所要（カバレッジの下�
 
 ```bash
 git add src/simulation/physics.test.ts
+# Step 2 で分けたときだけ
+git add src/simulation/physics.slow.test.ts
 git commit -m "spec 08 Task 8: §9.3 の物理のテスト（降雨の総量・雨の終わり・平らな盆地・Manning の斜面・重力波・段差・自動停止）"
 ```
 
@@ -3679,7 +3724,7 @@ Expected: 表が 3 行。停止の欄は `settled`・`cap`・`未到達（上限
 - [ ] **Step 5: M1 の E2E（M1 の段階の挙動: UI の雨はまだ一度に置く。速度は 0.25x〜4x のまま）**
 
 Run: `pnpm build && pnpm exec playwright test --project=chromium`
-Expected: 49 passed。落ちたテストがあれば、その名前・画面の値・`logMeasured` の実測（07 の帯のテスト）を報告に書く。07 の帯のしきい値（`explanations.spec.ts`）が新しい流れの式で外れた場合だけ、`logMeasured` の実測を 3 回読み、計画で決めたこと 24 の規則でしきい値を直してこの Task に含める（M3 の Task 14 で雨の形を替えるときに決め直す）。それ以外の失敗は直さずに止め、コントローラーに渡す
+Expected: 49 passed。07 の帯の E2E（`explanations.spec.ts`。雨はまだ一度に置く 500 mm）の `[実測]` の行から、2D・3D の `c1 − c0`（しきい値 200 を超えること）と 3D の `c2 − c1`（+30 step で 100 を超えること。07 の M2）を数字で報告に書く（計画のレビュー 1 の R3）。落ちたテストがあれば、その名前・画面の値・`logMeasured` の実測（07 の帯のテスト）を報告に書く。07 の帯のしきい値（`explanations.spec.ts`）が新しい流れの式で外れた場合だけ、`logMeasured` の実測を 3 回読み、計画で決めたこと 24 の規則でしきい値を直してこの Task に含める（M3 の Task 14 で雨の形を替えるときに決め直す）。それ以外の失敗は直さずに止め、コントローラーに渡す
 
 Run: `pnpm build && pnpm size`
 Expected: 初期ロード 500 KB 以下。Task 1 との差を報告に書く
@@ -4596,7 +4641,7 @@ Expected: 初期ロードは変わらない（±0.1 KB）
 - [ ] **Step 6: M2 の E2E（UI の雨はまだ一度に置く。速度は新しい選択肢）**
 
 Run: `pnpm build && pnpm exec playwright test --project=chromium`
-Expected: 49 passed。落ちたら直さずに止め、テストの名前と画面の値を報告に書く
+Expected: 49 passed。07 の帯の E2E の `[実測]` の `c1 − c0`（> 200）と `c2 − c1`（> 100。07 の M2）を数字で報告に書く（計画のレビュー 1 の R3）。落ちたら Task 14 を待たずにここで扱う: 07 の帯のしきい値だけの外れなら計画で決めたこと 24 の規則で直してこの Task に含め、それ以外は直さずに止め、テストの名前と画面の値を報告に書く
 
 - [ ] **Step 7: コミット**
 
@@ -7057,13 +7102,15 @@ test('キーボードだけで、時間雨量・継続時間・範囲全体・�
 
 ```ts
 /**
- * 範囲全体の雨（250 mm/h × 2 時間 = 総量 500 mm。spec 08 §9.4、R3 の裁定）。縁の全周が同時に濡れ、流出の帯が
- * 決定的に出る（円の雨は縁に届くまでに時間がかかり、07 の「最初の数 step で帯が出る」前提が崩れる）
+ * 範囲全体の雨（spec 08 §9.4、R3 の裁定）。縁の全周が同時に濡れ、流出の帯が決定的に出る（円の雨は縁に届くまでに
+ * 時間がかかり、07 の「最初の数 step で帯が出る」前提が崩れる）。強さは spec の 250 mm/h から下げた（計画で決めた
+ * こと 37）: 250 mm/h では縁が約 15 step で 1 mm に届いて帯が一度に飽和し、t1 → t2 で増えない。強さは Step 6b の
+ * 推移で決める（最初の候補 20 mm/h。縁が 1 mm に届くのが約 180 step）
  */
-const EDGE_RAIN = '&mmh=250&dur=120&all=1'
+const EDGE_RAIN = '&mmh=20&dur=120&all=1'
 ```
 
-- `T1_MAX_STEPS` と `startAndPauseAtOnce` を消す（t1 は再生しながら待つ。計画で決めたこと 24）。`T2_STEPS` を 60 にする
+- `T1_MAX_STEPS` と `startAndPauseAtOnce` を消す（t1 は再生しながら待つ。計画で決めたこと 24）。`T2_STEPS` は仮に 60 にし、Step 6b で決め直す
 - 「2D: 縁まで雨を置いて再生すると…」のテストの名前の「縁まで雨を置いて」を「範囲全体に雨を降らせて」にし、`test.setTimeout(120_000)` を `180_000` に、`c1` の `expect.poll` の `timeout: 60_000` を `120_000` にする
 - 「3D: 流出の帯はカメラを固定したまま…」の、`const c0 = await outflowCount(page, clip)` の次の行から `const s1 = step` までを次に置き換え、`test.setTimeout(150_000)` を `240_000` にする:
 
@@ -7097,6 +7144,17 @@ const EDGE_RAIN = '&mmh=250&dur=120&all=1'
 
 `tests/perf/water.perf.ts`: `mm: '500',` を `mmh: '250',\n        dur: '120',` にする
 
+- [ ] **Step 6b: 帯の画素数の推移を 1 回取り、雨の強さと `T2_STEPS` を決める（計画で決めたこと 37、計画のレビュー 1 の R2）**
+
+`explanations.spec.ts` の 3D のテストに一時的に次を足して 1 回だけ回す（取ったら消す。コミットに残さない）: 開始の直後から、500 ms ごとに `shownStep(page)` と `outflowCount(page, clip) − c0` を読んで配列に積み（最大 240 回）、最後に `logMeasured('3D-series', { steps, counts })` で出す。
+
+Run: `pnpm build && pnpm exec playwright test --project=chromium tests/e2e/explanations.spec.ts -g '3D: 流出の帯'`
+
+推移から、帯の画素数が 0 から増え始める step（縁が 1 mm に届く）と、増えなくなる（飽和する）step を読む。
+- 増え始めてから飽和するまでに 60 step 以上あり、その間に t1（`OUTFLOW_MIN_PX` を超える時点）と t2（t1 + `T2_STEPS`）が入る強さにする。20 mm/h で増え始めが早すぎる（60 step 未満）なら 10 mm/h、遅すぎる（400 step を超え、E2E の待ちが長い）なら 50 mm/h で取り直す
+- `T2_STEPS` は、t1 から飽和までの step 数の半分（10 刻みに切り下げ、30 以上）にする
+- 決めた強さを `EDGE_RAIN` に、`T2_STEPS` を定数に入れ、推移の要約（増え始め・飽和の step、選んだ強さ）を報告と定数の説明に書く。2D のテストも同じ `EDGE_RAIN` を使う
+
 - [ ] **Step 7: E2E を回して、07 の帯のしきい値を決め直す（フォアグラウンド）**
 
 Run: `pnpm build && pnpm exec playwright test --project=chromium tests/e2e/explanations.spec.ts --repeat-each=3`
@@ -7107,7 +7165,7 @@ Expected: 3 回とも、2D の `[実測] 2D {...}` と 3D の `[実測] 3D {...}
 - `OUTFLOW_GROWTH_PX = floor(3D の 3 回の c2 − c1 の最小 ÷ 4)`
 - どちらも `OUTFLOW_NOISE_PX × 3 = 90` より大きいこと。`c2 − c1` が 90 以下なら `T2_STEPS` を 180 にして測り直す。それでも増えなければ止めてコントローラーに渡す（07 の M2 を弱めない）
 
-定数の説明の実測の文を「実測（<実行日>、SwiftShader、範囲全体の 250 mm/h）: 2D の c1 − c0 = <最小>〜<最大>、3D は <最小>〜<最大>」「t1 → t2（<T2_STEPS> step）で c2 − c1 = <最小>〜<最大>」に書き直す。
+定数の説明の実測の文を「実測（<実行日>、SwiftShader、範囲全体の <Step 6b で決めた強さ> mm/h）: 2D の c1 − c0 = <最小>〜<最大>、3D は <最小>〜<最大>」「t1 → t2（<T2_STEPS> step）で c2 − c1 = <最小>〜<最大>」に書き直す。
 
 Run: `pnpm build && pnpm exec playwright test --project=chromium`
 Expected: 51 passed（49 − 旧 4・5・7〈URL の 1 件〉・9 の置き換えで数は変わらず、新しく 10 番と「古い mm」の 2 件を足す）。`pnpm exec playwright test --list --project=chromium` の件数を報告に書く
@@ -7848,7 +7906,7 @@ gh pr create --base feat/07-explanations --head feat/08-physical-time \
 - 概要: v0.2.0 のデモの要望（2026-09-27）とユーザーの裁定、R08-1〜R08-12、§13.1 の N1〜N10、§13.2 の Q1 = (a)。**base は `feat/07-explanations`**（07 がマージされたら GitHub が base を `main` に付け替える）
 - 足したもの: 4 近傍の局所慣性式（θ 重み付け・Manning・適応的な dt）、窪地解析の 4 近傍化、時間雨量 × 継続時間の雨（円・範囲全体）、経過時間・降雨・累積雨量・流出の速さ・実際の倍率の表示、実時間の倍率の再生、停止の 2 つの文言、URL（mmh・dur・all）と保存値 v2、`TerrainPayload.outflow` から `mask` を外した
 - **⚠ 既存挙動の変更**: 古い URL の `mm` は読まない（雨は既定）。保存値は v2 になり、v0.2.0・07 に戻すと保存値が捨てられて注意事項がもう一度出る（N2）。自動停止は実 DEM ではほとんど「計算の上限（雨がやんでから 6 時間）」で止まり、止めた後に来るはずの越流の通知を見逃すことがある（Q1 = (a) の帰結、spec §3.9）。水の流れの矢印は 0.005 m/s 以上のセルだけ。斜めにだけ抜ける窪地は 4 近傍では窪地になる（○ の位置が変わりうる）
-- spec との差異（計画で決めたこと）: 1（満水との一致のテストを一時的に消した順序）、3（M1 の暫定の橋渡し）、5（`durationS = 0` の読み方）、6（`reset` は雨の登録を消し地形を残す）、7（正値の制限の実現）、13（cap のテストの作り方）、16（降雨の総量のテストの組）、17（スケジューラの最初の tick・`setSpeed`・`rewind`）、19（継続時間は `NativeSelect`）、20（`'settled'` の状態の名前）、21（統計の並びと丸め）、24（07 の帯の E2E の t1 の取り方としきい値）、26〜28（計測の口と打ち切り）、32（`water.perf.ts` の URL）
+- spec との差異（計画で決めたこと）: 1（満水との一致のテストを一時的に消した順序）、3（M1 の暫定の橋渡し）、5（`durationS = 0` の読み方）、6（`reset` は雨の登録を消し地形を残す）、7（正値の制限の実現）、13（cap のテストの作り方）、16（降雨の総量のテストの組）、17（スケジューラの最初の tick・`setSpeed`・`rewind`）、19（継続時間は `NativeSelect`）、20（`'settled'` の状態の名前）、21（統計の並びと丸め）、24（07 の帯の E2E の t1 の取り方としきい値）、26〜28（計測の口と打ち切り）、32（`water.perf.ts` の URL）、35（投入水量の雨の分を閉じた式で持つ）、36（重いテストを `*.slow.test.ts` へ）、37（07 の帯の E2E の雨の強さを spec §9.4 の 250 mm/h から下げた）
 - 性能の記録（R08-9。判定なし）: Task 16 の表の要約と、tech-spec §6.3 の目安に当たるかの検討は後続（N6。spec §14）
 - 満水との一致の許容と止め方（Task 6 で動かしたか）、07 の帯の E2E のしきい値の測り直し（Task 14）
 - 手動確認（Step 3）の結果とスクリーンショット
@@ -7881,7 +7939,7 @@ git commit -m "spec 08 Task 19: M0 の試作（scripts/proto-08）を消す"
 2. ゲートの結果（ユニットの件数・E2E の件数・`pnpm size`・`pnpm depcheck`・`pnpm licenses`）。`package.json`・`pnpm-lock.yaml` が 07 から変わっていないこと（`git diff ba9cc26 -- package.json pnpm-lock.yaml` が空）
 3. spec §10 の照合の表（Task 19 Step 2）
 4. 性能の記録の要約（Task 16）
-5. 計画で決めたこと 1〜34 のうち、実装の中で変えたもの（無ければ「無し」）
+5. 計画で決めたこと 1〜37 のうち、実装の中で変えたもの（無ければ「無し」）
 6. 手動確認の結果（Task 19 Step 3）
 
 レビューの指摘は、この計画の書式で追加の Task（20 以降）として足し、同じブランチで直す。
@@ -7894,4 +7952,5 @@ git commit -m "spec 08 Task 19: M0 の試作（scripts/proto-08）を消す"
 - **単体テストに壁時計の判定が無いこと**: スケジューラのテストは偽の時計、エンジンのテストは `timeS` と step 数で見る。vitest の timeout（満水との一致・物理のテスト）は判定ではない。E2E と計測の時間は判定でなく待ちの上限
 - **型と名前の一貫**: `RainfallInput { x; y; radiusM; intensityMmPerH; durationS; wholeRange }`（Task 5 → 10・12）、`TimedRainfall`（Task 4 だけ。Task 5 で `RainfallInput` に移す）、`RainSchedule`（Task 4 → 5）、`Faces`・`FACE_*`・`updateFaceFlows`・`limitOutflows`・`applyFaceFlows`・`faceVelocityMax`・`clearFacesOutside`・`cellVelocities`・`timeStep`（Task 3 → 5）、`StopReason`・`stopReason`（Task 5 → 10・13・15）、`DEFAULT_PLAYBACK_SPEED`・`PlaybackSpeed`（Task 10 → 13・15）、`simSecondsPerSecond`（`FrameMessage`・`FrameView`・スケジューラ・ストア。Task 10 → 13）、`RainfallSettings`・`DurationMin`・`DURATIONS_MIN`・`INTENSITY_MM_PER_H`（Task 12 → 13・15）、`RunRain`・`run`（Task 13）、`displayStats`（Task 5 → 12・13）、`runUntilStopped`・`runUntilQuiet`・`QUIET_*`・`instantRain`（Task 5 → 6・7・8）、`StepsReport.stopped`・`stopReason`・`simTimeS`・`actualRatio`・`dt`（Task 15 → 16）
 - **Review Focus の 5 行のテストの置き場所**: 1 → Task 8（西の端の円・無効セルのある範囲全体）、2 → Task 5（`reset`）と Task 10（`rewind`）、3 → Task 10（`setSpeed`）、4 → Task 12（`urlState.test.ts`）、5 → Task 12（`ControlsSection.test.tsx`）
+- **計画のレビュー 1 の反映**: M1 → Task 8 の timeout・重い組の縮小・`physics.slow.test.ts` の分岐と Task 7 の所要の計測（計画で決めたこと 36）、R1 → Task 5 のエンジンの `placedWater`・`rainVolume` とテスト（35）、R2 → Task 14 の `EDGE_RAIN` と Step 6b（37）、R3 → Task 9 Step 5・Task 11 Step 6 の報告、m1 → Task 6 Step 2、m2 → Task 5 Step 12
 - **まだ確かめていない前提**（実行の中で確かめ、外れたら分岐に従う）: 満水との一致の許容（Task 6 Step 3 の分岐。許容は変えない）、満水との一致の時間（Task 6 Step 4 の分岐）、Runner の矢印のテストの中央のセルの流速（Task 11 Step 4。step を 5 に）、Linux の Chromium で `<select>` が上矢印で変わること（Task 14 Step 3。先頭の文字に替える）、07 の帯の E2E の実測としきい値（Task 14 Step 7 の規則）、3D の強い雨の E2E の冠水面積に届く時間（Task 14 Step 4。待ちの上限だけを延ばす）、`NativeSelect` の `inputProps.id` でラベルと select が結び付くこと（Task 12 の `ControlsSection.test.tsx` の `getByLabelText` で確かめる。結び付かなければ `NativeSelect` の `id` の渡し方を MUI 9 の型に合わせて直す）
