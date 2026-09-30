@@ -111,6 +111,7 @@ describe('SimulationSession: 命令（spec 04 §3）', () => {
       runId: 1,
     })
     expect(store.getState().status).toBe('running')
+    expect(store.getState().run).toEqual({ intensityMmPerH: 100, durationS: 3600 })
   })
 
   it('地形が無ければ start しない', () => {
@@ -239,6 +240,14 @@ describe('SimulationSession: frame → ストア', () => {
     expect(store.getState().stats?.step).toBe(40)
   })
 
+  it('frame の実際の倍率（simSecondsPerSecond）をストアへ入れる', () => {
+    vi.useFakeTimers()
+    const { worker, store, session, terrainId } = setup()
+    session.start(RAIN)
+    worker.reply(frameMessage(terrainId, 1, { simSecondsPerSecond: 42 }))
+    expect(store.getState().simSecondsPerSecond).toBe(42)
+  })
+
   it('越流イベントは間引かずに一覧へ足す', () => {
     const { worker, store, session, terrainId } = setup()
     session.start(RAIN)
@@ -252,7 +261,9 @@ describe('SimulationSession: frame → ストア', () => {
       },
     ]
     worker.reply(frameMessage(terrainId, 9, { stats: statsAt(9, { events }) }))
-    expect(store.getState().spills).toEqual([{ depressionId: 4, spillElevation: 12.7, step: 9 }])
+    expect(store.getState().spills).toEqual([
+      { depressionId: 4, spillElevation: 12.7, step: 9, timeS: 30 },
+    ])
   })
 
   it('止まっている間の frame（Step）はすぐに入れる。idle の間は settled でも状態を変えない', () => {

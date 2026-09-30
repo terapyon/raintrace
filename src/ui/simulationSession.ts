@@ -17,6 +17,7 @@ export const STATS_INTERVAL_MS = 100
 interface StatsUpdate {
   stats: DisplayStats
   stepsPerSecond: number
+  simSecondsPerSecond: number
 }
 
 /**
@@ -63,7 +64,7 @@ export class SimulationSession {
     this.client = client
     this.store = store
     this.statsThrottle = createThrottle<StatsUpdate>(STATS_INTERVAL_MS, (u) =>
-      this.store.getState().setStats(u.stats, u.stepsPerSecond),
+      this.store.getState().setStats(u.stats, u.stepsPerSecond, u.simSecondsPerSecond),
     )
     // 矢印の地図への反映は 10Hz に間引く（spec 04 §6.2）
     this.arrowsThrottle = createThrottle<Float32Array>(STATS_INTERVAL_MS, (arrows) => {
@@ -211,7 +212,9 @@ export class SimulationSession {
       this.runId,
     )
     this.clearWater()
-    this.store.getState().started()
+    this.store
+      .getState()
+      .started({ intensityMmPerH: rain.intensityMmPerH, durationS: rain.durationMin * 60 })
   }
 
   pause(): void {
@@ -258,11 +261,15 @@ export class SimulationSession {
     const { events, ...stats } = frame.stats
     const state = this.store.getState()
     if (events.length > 0) state.addSpills(events)
-    const update = { stats, stepsPerSecond: frame.stepsPerSecond }
+    const update = {
+      stats,
+      stepsPerSecond: frame.stepsPerSecond,
+      simSecondsPerSecond: frame.simSecondsPerSecond,
+    }
     if (state.status === 'running') {
       if (stats.stopReason !== null) {
         this.statsThrottle.cancel()
-        state.settle(stats, frame.stepsPerSecond)
+        state.settle(stats, frame.stepsPerSecond, frame.simSecondsPerSecond)
       } else {
         this.statsThrottle.push(update)
       }
@@ -272,8 +279,8 @@ export class SimulationSession {
     // idle の間（reset・失敗の直後）は自動停止でも状態を変えない
     this.statsThrottle.cancel()
     if (stats.stopReason !== null && state.status === 'paused')
-      state.settle(stats, frame.stepsPerSecond)
-    else state.setStats(stats, frame.stepsPerSecond)
+      state.settle(stats, frame.stepsPerSecond, frame.simSecondsPerSecond)
+    else state.setStats(stats, frame.stepsPerSecond, frame.simSecondsPerSecond)
   }
 
   private onCrash(): void {

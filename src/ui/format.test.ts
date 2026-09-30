@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest'
+import { displayStats } from '../state/displayStats.test-support'
 import {
   formatArea,
   formatCellSize,
   formatCoordinate,
   formatCubicMeters,
   formatDemLabel,
+  formatElapsed,
   formatMeters,
+  formatOutflowRate,
   formatPercent,
+  formatPlaybackRate,
+  formatRainDepth,
+  formatRainStatus,
   formatStep,
   formatStepsPerSecond,
   formatVolume,
@@ -49,5 +55,45 @@ describe('表示の書式', () => {
     expect(formatArea(82.4)).toBe('82 m²')
     expect(formatStepsPerSecond(59.6)).toBe('60 step/秒')
     expect(formatStep(1234)).toBe('Step 1234')
+  })
+})
+
+describe('経過時間・降雨・流出の速さ・実行速度の書式（spec 08 §6.2）', () => {
+  it('経過時間: 1 時間以上は時・分、1 分以上は分・秒、1 分未満は秒。秒は切り捨て', () => {
+    expect(formatElapsed(45.9)).toBe('45秒')
+    expect(formatElapsed(0)).toBe('0秒')
+    expect(formatElapsed(750)).toBe('12分30秒')
+    expect(formatElapsed(60)).toBe('1分0秒')
+    expect(formatElapsed(4800)).toBe('1時間20分')
+    expect(formatElapsed(8 * 3600 + 59)).toBe('8時間0分')
+  })
+
+  it('降雨: 雨の間は残り（経過時間と同じ書式）、終われば「降雨終了」。実行が無ければ「—」', () => {
+    const run = { intensityMmPerH: 100, durationS: 3600 }
+    expect(formatRainStatus(null, null)).toBe('—')
+    expect(formatRainStatus(run, null)).toBe('降雨中（残り 1時間0分）')
+    expect(formatRainStatus(run, displayStats({ timeS: 1200, raining: true }))).toBe(
+      '降雨中（残り 40分0秒）',
+    )
+    expect(formatRainStatus(run, displayStats({ timeS: 3600, raining: false }))).toBe('降雨終了')
+  })
+
+  it('累積雨量: 「降った量 / 総量」をどちらも mm の整数に切り捨てる（計画で決めたこと 21）', () => {
+    expect(formatRainDepth(null, 0)).toBe('—')
+    expect(formatRainDepth({ intensityMmPerH: 100, durationS: 7200 }, 60)).toBe('60 mm / 200 mm')
+    // 100 mm/h × 10 分 = 16.67 mm。雨の後も「16 mm / 16 mm」で食い違わない
+    const tenMinutes = { intensityMmPerH: 100, durationS: 600 }
+    expect(formatRainDepth(tenMinutes, (100 * 600) / 3600)).toBe('16 mm / 16 mm')
+    expect(formatRainDepth(tenMinutes, 0)).toBe('0 mm / 16 mm')
+  })
+
+  it('流出の速さは m³/時（outflowRateM3PerS × 3600。小数 1 桁）', () => {
+    expect(formatOutflowRate(12.3 / 3600)).toBe('12.3 m³/時')
+    expect(formatOutflowRate(0)).toBe('0.0 m³/時')
+  })
+
+  it('実行速度は「実時間の N 倍（M step/秒）」。どちらも四捨五入の整数', () => {
+    expect(formatPlaybackRate(27.4, 59.6)).toBe('実時間の 27 倍（60 step/秒）')
+    expect(formatPlaybackRate(0, 0)).toBe('実時間の 0 倍（0 step/秒）')
   })
 })

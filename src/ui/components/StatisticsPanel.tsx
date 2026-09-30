@@ -7,12 +7,22 @@ import Tooltip from '@mui/material/Tooltip'
 import { createSvgIcon } from '@mui/material/utils'
 import { useStore } from 'zustand'
 import type { DisplayStats, SimulationStore } from '../../state/simulationStore'
-import { formatArea, formatMeters, formatStep, formatStepsPerSecond, formatVolume } from '../format'
+import {
+  formatArea,
+  formatElapsed,
+  formatMeters,
+  formatOutflowRate,
+  formatPlaybackRate,
+  formatRainDepth,
+  formatRainStatus,
+  formatStep,
+  formatVolume,
+} from '../format'
 import { strings } from '../strings'
 
 /**
  * 丸の中の「i」（spec 07 §4.1 の InfoOutlined の代わり。@mui/icons-material は依存に無いので、同じ種類の形を
- * 自作する。計画で決めたこと 12）
+ * 自作する。07 の計画で決めたこと 12）
  */
 const InfoIcon = createSvgIcon(
   <>
@@ -24,8 +34,9 @@ const InfoIcon = createSvgIcon(
 )
 
 /**
- * 領域外流出量の説明（spec 07 §4.1）。キーボードで焦点を移せ（IconButton）、焦点・ホバー・タップ（enterTouchDelay 0）
- * で開く。describeChild で、ボタンの名前は「領域外流出量の説明」、説明文はツールチップにする
+ * 領域外流出量の説明（spec 07 §4.1、spec 08 §6.5）。キーボードで焦点を移せ（IconButton）、焦点・ホバー・タップ
+ * （enterTouchDelay 0）で開く。describeChild で、ボタンの名前は「領域外流出量の説明」、説明文はツールチップにする。
+ * 流出の速さの行には付けない（同じ説明を 2 つ置かない）
  */
 function OutflowHelp() {
   return (
@@ -63,18 +74,25 @@ const ZERO: DisplayStats = {
   stopReason: null,
 }
 
-/** 統計（base-spec §38、spec 04 §6.3）。描画内容を文字で補う（tech-spec §9.5） */
+/** 統計（base-spec §38、spec 04 §6.3、spec 08 §6.2）。描画内容を文字で補う（tech-spec §9.5） */
 export function StatisticsPanel({ simulation }: { simulation: SimulationStore }) {
-  const s = useStore(simulation, (state) => state.stats) ?? ZERO
+  const stats = useStore(simulation, (state) => state.stats)
+  const run = useStore(simulation, (state) => state.run)
   const rate = useStore(simulation, (state) => state.stepsPerSecond)
+  const simRate = useStore(simulation, (state) => state.simSecondsPerSecond)
+  const s = stats ?? ZERO
   const rows: [string, string, string][] = [
+    [strings.stats.elapsed, formatElapsed(s.timeS), 'stat-time'],
+    [strings.stats.rain, formatRainStatus(run, stats), 'stat-rain-status'],
+    [strings.stats.rainDepth, formatRainDepth(run, s.rainDepthMm), 'stat-rain-depth'],
     [strings.stats.step, formatStep(s.step), 'stat-step'],
     [strings.stats.total, formatVolume(s.totalWater), 'stat-total'],
     [strings.stats.stored, formatVolume(s.storedWater), 'stat-stored'],
     [strings.stats.outflow, formatVolume(s.outflowWater), 'stat-outflow'],
+    [strings.stats.outflowRate, formatOutflowRate(s.outflowRateM3PerS), 'stat-outflow-rate'],
     [strings.stats.maxDepth, formatMeters(s.maxDepth), 'stat-max-depth'],
     [strings.stats.floodedArea, formatArea(s.floodedArea), 'stat-flooded-area'],
-    [strings.stats.speed, formatStepsPerSecond(rate), 'stat-speed'],
+    [strings.stats.speed, formatPlaybackRate(simRate, rate), 'stat-speed'],
   ]
   return (
     <Table size="small" aria-label={strings.stats.title}>

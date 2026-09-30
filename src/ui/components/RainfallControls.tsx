@@ -45,7 +45,7 @@ interface NumberFieldProps {
 
 /**
  * TextField と同じ見た目と関連づけ（label の for、説明文の aria-describedby）の入力欄。TextField は本アプリが
- * 使わない Select・Menu・Popover の実装まで静的に読み、ui のチャンクを予算の 150 KB から押し上げるので使わない
+ * 使わない Select・Menu・Popover の実装まで静的に読み、ui のチャンクを予算の 200 KB（spec 06）に向けて押し上げるので使わない
  * （tech-spec §14.2、spec 06 §5.2、RB-1 の順序）
  */
 function NumberField(props: NumberFieldProps) {

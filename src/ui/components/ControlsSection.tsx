@@ -16,6 +16,7 @@ import {
 } from '../../state/persistedSettings'
 import type { SettingsStore } from '../../state/settingsStore'
 import type { SimulationStore } from '../../state/simulationStore'
+import { formatElapsed } from '../format'
 import { strings } from '../strings'
 import { parseIntensityMmPerH, parseRadiusM } from '../validation'
 import { PlaybackControls } from './PlaybackControls'
@@ -54,9 +55,10 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
   const status = useStore(simulation, (s) => s.status)
   const speed = useStore(simulation, (s) => s.speed)
   const error = useStore(simulation, (s) => s.error)
-  const settledStep = useStore(simulation, (s) =>
-    s.status === 'settled' ? (s.stats?.step ?? 0) : null,
+  const stopReason = useStore(simulation, (s) =>
+    s.status === 'settled' ? (s.stats?.stopReason ?? 'settled') : null,
   )
+  const stoppedAt = useStore(simulation, (s) => s.stats?.timeS ?? 0)
   const [intensityText, setIntensityText] = useState(() =>
     String(settings.getState().rainfall.intensityMmPerH),
   )
@@ -142,9 +144,11 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
         onReset={() => actions.reset()}
         onSpeedChange={(value) => actions.setSpeed(value)}
       />
-      {settledStep !== null && (
-        <Alert severity="success" data-testid="settled">
-          {strings.playback.settled(settledStep)}
+      {stopReason !== null && (
+        <Alert severity={stopReason === 'cap' ? 'info' : 'success'} data-testid="settled">
+          {stopReason === 'cap'
+            ? strings.playback.cap(formatElapsed(stoppedAt))
+            : strings.playback.settled(formatElapsed(stoppedAt))}
         </Alert>
       )}
       {error !== null && (

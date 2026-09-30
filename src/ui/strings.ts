@@ -97,7 +97,10 @@ export const strings = {
     /** 実時間の倍率（spec 08 §6.2）。1 は「実時間」 */
     speedValue: (speed: number) => (speed === 1 ? '実時間' : `${speed} 倍`),
     max: '最速',
-    settled: (step: number) => `平衡に達しました（Step ${step}）`,
+    /** 自動停止（spec 08 §3.9・§6.2）。settled は水の動きが止まったとき、cap は雨の後の上限で止めたとき */
+    settled: (elapsed: string) => `水の動きがほぼ止まりました（経過 ${elapsed}）`,
+    // 「6 時間」は SETTLE_CAP_S（src/simulation/constants.ts）。ui は simulation の値を import しないので文で持つ
+    cap: (elapsed: string) => `計算の上限（雨がやんでから 6 時間）に達しました（経過 ${elapsed}）`,
     reload: '再読み込み',
   },
   simErrors: {
@@ -107,21 +110,29 @@ export const strings = {
   },
   stats: {
     title: '統計',
+    elapsed: '経過時間',
+    rain: '降雨',
+    rainDepth: '累積雨量',
     step: 'Step',
     total: '投入水量',
     stored: '領域内の水量',
     outflow: '領域外流出量',
     outflowHelpLabel: '領域外流出量の説明',
     outflowHelp:
-      '範囲の端や、海などの標高データの無い場所から、外へ流れ出た水の量です。下水道・地面への浸み込み・蒸発は考えていません。',
+      '範囲の端や、海などの標高データの無い場所から、外へ流れ出た水の量です。「領域外流出量」は開始からの合計、「流出の速さ」はその時点の 1 時間あたりの量です。下水道・地面への浸み込み・蒸発は考えていません。',
+    outflowRate: '流出の速さ',
     maxDepth: '最大水深',
     floodedArea: '湛水面積',
     speed: '実行速度',
+    raining: (remaining: string) => `降雨中（残り ${remaining}）`,
+    rainEnded: '降雨終了',
+    playbackRate: (ratio: string, stepsPerSecond: string) =>
+      `実時間の ${ratio} 倍（${stepsPerSecond}）`,
   },
   spill: {
     title: '越流',
-    started: (spillElevation: string, step: number) =>
-      `窪地（spill 標高 ${spillElevation}）から越流が始まりました（Step ${step}）`,
+    started: (spillElevation: string, elapsed: string) =>
+      `窪地（spill 標高 ${spillElevation}）から越流が始まりました（経過 ${elapsed}）`,
   },
   display: {
     waterPalette: '水深の配色',
@@ -191,6 +202,11 @@ export const strings = {
     area: (value: string) => `${value} m²`,
     stepsPerSecond: (value: string) => `${value} step/秒`,
     step: (step: number) => `Step ${step}`,
+    hoursMinutes: (hours: number, minutes: number) => `${hours}時間${minutes}分`,
+    minutesSeconds: (minutes: number, seconds: number) => `${minutes}分${seconds}秒`,
+    seconds: (seconds: number) => `${seconds}秒`,
+    rainDepth: (fallen: number, total: number) => `${fallen} mm / ${total} mm`,
+    cubicMetersPerHour: (value: string) => `${value} m³/時`,
     none: '—',
   },
   errors: {

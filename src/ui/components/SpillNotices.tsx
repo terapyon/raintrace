@@ -4,11 +4,11 @@ import Typography from '@mui/material/Typography'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import type { SimulationStore, SpillNotice } from '../../state/simulationStore'
-import { formatMeters } from '../format'
+import { formatElapsed, formatMeters } from '../format'
 import { strings } from '../strings'
 
 const message = (spill: SpillNotice): string =>
-  strings.spill.started(formatMeters(spill.spillElevation), spill.step)
+  strings.spill.started(formatMeters(spill.spillElevation), formatElapsed(spill.timeS))
 
 /** 越流イベント（base-spec §21、spec 04 §5.3）。最新のものを Snackbar で知らせ、パネルに一覧を残す */
 export function SpillNotices({ simulation }: { simulation: SimulationStore }) {

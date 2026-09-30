@@ -224,14 +224,26 @@ describe('ControlsSection: 再生の操作', () => {
     expect(actions.setSpeed).toHaveBeenCalledWith('max')
   })
 
-  it('自動停止したら停止の文言を出す', () => {
+  it('水の動きが止まって自動停止したら「水の動きがほぼ止まりました（経過 …）」', () => {
     const { simulation } = setup()
     // React 19 では、act の外のストアの変更はすぐには DOM に出ない（useSyncExternalStore の更新を待つ）
     act(() => {
       simulation.getState().started()
-      simulation.getState().settle(settledAt(123), 60)
+      simulation.getState().settle(displayStats({ ...settledAt(123), timeS: 3 * 3600 + 600 }), 60)
     })
-    expect(screen.getByTestId('settled')).toBeTruthy()
+    expect(screen.getByText(strings.playback.settled('3時間10分'))).toBeTruthy()
+  })
+
+  it('雨の後の上限で止まったら、別の文「計算の上限（雨がやんでから 6 時間）に達しました（経過 …）」（spec 08 §6.2）', () => {
+    const { simulation } = setup()
+    act(() => {
+      simulation.getState().started()
+      simulation
+        .getState()
+        .settle(displayStats({ step: 9, settled: false, stopReason: 'cap', timeS: 8 * 3600 }), 60)
+    })
+    expect(screen.getByText(strings.playback.cap('8時間0分'))).toBeTruthy()
+    expect(screen.queryByText(strings.playback.settled('8時間0分'))).toBeNull()
   })
 
   it('自動停止したら、主ボタンと「1 step 進める」は押せず、「リセット」だけを押せる', async () => {
