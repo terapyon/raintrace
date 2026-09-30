@@ -3,9 +3,9 @@
  * 1 回だけ作り（workers/simulation.worker.ts）、TerrainPayload.outflow でメインへ送る。エンジンの計算には使わない。
  *
  * 仮想セル（グリッドの外・無効セル）は元のセルと同じ標高で水深 0 として扱われる（spec 03 §3.3、FlowSolver.ts）。
- * そのため「近傍にグリッドの外か無効セルを含む有効セル」は、水深が θ を超えればその step に必ず外へ流す。
- * 近傍の定義は FlowSolver の NEIGHBOR_DX・NEIGHBOR_DY をそのまま使う（08 で流れが 4 近傍になれば、マスクも
- * 一緒に変わる。推奨 R3）。帯の広げ方は見た目の規則なので、FlowSolver の表とは独立に 8 近傍で歩く
+ * そのため「近傍にグリッドの外か無効セルを含む有効セル」は、仮想セルとの面の水深 h_f が DRY_DEPTH_M を
+ * 超えればその step に必ず外へ流す。近傍の定義は FlowSolver の 4 近傍の面の表 NEIGHBOR_DX・NEIGHBOR_DY
+ * （北・西・東・南）をそのまま使う。帯の広げ方は見た目の規則なので、FlowSolver の表とは独立に 8 近傍で歩く
  */
 import { NEIGHBOR_DX, NEIGHBOR_DY } from './FlowSolver.ts'
 

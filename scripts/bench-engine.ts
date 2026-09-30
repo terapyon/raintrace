@@ -1,12 +1,12 @@
 /**
- * エンジンのベンチマーク（spec 03 §5）。Node 24 で直接実行する（型注釈は Node が取り除く）:
+ * エンジンのベンチマーク（spec 03 §5、spec 08 §7.3）。Node 24 で直接実行する（型注釈は Node が取り除く）:
  *
  *   pnpm bench:engine [上限の step 数（既定 100000）]
  *
- * 512 × 512 の合成地形（窪地と斜面を含む）に、半径 10m と 100m・雨量 100mm を降らせ、
- * 1 step の所要時間の中央値と p95、平衡までの step 数を Markdown の表で出す。
- * 計時はこのスクリプトで行う（src/simulation は performance を参照できない）。
- * CI のゲートにはしない。結果は PR に記録し、tech-spec §6.3 の基準（中央値 8ms、p95 16ms）と比べる
+ * 512 × 512 の合成地形（窪地と斜面を含む）に、100 mm/h × 1 時間の雨（半径 10 m・100 m・範囲全体）を降らせ、
+ * 自動停止（settled・cap）か上限の step 数まで回す。step 数、1 step の所要時間の中央値と p95、停止の理由、
+ * 経過時間（シミュレーションの時間）、dt の最小・中央値・最大を Markdown の表で出す。計時はこのスクリプトで行う
+ * （src/simulation は performance を参照できない）。CI のゲートにはしない。性能の基準は置かない（R08-9）
  */
 import { TsSimulationEngine } from '../src/simulation/TsSimulationEngine.ts'
 import type { RainfallInput, StepStats } from '../src/simulation/types.ts'
@@ -44,29 +44,47 @@ function percentile(sorted: number[], p: number): number {
   return sorted[i] ?? Number.NaN
 }
 
+/** シミュレーションの秒を「h:mm:ss」にする */
+function clock(seconds: number): string {
+  const s = Math.floor(seconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return `${h}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
 function run(label: string, elevation: Float32Array, rain: RainfallInput, maxSteps: number): void {
   const engine = new TsSimulationEngine()
   const validMask = new Uint8Array(SIZE * SIZE).fill(1)
   engine.loadTerrain(elevation, validMask, { width: SIZE, height: SIZE, cellSizeM: CELL_M })
   engine.setRainfall(rain)
   const times: number[] = []
+  const dts: number[] = []
   let last: StepStats | null = null
+  let rainEndStep: number | null = null
   const started = performance.now()
   for (let n = 0; n < maxSteps; n++) {
     const t0 = performance.now()
     last = engine.step()
     times.push(performance.now() - t0)
+    dts.push(last.dtS)
+    if (rainEndStep === null && !last.raining) rainEndStep = last.step
     if (last.stopReason !== null) break
   }
   const seconds = (performance.now() - started) / 1000
   times.sort((a, b) => a - b)
-  const settled = last?.stopReason ? `${last.step}` : `未到達（上限 ${maxSteps}）`
+  dts.sort((a, b) => a - b)
+  const stop = last?.stopReason ?? `未到達（上限 ${maxSteps}）`
   const cells = [
     label,
     String(times.length),
+    String(rainEndStep ?? '—'),
     percentile(times, 0.5).toFixed(3),
     percentile(times, 0.95).toFixed(3),
-    settled,
+    stop,
+    clock(last?.timeS ?? 0),
+    (dts[0] ?? Number.NaN).toFixed(3),
+    percentile(dts, 0.5).toFixed(3),
+    (dts.at(-1) ?? Number.NaN).toFixed(3),
     (last?.maxDepth ?? 0).toFixed(3),
     (last?.massError ?? 0).toExponential(2),
     seconds.toFixed(1),
@@ -81,22 +99,29 @@ if (!(Number.isInteger(maxSteps) && maxSteps > 0)) {
 }
 const elevation = syntheticElevation()
 const center = { x: 256.5 * CELL_M, y: 256.5 * CELL_M }
+const hour = { intensityMmPerH: 100, durationS: 3600 }
 
 console.log(`Node ${process.version}、${SIZE} × ${SIZE}、セル ${CELL_M}m、上限 ${maxSteps} step`)
 console.log('')
 console.log(
-  '| 降雨 | step 数 | 中央値（ms） | p95（ms） | 平衡までの step | 最大水深（m） | 質量誤差（m³） | 所要（秒） |',
+  '| 降雨 | step 数 | 雨の終わりの step | 中央値（ms） | p95（ms） | 停止 | 経過（h:mm:ss） | dt 最小（s） | dt 中央値（s） | dt 最大（s） | 最大水深（m） | 質量誤差（m³） | 所要（秒） |',
 )
-console.log('|---|---:|---:|---:|---:|---:|---:|---:|')
+console.log('|---|---:|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|')
 run(
-  '半径 10m・100mm',
+  '半径 10m・100mm/h × 1 時間',
   elevation,
-  { ...center, radiusM: 10, intensityMmPerH: 100, durationS: 0, wholeRange: false },
+  { ...center, radiusM: 10, ...hour, wholeRange: false },
   maxSteps,
 )
 run(
-  '半径 100m・100mm',
+  '半径 100m・100mm/h × 1 時間',
   elevation,
-  { ...center, radiusM: 100, intensityMmPerH: 100, durationS: 0, wholeRange: false },
+  { ...center, radiusM: 100, ...hour, wholeRange: false },
+  maxSteps,
+)
+run(
+  '範囲全体・100mm/h × 1 時間',
+  elevation,
+  { ...center, radiusM: 10, ...hour, wholeRange: true },
   maxSteps,
 )
