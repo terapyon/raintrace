@@ -1,6 +1,7 @@
 /**
- * probe=steps（spec 06 §4.2）: 降雨を「最速」で回し、平衡（または cap・窓の終わり）までの step 数・時間と、
- * 1 step の所要時間・長いタスク・止まっている間の再描画を測る。pnpm build:perf のときだけビルドに入る
+ * probe=steps（spec 06 §4.2）: 降雨を回し、自動停止（settled・cap。または計測の上限・窓の終わり）までの
+ * step 数・時間・経過時間・dt・実際の倍率と、1 step の所要時間・長いタスク・止まっている間の再描画を測る。
+ * pnpm build:perf のときだけビルドに入る
  */
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { SettingsStore } from '../state/settingsStore'
@@ -21,8 +22,6 @@ import type { TerrainSession } from './terrainSession'
 export const IDLE_QUIET_MS = 1000
 /** 止まっている間の再描画を数える時間 */
 export const IDLE_WINDOW_MS = 2000
-/** 1x の再生速度（R04-5） */
-const STEPS_PER_SECOND_AT_1X = 60
 /** Worker の要約は 1 秒ごとに届くので、窓の終わりを延ばす */
 const SNAPSHOT_LAG_MS = 1500
 
@@ -35,12 +34,21 @@ export function stepLongTaskEntries(
   return entries.filter((entry) => entry.startMs >= fromMs && entry.startMs < toMs)
 }
 
-export function minutesAt1x(steps: number): number {
-  return steps / STEPS_PER_SECOND_AT_1X / 60
+/** dt（s）の標本の数・中央値（偶数個は下側）・最小（spec 08 §7.3）。標本が無ければ null */
+export function summarizeDt(
+  samples: readonly number[],
+): { count: number; medianS: number; minS: number } | null {
+  if (samples.length === 0) return null
+  const sorted = [...samples].sort((a, b) => a - b)
+  return {
+    count: sorted.length,
+    medianS: sorted[Math.floor((sorted.length - 1) / 2)] ?? Number.NaN,
+    minS: sorted[0] ?? Number.NaN,
+  }
 }
 
-/** 平衡になったら true、limitMs を過ぎたら false。再生が失敗したら reject */
-function waitSettled(sim: SimulationStore, limitMs: number): Promise<boolean> {
+/** 自動停止（settled・cap。status が 'settled'）したら true、limitMs を過ぎたら false。再生が失敗したら reject */
+function waitStopped(sim: SimulationStore, limitMs: number): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const decided = (): boolean | null => {
       const { status, error } = sim.getState()
@@ -128,13 +136,19 @@ export async function runStepsProbe(
     }
   }
   const { rainfall, area } = settings.getState()
-  simulation.setSpeed('max')
+  simulation.setSpeed(params.speed)
   const limitMs = params.until === 'settle' ? params.capMs : params.durationMs
+  // dt の標本（統計を入れるたび。10Hz）
+  const dtSamples: number[] = []
+  const offDt = simulation.store.subscribe((state, previous) => {
+    if (state.stats !== null && state.stats !== previous.stats) dtSamples.push(state.stats.dtS)
+  })
   const start = performance.now()
   simulation.start(rainfall)
-  const settled = await waitSettled(simulation.store, limitMs)
+  const stopped = await waitStopped(simulation.store, limitMs)
   const elapsedMs = performance.now() - start
-  if (!settled) simulation.pause()
+  offDt()
+  if (!stopped) simulation.pause()
   const end = performance.now()
   await sleep(IDLE_QUIET_MS)
   const idleRenders = await countRenders(map, IDLE_WINDOW_MS)
@@ -154,10 +168,13 @@ export async function runStepsProbe(
             cellSizeM: summary.cellSizeM,
             invalidRatio: summary.invalidRatio,
           },
-    settled,
+    stopped,
+    stopReason: final?.stopReason ?? null,
     steps,
     elapsedMs,
-    minutesAt1x: minutesAt1x(steps),
+    simTimeS: final?.timeS ?? 0,
+    actualRatio: elapsedMs > 0 ? (final?.timeS ?? 0) / (elapsedMs / 1000) : 0,
+    dt: summarizeDt(dtSamples),
     stepsPerSecond: elapsedMs > 0 ? steps / (elapsedMs / 1000) : 0,
     final,
     stepTimes: {

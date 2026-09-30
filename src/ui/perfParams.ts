@@ -1,6 +1,10 @@
 import { PITCH_3D_DEG } from '../map/view3d/drawnZoom'
 import { DEFAULT_VIEW3D_OPTIONS, type HillshadeOption } from '../map/view3d/options'
+import type { PlaybackSpeed } from '../shared/protocol'
 import { ARROW_SPACINGS, VERTICAL_EXAGGERATIONS } from '../state/persistedSettings'
+
+/** probe=steps の再生速度の選べる値（spec 08 §7.3） */
+const PLAYBACK_SPEEDS: readonly PlaybackSpeed[] = [1, 10, 60, 600, 'max']
 
 /**
  * 計測だけが使う矢印の間隔（arrowsM）。ARROW_SPACINGS（表示の設定の選べる値）が 5 を外した後も、
@@ -50,6 +54,8 @@ export interface PerfParams {
   arrowsM: (typeof PERF_ARROW_SPACINGS)[number] | null
   /** true は fps の窓の直前に再生を一時停止し、止めた水面を測る（pause=1。spec 06 §5.1、計画で決めたこと 7） */
   pauseBeforeRun: boolean
+  /** probe=steps の再生速度（speed=1・10・60・600・max。既定は最速。spec 08 §7.3 の 60 倍での実際の倍率） */
+  speed: PlaybackSpeed
   /** probe=steps: settle は平衡か cap まで、window は durationMs だけ回す（計画で決めたこと 4） */
   until: 'settle' | 'window'
   /** probe=steps の平衡を待つ上限（ms。cap=） */
@@ -101,7 +107,7 @@ export function parsePerfParams(search: string): PerfParams | null {
     water: params.get('water') !== '0',
     // 省いたときは 3D の既定に従う。Task 9 の組は既定のまま測る
     hillshade: oneOf(HILLSHADE_OPTIONS, params.get('hillshade'), DEFAULT_VIEW3D_OPTIONS.hillshade),
-    durationMs: number('ms', 10_000, 1000, 60_000),
+    durationMs: number('ms', 10_000, 1000, 1_800_000),
     fallback: params.get('fallback') !== '0',
     settleMs: number('settle', 3000, 0, 120_000),
     arrows: params.get('arrows') !== '0',
@@ -111,8 +117,9 @@ export function parsePerfParams(search: string): PerfParams | null {
         : oneOf(DEPTH_EVERY, Number(params.get('depthEvery')), 1),
     arrowsM: PERF_ARROW_SPACINGS.find((m) => String(m) === params.get('arrowsM')) ?? null,
     pauseBeforeRun: params.get('pause') === '1',
+    speed: PLAYBACK_SPEEDS.find((s) => String(s) === params.get('speed')) ?? 'max',
     until: params.get('until') === 'window' ? 'window' : 'settle',
-    capMs: number('cap', 300_000, 1000, 1_800_000),
+    capMs: number('cap', 300_000, 1000, 7_200_000),
     at: parseAt(params.get('at')),
     zooms: (() => {
       const list = (params.get('zs') ?? '')

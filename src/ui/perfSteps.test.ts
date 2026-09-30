@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { summarizeLongTasks } from './perfCollectors'
-import { minutesAt1x, stepLongTaskEntries } from './perfSteps'
+import { stepLongTaskEntries, summarizeDt } from './perfSteps'
 
-describe('minutesAt1x（1x は毎秒 60 step。R04-5・R06-6 の報告用）', () => {
-  it('step 数 ÷ 60 を分にする（04 の綾瀬 267,379 step は約 74 分）', () => {
-    expect(minutesAt1x(3600)).toBe(1)
-    expect(minutesAt1x(267_379)).toBeCloseTo(74.27, 2)
+describe('summarizeDt（spec 08 §7.3 の dt の中央値と最小。10 Hz の統計の標本）', () => {
+  it('標本が無ければ null', () => {
+    expect(summarizeDt([])).toBeNull()
+  })
+
+  it('数・中央値（偶数個は下側）・最小', () => {
+    expect(summarizeDt([1, 0.5, 0.25, 1])).toEqual({ count: 4, medianS: 0.5, minS: 0.25 })
+    expect(summarizeDt([0.3])).toEqual({ count: 1, medianS: 0.3, minS: 0.3 })
   })
 })
 

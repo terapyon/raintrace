@@ -12,7 +12,7 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       parsePerfParams(
         '?probe=water&mode=3d&z=16&pitch=85&bearing=10&ex=10&water=0&hillshade=off&ms=5000&fallback=0&settle=20000' +
           '&arrows=0&arrowsM=5&depthEvery=4&pause=1&until=window&cap=120000&at=35.7623,139.8246' +
-          '&zs=15.5,16.25&wet=15000',
+          '&zs=15.5,16.25&wet=15000&speed=60',
       ),
     ).toEqual({
       probe: 'water',
@@ -35,11 +35,14 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       at: { lat: 35.7623, lon: 139.8246 },
       zooms: [15.5, 16.25],
       wetMs: 15_000,
+      speed: 60,
     })
   })
 
   it('無い・不正な項目は既定値（3D・z16・pitch 60・倍率 1・水面あり・矢印あり・転送の間引きと矢印の間隔の指定なし・止めない・平衡まで 300 秒・地点なし）', () => {
-    expect(parsePerfParams('?probe=load&z=99&pitch=-5&ex=3&hillshade=x&ms=1&cap=5&at=x')).toEqual({
+    expect(
+      parsePerfParams('?probe=load&z=99&pitch=-5&ex=3&hillshade=x&ms=1&cap=5&at=x&speed=4'),
+    ).toEqual({
       probe: 'load',
       mode: '3d',
       zoom: 16,
@@ -60,7 +63,25 @@ describe('parsePerfParams（計測用のフックの URL。05 の計画で決め
       at: null,
       zooms: [16],
       wetMs: 20_000,
+      speed: 'max',
     })
+  })
+})
+
+describe('speed・cap・ms の範囲（spec 08 §7.3、計画で決めたこと 26）', () => {
+  it('speed は 1・10・60・600・max だけを読み、ほかは max', () => {
+    for (const speed of ['1', '10', '60', '600']) {
+      expect(parsePerfParams(`?probe=steps&speed=${speed}`)?.speed).toBe(Number(speed))
+    }
+    expect(parsePerfParams('?probe=steps&speed=max')?.speed).toBe('max')
+    expect(parsePerfParams('?probe=steps&speed=0.25')?.speed).toBe('max')
+  })
+
+  it('cap は 2 時間（7,200,000 ms）まで、ms は 30 分（1,800,000 ms）まで読む', () => {
+    expect(parsePerfParams('?probe=steps&cap=3600000')?.capMs).toBe(3_600_000)
+    expect(parsePerfParams('?probe=steps&cap=7200001')?.capMs).toBe(300_000)
+    expect(parsePerfParams('?probe=steps&ms=600000')?.durationMs).toBe(600_000)
+    expect(parsePerfParams('?probe=steps&ms=1800001')?.durationMs).toBe(10_000)
   })
 })
 
