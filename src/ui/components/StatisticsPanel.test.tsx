@@ -74,6 +74,16 @@ describe('StatisticsPanel（base-spec §38、spec 04 §6.3、spec 08 §6.2）', 
     ])
   })
 
+  it('開始の直後は前の実行の統計（降雨終了）を出さない（最終レビューの指摘 1）', () => {
+    const simulation = createSimulationStore()
+    // reset・terrainReady 後など、実行中でないときに届く 0 の統計（ZERO_STATS 相当）
+    simulation.getState().setStats(displayStats({ raining: false }), 0, 0)
+    simulation.getState().started({ intensityMmPerH: 100, durationS: 7200 })
+    render(<StatisticsPanel simulation={simulation} />)
+    expect(text('stat-rain-status')).not.toBe(strings.stats.rainEnded)
+    expect(text('stat-rain-status')).toBe('降雨中（残り 2時間0分）')
+  })
+
   it('ツールチップは「領域外流出量」の行にだけ置き、合計と速さの説明を出す（spec 08 §6.5）', async () => {
     render(<StatisticsPanel simulation={createSimulationStore()} />)
     const helps = screen.getAllByRole('button', { name: strings.stats.outflowHelpLabel })

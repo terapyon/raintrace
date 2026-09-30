@@ -67,7 +67,16 @@ export function createSimulationStore(): SimulationStore {
     run: null,
     spills: [],
     error: null,
-    started: (run) => set({ status: 'running', error: null, run: run ?? null }),
+    // 前の実行の統計を残さない（idle の間に届く ZERO_STATS で「降雨終了」が一瞬出るのを防ぐ。最終レビューの指摘 1）
+    started: (run) =>
+      set({
+        status: 'running',
+        error: null,
+        run: run ?? null,
+        stats: null,
+        stepsPerSecond: 0,
+        simSecondsPerSecond: 0,
+      }),
     paused: () => set({ status: 'paused' }),
     resumed: () => set({ status: 'running' }),
     reset: () =>

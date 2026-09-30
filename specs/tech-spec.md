@@ -890,7 +890,7 @@ base-spec §37 の構成に従う。
 
 | コンポーネント | 用途 | 主な MUI 要素 |
 |---|---|---|
-| `RainfallControls` | 降雨量・半径の入力 | `TextField` + `Slider` |
+| `RainfallControls` | 時間雨量・継続時間・範囲全体・半径の入力（実装 spec 08 §4.1） | `OutlinedInput` + `Slider`（時間雨量・半径）、`NativeSelect`（継続時間）、`Switch`（範囲全体） |
 | `PlaybackControls` | Play / Pause / Reset / 速度 | `Button`（文字。開始・一時停止・再開は 1 つのボタン）, `ToggleButtonGroup` |
 | `StatisticsPanel` | base-spec §38 の統計表示 | `Table`、領域外流出量のツールチップ（`Tooltip`・`IconButton`） |
 | `CellInfoPopover` | base-spec §39 のセル情報 | `Popover` |

@@ -30,6 +30,12 @@ async function volumeM3(page: Page): Promise<number> {
   return Number(text.replace(/[^0-9.]/g, ''))
 }
 
+/** 「1234.5 m³」の数（領域内の水量。stat-stored） */
+async function storedM3(page: Page): Promise<number> {
+  const text = (await page.getByTestId('stat-stored').textContent()) ?? ''
+  return Number(text.replace(/[^0-9.]/g, ''))
+}
+
 /** 一時停止の後、表示中の step が動かなくなるまで待って返す（最後の frame が届くまで） */
 async function stableStep(page: Page): Promise<number> {
   const read = async (): Promise<number> =>
@@ -167,9 +173,13 @@ test.describe('降雨と再生（spec 08 §9.4 の 4・5・10）', () => {
     await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
     await page.getByRole('button', { name: strings.cellInfo.close }).click()
     // もう一度開始すると、新しい runId の frame が届いて統計が 0 から進む（runId の食い違い・バッファの取りこぼしが
-    // あると frame が捨てられ、0 のまま止まる。前の実行の水が残れば、すぐに止めた投入水量が前の値を下回らない）
+    // あると frame が捨てられ、0 のまま止まる）。spec 08 の投入水量（stat-total）は閉じた式
+    // （placedWater + ρ・|S|・A・min(t, T)。FlowSolver）で、前の実行の残り水を含まないので、投入水量どうしの
+    // 比較だけでは漏れが分からない。代わりに、始めてすぐは領域内の水量（stat-stored）が投入水量を超えないことを見る
+    // （水は投入水量の範囲でしか領域内に留まれないので、前の実行の水が残っていればここで上回る）
     await page.getByRole('button', { name: strings.playback.start }).click()
     await expect(page.getByTestId('stat-step')).not.toHaveText('Step 0')
+    expect(await storedM3(page)).toBeLessThanOrEqual(await volumeM3(page))
     await page.getByRole('button', { name: strings.playback.pause }).click()
     await stableStep(page)
     const secondTotal = await volumeM3(page)
