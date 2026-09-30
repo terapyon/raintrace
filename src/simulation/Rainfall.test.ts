@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { NoElevationAtRainCenterError, planRainfall } from './Rainfall.ts'
+import {
+  NoElevationAtRainCenterError,
+  planRainfall,
+  planRainSchedule,
+  type TimedRainfall,
+} from './Rainfall.ts'
 import type { TerrainMeta } from './types.ts'
 
 const META_5: TerrainMeta = { width: 5, height: 5, cellSizeM: 1 }
@@ -113,5 +118,83 @@ describe('planRainfall（spec 03 §3.6）', () => {
       meta,
     )
     expect(plan.volumeM3).toBe((Math.PI * 1 * 100) / 1000)
+  })
+})
+
+describe('planRainSchedule（spec 08 §4.2・§4.3）', () => {
+  const circle = (overrides: Partial<TimedRainfall> = {}): TimedRainfall => ({
+    x: 2.5,
+    y: 2.5,
+    radiusM: 1,
+    intensityMmPerH: 100,
+    durationS: 3600,
+    wholeRange: false,
+    ...overrides,
+  })
+
+  it('円の雨: セルは planRainfall と同じで、各セルの水深の増える速さ ρ は 1 時間の雨の水深 ÷ 3600', () => {
+    const schedule = planRainSchedule(circle(), mask5(), META_5)
+    const oneHour = planRainfall({ x: 2.5, y: 2.5, radiusM: 1, amountMm: 100 }, mask5(), META_5)
+    expect(Array.from(schedule.cells)).toEqual(Array.from(oneHour.cells))
+    expect(schedule.rateMPerS).toBe(oneHour.depthM / 3600)
+    expect(schedule.endS).toBe(3600)
+    expect(schedule.instantDepthM).toBe(0)
+    expect([schedule.x0, schedule.y0, schedule.x1, schedule.y1]).toEqual([1, 1, 4, 4])
+    // 1 時間分の投入量 ρ × 3600 × |S| × A は、πr² × 100 mm（円がすべて有効）
+    expect(schedule.rateMPerS * 3600 * schedule.cells.length).toBeCloseTo(oneHour.volumeM3, 15)
+  })
+
+  it('円が無効セルで切れても、各セルの水深の増える速さは円がすべて有効な場合と同じ（R04-8）', () => {
+    const full = planRainSchedule(circle(), mask5(), META_5)
+    const cut = planRainSchedule(circle(), mask5([12]), META_5)
+    expect(cut.cells.length).toBe(4)
+    expect(cut.rateMPerS).toBeCloseTo(full.rateMPerS, 18)
+  })
+
+  it('範囲全体の雨: すべての有効セルに I = 時間雨量 / 1000 / 3600（m/s）。無効セルには降らない', () => {
+    const schedule = planRainSchedule(
+      circle({ wholeRange: true, intensityMmPerH: 360 }),
+      mask5([0, 24]),
+      META_5,
+    )
+    expect(schedule.cells.length).toBe(23)
+    expect(Array.from(schedule.cells)).not.toContain(0)
+    expect(schedule.rateMPerS).toBe(360 / 1000 / 3600)
+    expect([schedule.x0, schedule.y0, schedule.x1, schedule.y1]).toEqual([0, 0, 5, 5])
+  })
+
+  it('範囲全体の雨は円の中心・半径を見ない（中心が範囲の外でもよい）', () => {
+    const schedule = planRainSchedule(
+      circle({ wholeRange: true, x: -100, y: -100, radiusM: 1e9 }),
+      mask5(),
+      META_5,
+    )
+    expect(schedule.cells.length).toBe(25)
+  })
+
+  it('durationS = 0 は開始のときに一度に置く: intensityMmPerH を雨の量（mm）として各セルの水深にする', () => {
+    const instant = planRainSchedule(circle({ durationS: 0 }), mask5(), META_5)
+    const amount = planRainfall({ x: 2.5, y: 2.5, radiusM: 1, amountMm: 100 }, mask5(), META_5)
+    expect(instant.instantDepthM).toBe(amount.depthM)
+    expect(instant.rateMPerS).toBe(0)
+    expect(instant.endS).toBe(0)
+    const whole = planRainSchedule(circle({ durationS: 0, wholeRange: true }), mask5(), META_5)
+    expect(whole.instantDepthM).toBe(0.1)
+  })
+
+  it('範囲全体の雨で有効セルが 1 つも無ければ NoElevationAtRainCenterError', () => {
+    expect(() =>
+      planRainSchedule(circle({ wholeRange: true }), new Uint8Array(25), META_5),
+    ).toThrow(NoElevationAtRainCenterError)
+  })
+
+  it.each<[string, Partial<TimedRainfall>]>([
+    ['時間雨量が負', { intensityMmPerH: -1 }],
+    ['時間雨量が NaN', { intensityMmPerH: Number.NaN }],
+    ['継続時間が負', { durationS: -1 }],
+    ['継続時間が無限', { durationS: Number.POSITIVE_INFINITY }],
+    ['範囲全体が真偽値でない', { wholeRange: 1 as unknown as boolean }],
+  ])('不正な雨（%s）は RangeError（Worker に届く値を信用しない）', (_, overrides) => {
+    expect(() => planRainSchedule(circle(overrides), mask5(), META_5)).toThrow(RangeError)
   })
 })
