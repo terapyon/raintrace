@@ -13,13 +13,7 @@ import {
   waitTerrain,
 } from './support/app'
 import { routeGsi } from './support/gsi'
-import {
-  type Blob,
-  colorBlobs,
-  decodePng,
-  outflowBandCount,
-  outflowColoredCount,
-} from './support/png'
+import { type Blob, colorBlobs, decodePng, outflowBandCount } from './support/png'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 /** 範囲（500 m）に内接する円の雨。縁まで水が届き、流出の帯が出る（07 のスパイクと同じ雨） */
@@ -41,13 +35,16 @@ const MARKER_MIN_PX = 10
  * 流出の帯の画素のしきい値（降雨の前との差）。実測を報告に書き、しきい値は大きな余裕を取る（06 の慣習）。
  * スパイク（実 GPU）では 500 m・1 セル幅の帯でも 3D で 240〜420 px だった。帯は 6 セル幅なので、それより多い。
  * 実測（2026-09-29、SwiftShader）: 2D の c1 − c0 = 856〜2040（最速で再生しながら読む）。3D は step 1 で
- * 読むので c1 − c0 = 1057（3 回とも同じ）
+ * 読むので c1 − c0 = 1057（3 回とも同じ）。以上は枠の赤も含む判定での値。
+ * 帯の色だけで数える今の版（spec 08 Task 9 の修正ラウンド 2、2026-09-30）: 2D の c0 = 0、c1 − c0 = 1870。
+ * 3D は c0 = 0、step 1 で c1 = 1032
  */
 const OUTFLOW_MIN_PX = 200
 /**
  * t1 から t2 への増え方の下限（3D。M2）。SwiftShader の揺れ（色の分類ではほぼ 0）より十分大きく。
  * 実測（2026-09-29、3 回）: step 1 → 31 で c2 − c1 = 1315（3 回とも同じ）。同じカメラで 3 回読んだ数は ×2・×1 とも
- * 完全に一致した。一時停止が遅れた場合も、step 11〜30 から 30 step で 454〜640 増えた（修正前の版での実測）
+ * 完全に一致した。一時停止が遅れた場合も、step 11〜30 から 30 step で 454〜640 増えた（修正前の版での実測）。
+ * 帯の色だけで数える今の版（2026-09-30）: step 1 → 31 で c2 − c1 = 1442（c2 = 2474）
  */
 const OUTFLOW_GROWTH_PX = 100
 /** t1 までに進める step 数の上限（帯が出ないまま、ここで止まる） */
@@ -55,12 +52,12 @@ const T1_MAX_STEPS = 60
 /** t1 から t2 までに進める step 数（3D。M2）。決まった量だけ進め、再生の速さと競争しない */
 const T2_STEPS = 30
 /**
- * 帯を消した後の許容（揺れ）。2D は降雨の前との差で、実測（2026-09-29）0。
- * 3D は降雨の前との差ではなく、切った後に残る帯そのものの色の画素の数（outflowBandCount。枠・降雨マーカーの赤を
- * 色で除く）と比べる。3D の降雨の前との差は、帯と関係のない枠の赤の増減を含む（spec 08 Task 9 の修正ラウンド 1）:
- * 持ち上がった水面が範囲の枠の赤い線の一部を覆って減り（07 の実測 −21〜−16、08 の流れで −37）、負荷が高いと
- * 降雨の前の読みが 3D の枠を描き終わる前になって、枠の分だけ増えて見える（+500〜+1000）。
- * 実測（2026-09-30）: 切った後の帯の色 = 0、切る前の帯の色 = 2474。帯が消えなければ 2400 前後が残る
+ * 帯を消した後の許容（揺れ）。画素はすべて帯そのものの色だけで数える（outflowCount → outflowBandCount。
+ * 範囲の枠・降雨マーカーの赤を色で除く）。2D は降雨の前との差、3D は切った後に残る帯の色の画素の数と比べる。
+ * 枠の赤も含む判定では 3D の降雨の前との差が帯と関係なく動いた（spec 08 Task 9 の修正ラウンド 1・2）: 持ち上がった
+ * 水面が枠の赤い線の一部を覆って減り（07 の実測 −21〜−16、08 の流れで −37）、負荷が高いと降雨の前の読みが 3D の
+ * 枠を描き終わる前になって、枠の分だけ増えて見えた（+118〜+984）。
+ * 実測（2026-09-30、帯の色だけ）: 2D の差 0。3D の切った後 0（×2・×1）、切る前 2474（×2）・2783（×1）
  */
 const OUTFLOW_NOISE_PX = 30
 
@@ -117,8 +114,13 @@ async function clickMarker(page: Page, hex: string, testId: string): Promise<voi
     .toBe('open')
 }
 
+/**
+ * 流出の帯そのものの色の画素の数（outflowBandCount。範囲の枠・降雨マーカーの赤を色で除く）。3D では負荷が高いと
+ * 降雨の前の読みが枠を描き終わる前になり、枠の赤を含む 07 の判定では c1 − c0 が帯なしで
+ * しきい値を超えることがあった（spec 08 Task 9 の修正ラウンド 2）。2D も同じ関数で数える
+ */
 async function outflowCount(page: Page, clip: Clip): Promise<number> {
-  return outflowColoredCount(decodePng(await page.screenshot({ clip })))
+  return outflowBandCount(decodePng(await page.screenshot({ clip })))
 }
 
 /** 実測の値を標準出力に残す（しきい値の根拠。報告に書く） */
@@ -388,7 +390,6 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     const flicker: Record<string, number[]> = {}
     const offCounts: Record<string, number> = {}
     let offDiff = 0
-    const offBands: Record<string, number> = {}
     // 既定の垂直強調は ×2（DEFAULT_SETTINGS）。c0 は ×2 で読んだので、×2 を先に読む
     let previousShot: Buffer | null = null
     for (const ex of [2, 1] as const) {
@@ -414,23 +415,19 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
       await page.getByLabel(strings.panel.showOutflow).uncheck()
       await nextFrames(page)
       let off = 0
-      let band = 0
       await expect
         .poll(
           async () => {
-            const image = decodePng(await page.screenshot({ clip }))
-            off = outflowColoredCount(image)
-            band = outflowBandCount(image)
+            off = await outflowCount(page, clip)
             return (reads[0] as number) - off
           },
           { timeout: 10_000 },
         )
         .toBeGreaterThan(OUTFLOW_MIN_PX)
       offCounts[`x${ex}`] = off
-      // 帯の色は残らない（降雨の前の c0 との差は参考に記録するだけ。OUTFLOW_NOISE_PX の説明）
+      // 帯の色は残らない（OUTFLOW_NOISE_PX の説明。c0 との差は参考に記録する）
       if (ex === 2) offDiff = off - c0
-      offBands[`x${ex}`] = band
-      expect(band).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
+      expect(off).toBeLessThanOrEqual(OUTFLOW_NOISE_PX)
       await page.getByLabel(strings.panel.showOutflow).check()
       await nextFrames(page)
       previousShot = await page.screenshot({ clip })
@@ -445,8 +442,6 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
       c1MinusC0: c1 - c0,
       c2MinusC1: c2 - c1,
       offDiff,
-      offBandX1: offBands.x1 ?? 0,
-      offBandX2: offBands.x2 ?? 0,
       flickerX1: flicker.x1 ?? [],
       flickerX2: flicker.x2 ?? [],
       offX1: offCounts.x1 ?? 0,
