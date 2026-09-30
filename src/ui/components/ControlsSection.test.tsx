@@ -3,6 +3,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlaybackSpeed } from '../../shared/protocol'
+import { displayStats } from '../../state/displayStats.test-support'
 import { memoryStorage } from '../../state/memoryStorage.test-support'
 import { createSettingsStore } from '../../state/settingsStore'
 import { createSimulationStore, type DisplayStats } from '../../state/simulationStore'
@@ -46,16 +47,8 @@ const primary = () =>
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement
 
 /** 平衡の統計（step だけを変える） */
-const settledAt = (step: number): DisplayStats => ({
-  step,
-  totalWater: 1,
-  storedWater: 1,
-  outflowWater: 0,
-  maxDepth: 0,
-  floodedArea: 0,
-  settled: true,
-  massError: 0,
-})
+const settledAt = (step: number): DisplayStats =>
+  displayStats({ step, totalWater: 1, storedWater: 1, settled: true, stopReason: 'settled' })
 
 async function replace(
   user: ReturnType<typeof userEvent.setup>,

@@ -129,8 +129,8 @@ export class PlaybackScheduler {
       stepStart = now
       last = this.ports.step()
       steps++
-      if (last.settled) {
-        // 平衡の後に回しても何も変わらないので、自動で止める（R04-5）
+      if (last.stopReason !== null) {
+        // 自動停止（settled・cap。spec 08 §3.9・§6.1）の後に回しても何も変わらないので、自動で止める
         this.running = false
         break
       }

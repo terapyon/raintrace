@@ -197,7 +197,11 @@ export class SimulationSession {
     if (this.terrain === null || this.center === null) return
     const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)
     this.runId += 1
-    this.client.start({ x, y, radiusM, amountMm }, this.runId)
+    // M1 の暫定（計画で決めたこと 3）: 雨量 amountMm を開始のときに一度に置く。Task 12 で時間雨量・継続時間にする
+    this.client.start(
+      { x, y, radiusM, intensityMmPerH: amountMm, durationS: 0, wholeRange: false },
+      this.runId,
+    )
     this.clearWater()
     this.store.getState().started()
   }
@@ -248,7 +252,7 @@ export class SimulationSession {
     if (events.length > 0) state.addSpills(events)
     const update = { stats, stepsPerSecond: frame.stepsPerSecond }
     if (state.status === 'running') {
-      if (stats.settled) {
+      if (stats.stopReason !== null) {
         this.statsThrottle.cancel()
         state.settle(stats, frame.stepsPerSecond)
       } else {
@@ -257,9 +261,10 @@ export class SimulationSession {
       return
     }
     // 止まっている間の frame（Step・Reset・矢印の切り替え）はすぐに入れる。
-    // idle の間（reset・失敗の直後）は settled でも状態を変えない
+    // idle の間（reset・失敗の直後）は自動停止でも状態を変えない
     this.statsThrottle.cancel()
-    if (stats.settled && state.status === 'paused') state.settle(stats, frame.stepsPerSecond)
+    if (stats.stopReason !== null && state.status === 'paused')
+      state.settle(stats, frame.stepsPerSecond)
     else state.setStats(stats, frame.stepsPerSecond)
   }
 

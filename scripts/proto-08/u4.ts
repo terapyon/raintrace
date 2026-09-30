@@ -31,7 +31,15 @@ function timeCurrent(): string {
     height: g.height,
     cellSizeM: g.cellSizeM,
   })
-  e.addRainfall({ x: g.center.x, y: g.center.y, radiusM: half, amountMm: 100 })
+  // spec 08 Task 5 でエンジンが局所慣性式に替わった後は、型を通すためだけに setRainfall にした（試作の記録は M0 の値）
+  e.setRainfall({
+    x: g.center.x,
+    y: g.center.y,
+    radiusM: half,
+    intensityMmPerH: 100,
+    durationS: 0,
+    wholeRange: false,
+  })
   const times: number[] = []
   for (let n = 0; n < WARM + steps; n++) {
     const t0 = performance.now()

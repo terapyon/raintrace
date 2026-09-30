@@ -26,6 +26,12 @@ export const ZERO_STATS: StepStats = {
   settled: false,
   massError: 0,
   events: [],
+  timeS: 0,
+  dtS: 0,
+  raining: false,
+  rainDepthMm: 0,
+  outflowRateM3PerS: 0,
+  stopReason: null,
 }
 
 /** 再生中に矢印を計算する間隔の下限（ms）。表示は 10Hz（spec 04 §6.2） */
@@ -141,7 +147,7 @@ export class SimulationRunner {
   }
 
   private start(rain: RainfallInput, runId: number): void {
-    // 失敗（simFailed）もこの新しい実行のものとして runId を載せるので、addRainfall を試す前に控える
+    // 失敗（simFailed）もこの新しい実行のものとして runId を載せるので、setRainfall を試す前に控える
     this.runId = runId
     const loaded = this.loaded
     if (loaded === null) return
@@ -150,7 +156,7 @@ export class SimulationRunner {
     this.events = []
     this.lastStats = ZERO_STATS
     try {
-      this.engine.addRainfall(rain)
+      this.engine.setRainfall(rain)
     } catch (error) {
       // エラーは name で判別して protocol の理由に写す（03 の申し送り L6。文言はメインの strings.ts が出す）
       const reason: SimFailureReason =

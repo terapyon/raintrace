@@ -7,8 +7,11 @@ import type { RainfallInput, StepStats } from './types.ts'
 
 interface Scenario {
   terrain: Terrain
-  /** atStep 回目の step の前に降らせる */
-  rains: { atStep: number; rain: RainfallInput }[]
+  /**
+   * 最初の step の前（t = 0）に順に登録する雨（一度に置く雨）。雨の登録は t = 0 だけなので（レビューの m1 の裁定
+   * (a)）、2 つ目からは前の登録を置き換え、置いた水は足される
+   */
+  rains: RainfallInput[]
   steps: number
 }
 
@@ -59,7 +62,6 @@ const scenarioArb: fc.Arbitrary<Scenario> = fc
     steps: fc.integer({ min: 1, max: 200 }),
     rains: fc.array(
       fc.record({
-        atStep: fc.nat(),
         cell: fc.nat(),
         radiusCells: fc.double({ min: 0.1, max: 8, noNaN: true }),
         amountMm: fc.integer({ min: 1, max: 1000 }),
@@ -82,60 +84,20 @@ const scenarioArb: fc.Arbitrary<Scenario> = fc
       rains: rains.map((r) => {
         const c = valid[r.cell % valid.length] ?? 0
         return {
-          atStep: r.atStep % steps,
-          rain: {
-            x: ((c % width) + 0.5) * cellSizeM,
-            y: (Math.floor(c / width) + 0.5) * cellSizeM,
-            radiusM: Math.min(r.radiusCells, maxRadiusCells) * cellSizeM,
-            amountMm: r.amountMm,
-          },
+          x: ((c % width) + 0.5) * cellSizeM,
+          y: (Math.floor(c / width) + 0.5) * cellSizeM,
+          radiusM: Math.min(r.radiusCells, maxRadiusCells) * cellSizeM,
+          intensityMmPerH: r.amountMm,
+          durationS: 0,
+          wholeRange: false,
         }
       }),
     }
   })
 
-/**
- * 局所的な最大値原理の検査（spec 03 §6.2）。有効セル i の次の水面標高が、i 自身と 8 近傍の今の
- * 水面標高の最小・最大の間（丸め誤差 1e-9 m を許す）に無ければ、その説明を返す。
- * 近傍の定義はエンジンから借りず、§3.3 から独立に書く（グリッドの外と無効セルは、標高 Z_i・水深 0）
- */
-function maxPrincipleViolation(
-  t: Terrain,
-  before: Float64Array,
-  after: Float64Array,
-): string | null {
-  const { elevation, validMask, meta } = t
-  const { width, height } = meta
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x
-      if (validMask[i] === 0) continue
-      const zi = elevation[i] ?? 0
-      let lo = zi + (before[i] ?? 0)
-      let hi = lo
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx
-          const ny = y + dy
-          const j = ny * width + nx
-          const real = nx >= 0 && nx < width && ny >= 0 && ny < height && validMask[j] !== 0
-          const h = real ? (elevation[j] ?? 0) + (before[j] ?? 0) : zi
-          if (h < lo) lo = h
-          if (h > hi) hi = h
-        }
-      }
-      const next = zi + (after[i] ?? 0)
-      if (next < lo - 1e-9 || next > hi + 1e-9) {
-        return `セル (${x}, ${y}): 次の水面標高 ${next} が [${lo}, ${hi}] の外`
-      }
-    }
-  }
-  return null
-}
-
 /** 統計の数値を Float64Array に詰める。sameBits で +0 と −0 まで区別して比べるため */
 function packStats(list: StepStats[]): Float64Array {
-  const fields = 8
+  const fields = 13
   const out = new Float64Array(list.length * fields)
   list.forEach((s, n) => {
     out.set(
@@ -148,6 +110,11 @@ function packStats(list: StepStats[]): Float64Array {
         s.floodedArea,
         s.settled ? 1 : 0,
         s.massError,
+        s.timeS,
+        s.dtS,
+        s.raining ? 1 : 0,
+        s.rainDepthMm,
+        s.outflowRateM3PerS,
       ],
       n * fields,
     )
@@ -162,8 +129,8 @@ function run(
   onStep: (engine: TsSimulationEngine, stats: StepStats, before: Float64Array) => void,
 ): TsSimulationEngine {
   const engine = engineOn(s.terrain, { scanMode })
+  for (const rain of s.rains) engine.setRainfall(rain)
   for (let n = 0; n < s.steps; n++) {
-    for (const r of s.rains) if (r.atStep === n) engine.addRainfall(r.rain)
     const before = engine.waterDepth().slice()
     const stats = engine.step()
     onStep(engine, stats, before)
@@ -187,16 +154,6 @@ describe('性質のテスト（spec 03 §6.2、tech-spec §11.3）', () => {
       fc.property(scenarioArb, (s) => {
         run(s, 'bbox', (engine) => {
           expect(engine.waterDepth().every((d) => d >= 0)).toBe(true)
-        })
-      }),
-    )
-  })
-
-  it('局所的な最大値原理: 次の水面標高は、自身と 8 近傍の今の水面標高の範囲に入る', () => {
-    fc.assert(
-      fc.property(scenarioArb, (s) => {
-        run(s, 'bbox', (engine, _, before) => {
-          expect(maxPrincipleViolation(s.terrain, before, engine.waterDepth())).toBeNull()
         })
       }),
     )

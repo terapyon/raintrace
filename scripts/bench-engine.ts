@@ -48,7 +48,7 @@ function run(label: string, elevation: Float32Array, rain: RainfallInput, maxSte
   const engine = new TsSimulationEngine()
   const validMask = new Uint8Array(SIZE * SIZE).fill(1)
   engine.loadTerrain(elevation, validMask, { width: SIZE, height: SIZE, cellSizeM: CELL_M })
-  engine.addRainfall(rain)
+  engine.setRainfall(rain)
   const times: number[] = []
   let last: StepStats | null = null
   const started = performance.now()
@@ -56,11 +56,11 @@ function run(label: string, elevation: Float32Array, rain: RainfallInput, maxSte
     const t0 = performance.now()
     last = engine.step()
     times.push(performance.now() - t0)
-    if (last.settled) break
+    if (last.stopReason !== null) break
   }
   const seconds = (performance.now() - started) / 1000
   times.sort((a, b) => a - b)
-  const settled = last?.settled ? `${last.step}` : `未到達（上限 ${maxSteps}）`
+  const settled = last?.stopReason ? `${last.step}` : `未到達（上限 ${maxSteps}）`
   const cells = [
     label,
     String(times.length),
@@ -88,5 +88,15 @@ console.log(
   '| 降雨 | step 数 | 中央値（ms） | p95（ms） | 平衡までの step | 最大水深（m） | 質量誤差（m³） | 所要（秒） |',
 )
 console.log('|---|---:|---:|---:|---:|---:|---:|---:|')
-run('半径 10m・100mm', elevation, { ...center, radiusM: 10, amountMm: 100 }, maxSteps)
-run('半径 100m・100mm', elevation, { ...center, radiusM: 100, amountMm: 100 }, maxSteps)
+run(
+  '半径 10m・100mm',
+  elevation,
+  { ...center, radiusM: 10, intensityMmPerH: 100, durationS: 0, wholeRange: false },
+  maxSteps,
+)
+run(
+  '半径 100m・100mm',
+  elevation,
+  { ...center, radiusM: 100, intensityMmPerH: 100, durationS: 0, wholeRange: false },
+  maxSteps,
+)

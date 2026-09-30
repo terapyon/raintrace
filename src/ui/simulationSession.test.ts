@@ -103,7 +103,9 @@ describe('SimulationSession: 命令（spec 04 §3）', () => {
         x: (pc.x - geo.originX) * geo.cellSizeM,
         y: (pc.y - geo.originY) * geo.cellSizeM,
         radiusM: 10,
-        amountMm: 100,
+        intensityMmPerH: 100,
+        durationS: 0,
+        wholeRange: false,
       },
       runId: 1,
     })
@@ -228,7 +230,9 @@ describe('SimulationSession: frame → ストア', () => {
     const { worker, store, session, terrainId } = setup()
     session.start(100, 10)
     worker.reply(frameMessage(terrainId, 1))
-    worker.reply(frameMessage(terrainId, 40, { stats: statsAt(40, { settled: true }) }))
+    worker.reply(
+      frameMessage(terrainId, 40, { stats: statsAt(40, { settled: true, stopReason: 'settled' }) }),
+    )
     expect(store.getState()).toMatchObject({ status: 'settled', stats: { step: 40 } })
     vi.advanceTimersByTime(STATS_INTERVAL_MS)
     expect(store.getState().stats?.step).toBe(40)
@@ -237,7 +241,15 @@ describe('SimulationSession: frame → ストア', () => {
   it('越流イベントは間引かずに一覧へ足す', () => {
     const { worker, store, session, terrainId } = setup()
     session.start(100, 10)
-    const events = [{ type: 'spill' as const, step: 9, depressionId: 4, spillElevation: 12.7 }]
+    const events = [
+      {
+        type: 'spill' as const,
+        step: 9,
+        timeS: 30,
+        depressionId: 4,
+        spillElevation: 12.7,
+      },
+    ]
     worker.reply(frameMessage(terrainId, 9, { stats: statsAt(9, { events }) }))
     expect(store.getState().spills).toEqual([{ depressionId: 4, spillElevation: 12.7, step: 9 }])
   })
@@ -249,7 +261,12 @@ describe('SimulationSession: frame → ストア', () => {
     worker.reply(frameMessage(terrainId, 11, { runId: 1 }))
     expect(store.getState().stats?.step).toBe(11)
     session.reset() // runId 2
-    worker.reply(frameMessage(terrainId, 12, { runId: 2, stats: statsAt(12, { settled: true }) }))
+    worker.reply(
+      frameMessage(terrainId, 12, {
+        runId: 2,
+        stats: statsAt(12, { settled: true, stopReason: 'settled' }),
+      }),
+    )
     expect(store.getState().status).toBe('idle')
   })
 
@@ -264,7 +281,9 @@ describe('SimulationSession: frame → ストア', () => {
       expect(store.getState()).toMatchObject({ status: 'idle', stats: null, spills: [] })
 
       // Worker が reset を処理する前に送っていた、古い runId（1）の frame が越流イベントつきで遅れて届く
-      const staleEvents = [{ type: 'spill' as const, step: 6, depressionId: 1, spillElevation: 3 }]
+      const staleEvents = [
+        { type: 'spill' as const, step: 6, timeS: 18, depressionId: 1, spillElevation: 3 },
+      ]
       worker.reply(
         frameMessage(terrainId, 6, { runId: 1, stats: statsAt(6, { events: staleEvents }) }),
       )

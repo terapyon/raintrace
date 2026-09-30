@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
+import { displayStats } from '../../state/displayStats.test-support'
 import { createSimulationStore } from '../../state/simulationStore'
 import { strings } from '../strings'
 import { StatisticsPanel } from './StatisticsPanel'
@@ -21,16 +22,14 @@ describe('StatisticsPanel（base-spec §38、spec 04 §6.3）', () => {
   it('各項目を決めた書式で出す', () => {
     const simulation = createSimulationStore()
     simulation.getState().setStats(
-      {
+      displayStats({
         step: 1234,
         totalWater: (Math.PI * 100 * 100) / 1000,
         storedWater: 0.456,
         outflowWater: 13.24,
         maxDepth: 0.4321,
         floodedArea: 82.4,
-        settled: false,
-        massError: 0,
-      },
+      }),
       59.6,
     )
     render(<StatisticsPanel simulation={simulation} />)

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { SPILL_TOLERANCE_M } from './constants.ts'
 import type { TsSimulationEngine } from './TsSimulationEngine.ts'
-import { buildTerrain, cellCenter, engineOn, walledBasin } from './testing/fixtures.test-support.ts'
+import {
+  buildTerrain,
+  cellCenter,
+  engineOn,
+  instantRain,
+  walledBasin,
+} from './testing/fixtures.test-support.ts'
 import type { SimulationEvent } from './types.ts'
 
 // 7 × 7 の盆地（床 0m、縁 10m、床は列・行 1〜5 の 25m²）。中央のセルを最低点、spill 標高 0.3m とする手組みの窪地
@@ -18,13 +24,13 @@ function setup(): TsSimulationEngine {
 /** 床全体（25 セル）に、平衡の水位が level になる量の雨を一様に降らせる。半径 2.9m は床の 25 セルだけを含む */
 function rainOnFloor(engine: TsSimulationEngine, level: number): void {
   const amountMm = (level * 25 * 1000) / (Math.PI * 2.9 * 2.9)
-  engine.addRainfall({ ...cellCenter(3, 3, 1), radiusM: 2.9, amountMm })
+  engine.setRainfall(instantRain(cellCenter(3, 3, 1), 2.9, amountMm))
 }
 
 /** 床の北西の角のセル 1 つに、平衡の水位が level になる量の雨を降らせる */
 function rainOnCorner(engine: TsSimulationEngine, level: number): void {
   const amountMm = (level * 25 * 1000) / (Math.PI * 0.4 * 0.4)
-  engine.addRainfall({ ...cellCenter(1, 1, 1), radiusM: 0.4, amountMm })
+  engine.setRainfall(instantRain(cellCenter(1, 1, 1), 0.4, amountMm))
 }
 
 /** steps 回まわして、出たイベントを集める */
@@ -41,20 +47,30 @@ describe('越流イベント（spec 03 §3.7）', () => {
     expect(collect(engine, 3000)).toEqual([])
   })
 
-  it('届いた step で 1 回だけ通知し、その後は通知しない', () => {
+  it('届いた step で 1 回だけ通知し（経過時間つき）、その後は通知しない', () => {
     const engine = setup()
     rainOnCorner(engine, 0.35)
     const events: SimulationEvent[] = []
     let reachedAt = -1
+    let reachedTimeS = -1
     for (let n = 0; n < 3000; n++) {
       const s = engine.step()
       events.push(...s.events)
       const h = (BASIN.elevation[PIT] ?? 0) + (engine.waterDepth()[PIT] ?? 0)
-      if (reachedAt < 0 && h >= SPILL - SPILL_TOLERANCE_M) reachedAt = s.step
+      if (reachedAt < 0 && h >= SPILL - SPILL_TOLERANCE_M) {
+        reachedAt = s.step
+        reachedTimeS = s.timeS
+      }
     }
     expect(reachedAt).toBeGreaterThan(1)
     expect(events).toEqual([
-      { type: 'spill', step: reachedAt, depressionId: 7, spillElevation: SPILL },
+      {
+        type: 'spill',
+        step: reachedAt,
+        timeS: reachedTimeS,
+        depressionId: 7,
+        spillElevation: SPILL,
+      },
     ])
   })
 
@@ -117,6 +133,8 @@ describe('越流イベント（spec 03 §3.7）', () => {
     const spillElevation = (BASIN.elevation[PIT] ?? 0) + 0.005
     engine.setDepressions([{ id: 9, pitIndex: PIT, spillElevation }])
     expect(collect(engine, 10)).toEqual([])
+    // 雨の登録は t = 0 だけなので、水を戻してから降らせる（通知済みの記録は無いので、reset で消えるものは無い）
+    engine.reset()
     rainOnFloor(engine, 0.35)
     const events = collect(engine, 3000)
     expect(events).toHaveLength(1)

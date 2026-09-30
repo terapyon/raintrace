@@ -25,18 +25,9 @@ describe('WaterGrid（spec 03 §3.5）', () => {
     expect(windowOf(g)).toEqual([0, 0, 6, 4])
   })
 
-  it("beginStep は走査範囲の W を W' に写す", () => {
-    const g = new WaterGrid(6, 4, false)
-    g.current[1 * 6 + 1] = 0.5
-    g.include(1, 1, 2, 2)
-    g.beginStep()
-    expect(g.next[1 * 6 + 1]).toBe(0.5)
-  })
-
   it('endStep は入れ替えて集計し、走査範囲を濡れたセルの外接矩形と周囲 1 セルに縮める', () => {
     const g = new WaterGrid(6, 4, false)
     g.include(0, 0, 6, 4)
-    g.beginStep()
     g.next[2 * 6 + 3] = 0.02
     g.next[2 * 6 + 4] = 0.005
     const s = g.endStep()
@@ -47,12 +38,13 @@ describe('WaterGrid（spec 03 §3.5）', () => {
     expect(windowOf(g)).toEqual([2, 1, 6, 4])
   })
 
-  it("縮めた後も、走査範囲の外では W と W' がどちらも 0（不変条件）", () => {
+  it("縮めた後も、走査範囲の外では h と h' がどちらも 0（不変条件）", () => {
     const g = new WaterGrid(6, 4, false)
     g.current[0] = 1
     g.current[23] = 1
     g.include(0, 0, 6, 4)
-    g.beginStep()
+    // エンジンは走査範囲の有効セルの next をすべて書く（セル 0 は水が残り、セル 23 は空になった）
+    g.next[0] = 1
     g.next[23] = 0
     g.endStep()
     expect(windowOf(g)).toEqual([0, 0, 2, 2])
@@ -64,7 +56,6 @@ describe('WaterGrid（spec 03 §3.5）', () => {
     const g = new WaterGrid(6, 4, false)
     g.current[7] = 1
     g.include(1, 1, 2, 2)
-    g.beginStep()
     g.next[7] = 0
     expect(g.endStep()).toEqual({ depthSum: 0, maxDepth: 0, floodedCells: 0 })
     expect(windowOf(g)).toEqual([0, 0, 0, 0])

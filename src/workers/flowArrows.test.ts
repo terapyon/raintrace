@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildTerrain, engineOn } from '../simulation/testing/fixtures.test-support'
+import { buildTerrain, engineOn, instantRain } from '../simulation/testing/fixtures.test-support'
 import { thinFlowArrows } from './flowArrows'
 
 describe('thinFlowArrows（spec 04 §5.1）', () => {
@@ -36,10 +36,13 @@ describe('thinFlowArrows（spec 04 §5.1）', () => {
     expect(arrows.length).toBe(16)
   })
 
-  it('東へ下る斜面に置いた水の矢印は東（90°）を向く（FlowSolver のベクトルの向きの約束の確かめ）', () => {
+  it('東へ下る斜面に置いた水の 1 step 後の矢印は東（90°）を向く（FlowSolver のベクトルの向きの約束の確かめ）', () => {
     const t = buildTerrain(9, 9, 1, (x) => (8 - x) * 0.2)
     const engine = engineOn(t)
-    engine.addRainfall({ x: 4.5, y: 4.5, radiusM: 0.4, amountMm: 100 })
+    // 中央の 3 × 3 セルに置く（セル 1 つだけだと、局所慣性式では 1 step で水をすべて出して流速が 0 になる）。
+    // 南北は対称なので、中央のセル (4, 4) の南北の流量は 0
+    engine.setRainfall(instantRain({ x: 4.5, y: 4.5 }, 1.5, 100))
+    engine.step()
     const v = engine.flowVectors()
     const arrows = thinFlowArrows(v.x, v.y, 9, 9, 1, 1)
     let bearing = Number.NaN

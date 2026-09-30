@@ -1,16 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { displayStats } from './displayStats.test-support'
 import { createSimulationStore, type DisplayStats } from './simulationStore'
 
-const stats = (step: number): DisplayStats => ({
-  step,
-  totalWater: 31.4,
-  storedWater: 31.4,
-  outflowWater: 0,
-  maxDepth: 0.1,
-  floodedArea: 300,
-  settled: false,
-  massError: 0,
-})
+const stats = (step: number): DisplayStats =>
+  displayStats({ step, totalWater: 31.4, storedWater: 31.4, maxDepth: 0.1, floodedArea: 300 })
 
 describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () => {
   it('既定は idle・1x・統計なし', () => {
@@ -39,7 +32,9 @@ describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () =
 
   it('越流イベントを一覧に足す', () => {
     const store = createSimulationStore()
-    store.getState().addSpills([{ type: 'spill', step: 7, depressionId: 2, spillElevation: 12.7 }])
+    store
+      .getState()
+      .addSpills([{ type: 'spill', step: 7, timeS: 0, depressionId: 2, spillElevation: 12.7 }])
     expect(store.getState().spills).toEqual([{ depressionId: 2, spillElevation: 12.7, step: 7 }])
   })
 
@@ -63,7 +58,9 @@ describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () =
     store.getState().setSpeed(4)
     store.getState().started()
     store.getState().setStats(stats(5), 58)
-    store.getState().addSpills([{ type: 'spill', step: 3, depressionId: 1, spillElevation: 1 }])
+    store
+      .getState()
+      .addSpills([{ type: 'spill', step: 3, timeS: 0, depressionId: 1, spillElevation: 1 }])
     store.getState().reset()
     expect(store.getState()).toMatchObject({
       status: 'idle',

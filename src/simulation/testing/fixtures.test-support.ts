@@ -2,7 +2,7 @@
  * テストとベンチマーク用の地形と補助関数。純粋な TypeScript（テストの外からも import できる）
  */
 import { type EngineOptions, TsSimulationEngine } from '../TsSimulationEngine.ts'
-import type { StepStats, TerrainMeta } from '../types.ts'
+import type { RainfallInput, StepStats, TerrainMeta } from '../types.ts'
 
 export interface Terrain {
   elevation: Float32Array
@@ -43,13 +43,59 @@ export function cellCenter(x: number, y: number, cellSizeM: number): { x: number
   return { x: (x + 0.5) * cellSizeM, y: (y + 0.5) * cellSizeM }
 }
 
-/** settled になるまで step を回し、最後の統計を返す。maxSteps で届かなければ例外 */
-export function runUntilSettled(engine: TsSimulationEngine, maxSteps: number): StepStats {
+/** stopReason（settled・cap）が付くまで step を回し、最後の統計を返す。maxSteps で届かなければ例外 */
+export function runUntilStopped(engine: TsSimulationEngine, maxSteps: number): StepStats {
   for (let n = 0; n < maxSteps; n++) {
     const stats = engine.step()
-    if (stats.settled) return stats
+    if (stats.stopReason !== null) return stats
   }
-  throw new Error(`${maxSteps} step で平衡に達しませんでした`)
+  throw new Error(`${maxSteps} step で止まりませんでした`)
+}
+
+/** 平衡のテストの止め方の閾値（spec 08 §9.1）: 水深の変化 0.1 mm/h（m/s） */
+export const QUIET_EQUILIBRIUM_M_PER_S = 0.1 / 1000 / 3600
+
+/** 満水との一致の止め方の閾値（spec 08 §9.1）: 水深の変化 3 mm/h（m/s） */
+export const QUIET_FILL_M_PER_S = 3 / 1000 / 3600
+
+/**
+ * 平衡のテストの止め方（spec 08 §9.1。UI の停止〈§3.9〉とは別）: 雨が終わった後、流れによる水深の変化の最大
+ * max |Δh| / dtS が maxRateMPerS 未満になった step の統計を返す。maxSteps で届かなければ例外
+ */
+export function runUntilQuiet(
+  engine: TsSimulationEngine,
+  maxRateMPerS: number,
+  maxSteps: number,
+): StepStats {
+  for (let n = 0; n < maxSteps; n++) {
+    const before = engine.waterDepth().slice()
+    const stats = engine.step()
+    if (stats.raining) continue
+    const after = engine.waterDepth()
+    let change = 0
+    for (let i = 0; i < after.length; i++) {
+      const d = Math.abs(after[i] - before[i])
+      if (d > change) change = d
+    }
+    if (change / stats.dtS < maxRateMPerS) return stats
+  }
+  throw new Error(`${maxSteps} step で水深の変化が ${maxRateMPerS} m/s 未満になりませんでした`)
+}
+
+/** 開始のときに一度に置く円の雨（durationS = 0。amountMm の雨を置く。計画で決めたこと 5） */
+export function instantRain(
+  center: { x: number; y: number },
+  radiusM: number,
+  amountMm: number,
+): RainfallInput {
+  return {
+    x: center.x,
+    y: center.y,
+    radiusM,
+    intensityMmPerH: amountMm,
+    durationS: 0,
+    wholeRange: false,
+  }
 }
 
 /** 縁（外周 1 セル）の標高が rim、内側の標高が floor の盆地 */
@@ -79,16 +125,17 @@ export function twoBasins(passZ: number): Terrain {
   })
 }
 
-/** 水のあるセル（W > 0）の数と、その水面標高 Z + W の最小・最大 */
+/** 水深が minDepthM を超えるセルの数と、その水面標高 Z + h の最小・最大（minDepthM の既定 0 は濡れたセルすべて） */
 export function wetSurfaceRange(
   t: Terrain,
   w: Float64Array,
+  minDepthM = 0,
 ): { cells: number; min: number; max: number } {
   let cells = 0
   let min = Number.POSITIVE_INFINITY
   let max = Number.NEGATIVE_INFINITY
   for (let i = 0; i < w.length; i++) {
-    if (w[i] === 0) continue
+    if (w[i] <= minDepthM) continue
     const h = t.elevation[i] + w[i]
     cells++
     if (h < min) min = h
@@ -135,70 +182,6 @@ export function maxWetElevation(t: Terrain, w: Float64Array): number {
   let max = Number.NEGATIVE_INFINITY
   for (let i = 0; i < w.length; i++) if (w[i] > 0 && t.elevation[i] > max) max = t.elevation[i]
   return max
-}
-
-/**
- * 窪地のセル（満水時の水面 fill が標高より高い有効セル）を 8 近傍でつないだ成分ごとに、
- * 流出口（成分の外にあって、標高が fill と同じ有効セル）に接する成分内のセルを 0 として、
- * 成分の中を 8 近傍で数えた距離を返す。窪地でないセルは −1
- */
-export function outletDistances(t: Terrain, fill: ArrayLike<number>): Int32Array {
-  const { width, height } = t.meta
-  const n = width * height
-  const inDepression = (i: number) => t.validMask[i] !== 0 && fill[i] > t.elevation[i]
-  const neighbors = (c: number): number[] => {
-    const cx = c % width
-    const cy = (c - cx) / width
-    const out: number[] = []
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const nx = cx + dx
-        const ny = cy + dy
-        if ((dx !== 0 || dy !== 0) && nx >= 0 && ny >= 0 && nx < width && ny < height) {
-          out.push(ny * width + nx)
-        }
-      }
-    }
-    return out
-  }
-  // 成分に分ける
-  const label = new Int32Array(n).fill(-1)
-  let count = 0
-  for (let s = 0; s < n; s++) {
-    if (label[s] !== -1 || !inDepression(s)) continue
-    const queue = [s]
-    label[s] = count
-    for (let q = 0; q < queue.length; q++) {
-      for (const j of neighbors(queue[q])) {
-        if (label[j] !== -1 || !inDepression(j)) continue
-        label[j] = count
-        queue.push(j)
-      }
-    }
-    count++
-  }
-  // 流出口に接するセルを 0 として、成分の中で幅優先に数える
-  const dist = new Int32Array(n).fill(-1)
-  const queue: number[] = []
-  for (let i = 0; i < n; i++) {
-    if (label[i] < 0) continue
-    const touchesOutlet = neighbors(i).some(
-      (j) => label[j] !== label[i] && t.validMask[j] !== 0 && t.elevation[j] === fill[i],
-    )
-    if (touchesOutlet) {
-      dist[i] = 0
-      queue.push(i)
-    }
-  }
-  for (let q = 0; q < queue.length; q++) {
-    const c = queue[q]
-    for (const j of neighbors(c)) {
-      if (label[j] !== label[c] || dist[j] >= 0) continue
-      dist[j] = dist[c] + 1
-      queue.push(j)
-    }
-  }
-  return dist
 }
 
 /** 2 つの配列がビット単位で一致する（+0 と −0、NaN の違いも区別する） */

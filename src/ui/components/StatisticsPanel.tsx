@@ -55,6 +55,12 @@ const ZERO: DisplayStats = {
   floodedArea: 0,
   settled: false,
   massError: 0,
+  timeS: 0,
+  dtS: 0,
+  raining: false,
+  rainDepthMm: 0,
+  outflowRateM3PerS: 0,
+  stopReason: null,
 }
 
 /** 統計（base-spec §38、spec 04 §6.3）。描画内容を文字で補う（tech-spec §9.5） */

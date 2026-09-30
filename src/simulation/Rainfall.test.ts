@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  NoElevationAtRainCenterError,
-  planRainfall,
-  planRainSchedule,
-  type TimedRainfall,
-} from './Rainfall.ts'
-import type { TerrainMeta } from './types.ts'
+import { NoElevationAtRainCenterError, planRainfall, planRainSchedule } from './Rainfall.ts'
+import type { RainfallInput, TerrainMeta } from './types.ts'
 
 const META_5: TerrainMeta = { width: 5, height: 5, cellSizeM: 1 }
 
@@ -122,7 +117,7 @@ describe('planRainfall（spec 03 §3.6）', () => {
 })
 
 describe('planRainSchedule（spec 08 §4.2・§4.3）', () => {
-  const circle = (overrides: Partial<TimedRainfall> = {}): TimedRainfall => ({
+  const circle = (overrides: Partial<RainfallInput> = {}): RainfallInput => ({
     x: 2.5,
     y: 2.5,
     radiusM: 1,
@@ -188,7 +183,7 @@ describe('planRainSchedule（spec 08 §4.2・§4.3）', () => {
     ).toThrow(NoElevationAtRainCenterError)
   })
 
-  it.each<[string, Partial<TimedRainfall>]>([
+  it.each<[string, Partial<RainfallInput>]>([
     ['時間雨量が負', { intensityMmPerH: -1 }],
     ['時間雨量が NaN', { intensityMmPerH: Number.NaN }],
     ['継続時間が負', { durationS: -1 }],

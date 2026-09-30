@@ -3,11 +3,9 @@ import {
   ARROW_MIN_VELOCITY_M_PER_S,
   CFL_ALPHA,
   DEPTH_EPSILON_M,
-  DIFFUSION_C,
   DRY_DEPTH_M,
   DT_MAX_S,
   FLOODED_DEPTH_M,
-  FLOW_THRESHOLD_M,
   FROUDE_MAX,
   GRAVITY,
   MANNING_N,
@@ -24,11 +22,11 @@ describe('許容誤差（tech-spec §6.6）', () => {
   it('表の値と一致する', () => {
     expect(MASS_TOLERANCE_REL).toBe(1e-9)
     expect(SURFACE_ELEVATION_TOLERANCE_M).toBe(0.01)
-    expect(FLOW_THRESHOLD_M).toBe(1e-5)
+    expect(DRY_DEPTH_M).toBe(1e-5)
   })
 
-  it('水深の比較許容値は流れの閾値 θ と同じ値', () => {
-    expect(DEPTH_EPSILON_M).toBe(FLOW_THRESHOLD_M)
+  it('水深の比較許容値は面を通れる水深の閾値と同じ値', () => {
+    expect(DEPTH_EPSILON_M).toBe(DRY_DEPTH_M)
   })
 
   it('質量保存の許容誤差は投入総量に比例する', () => {
@@ -39,7 +37,6 @@ describe('許容誤差（tech-spec §6.6）', () => {
 
 describe('エンジンの定数（spec 03 §3.11）', () => {
   it('表の値と一致する', () => {
-    expect(DIFFUSION_C).toBe(0.5)
     expect(FLOODED_DEPTH_M).toBe(0.01)
     expect(SPILL_TOLERANCE_M).toBe(0.01)
   })

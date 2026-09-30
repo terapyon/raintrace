@@ -8,14 +8,8 @@ export const MASS_TOLERANCE_REL = 1e-9
 /** 平衡状態の水面標高と、体積から求めた理論値との差の許容値（m） */
 export const SURFACE_ELEVATION_TOLERANCE_M = 0.01
 
-/** 水深・水面の比較の許容値 epsilon（m）。流れの閾値 θ と同じ値 */
+/** 水深・水面の比較の許容値 epsilon（m）。面を通れる水深の閾値 DRY_DEPTH_M と同じ値 */
 export const DEPTH_EPSILON_M = 1e-5
-
-/** 流れの閾値 θ（m）。水面差がこれ以下の近傍には流さない（R03-3） */
-export const FLOW_THRESHOLD_M = 1e-5
-
-/** 流量の係数 c。1 セルから 8 近傍へ出る流量の係数の和 k·Σw の値（R03-1） */
-export const DIFFUSION_C = 0.5
 
 /**
  * 面を通れる水の深さ h_f の閾値（m）。これ以下の面の流量は 0（spec 08 §3.4）。R03-3 の θ（水面差の閾値）を

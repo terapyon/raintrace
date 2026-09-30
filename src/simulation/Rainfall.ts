@@ -1,7 +1,7 @@
 /**
  * 降雨の投入先と水深の計算（spec 03 §3.6、R03-4、spec 08 §4）
  */
-import type { TerrainMeta } from './types.ts'
+import type { RainfallInput, TerrainMeta } from './types.ts'
 
 /** 降雨の範囲に有効セルが無く、降雨中心のセルも無効（またはグリッドの外）のとき */
 export class NoElevationAtRainCenterError extends Error {
@@ -20,20 +20,6 @@ export interface CircleRainfall {
   y: number
   radiusM: number
   amountMm: number
-}
-
-/** 時間雨量 × 継続時間の雨（spec 08 §4.1〜§4.3）。Task 5 で types.ts の RainfallInput に移す */
-export interface TimedRainfall {
-  x: number
-  y: number
-  /** 円の半径（m）。wholeRange のときは使わない */
-  radiusM: number
-  /** 時間雨量（mm/h）。durationS = 0 のときは一度に置く雨の量（mm） */
-  intensityMmPerH: number
-  /** 継続時間（s）。0 は開始のときに一度に置く（テスト用） */
-  durationS: number
-  /** 範囲全体に降らせる（R08-4） */
-  wholeRange: boolean
 }
 
 /** 登録した雨（spec 08 §4.2）。エンジンは雨の間、各 step の終わりに cells へ rateMPerS × dt を足す */
@@ -148,7 +134,7 @@ export function planRainfall(
  * durationS = 0 は intensityMmPerH を「一度に置く雨の量（mm）」と読む（計画で決めたこと 5）
  */
 export function planRainSchedule(
-  rain: TimedRainfall,
+  rain: RainfallInput,
   validMask: Uint8Array,
   meta: TerrainMeta,
 ): RainSchedule {

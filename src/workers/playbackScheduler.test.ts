@@ -21,6 +21,12 @@ function stats(step: number, settled: boolean): StepStats {
     settled,
     massError: 0,
     events: [],
+    timeS: step,
+    dtS: 1,
+    raining: false,
+    rainDepthMm: 0,
+    outflowRateM3PerS: 0,
+    stopReason: settled ? 'settled' : null,
   }
 }
 

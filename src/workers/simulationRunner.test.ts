@@ -3,6 +3,7 @@ import type { FrameMessage, WorkerToMainMessage } from '../shared/protocol'
 import { TsSimulationEngine } from '../simulation/TsSimulationEngine'
 import type { TerrainGrid } from '../simulation/terrain/types'
 import { gridFromRows, makeDepression } from '../simulation/testing/terrainGrids.test-support'
+import type { RainfallInput } from '../simulation/types'
 import { TICK_INTERVAL_MS } from './playbackScheduler'
 import { ARROW_INTERVAL_MS, SimulationRunner } from './simulationRunner'
 
@@ -21,7 +22,14 @@ function basin(center: number | null = 0): TerrainGrid {
   ])
 }
 
-const RAIN = { x: 2.5, y: 2.5, radiusM: 1, amountMm: 100 }
+const RAIN: RainfallInput = {
+  x: 2.5,
+  y: 2.5,
+  radiusM: 1,
+  intensityMmPerH: 100,
+  durationS: 0,
+  wholeRange: false,
+}
 
 /**
  * 偽の時計・タイマーと、転送を本当に行う post（structuredClone の transfer で元の ArrayBuffer を切り離す。
@@ -125,7 +133,7 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
     expect(h.frames()).toHaveLength(2)
   })
 
-  it('平衡に達すると自動で止まり、その frame（settled）を送る', () => {
+  it('自動停止（settled）すると自動で止まり、その frame（settled）を送る', () => {
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
     h.runner.handle({ type: 'setSpeed', speed: 4 })
@@ -135,7 +143,7 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
       h.returnAll()
     }
     expect(h.timers.size).toBe(0)
-    expect(h.frames().at(-1)?.stats.settled).toBe(true)
+    expect(h.frames().at(-1)?.stats.stopReason).toBe('settled')
   })
 
   it('setSpeed(4) なら 1 tick に 4 step', () => {
@@ -244,12 +252,21 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     // 北西のセル (1, 1) に雨を置き、1 step 後に中央から南東へ流れる状態を作る
     h.runner.handle({
       type: 'start',
-      rain: { x: 1.5, y: 1.5, radiusM: 0.4, amountMm: 1000 },
+      rain: {
+        x: 1.5,
+        y: 1.5,
+        radiusM: 0.4,
+        intensityMmPerH: 1000,
+        durationS: 0,
+        wholeRange: false,
+      },
       runId: 1,
     })
     h.runner.handle({ type: 'pause' })
-    h.runner.handle({ type: 'step' })
-    h.returnAll()
+    for (let n = 0; n < 3; n++) {
+      h.runner.handle({ type: 'step' })
+      h.returnAll()
+    }
     // 止まっている間の切り替えは、今の状態の frame を送り直して反映する
     h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
     const shown = h.frames().at(-1)?.arrows
@@ -304,7 +321,7 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     expect(h.frames().at(-1)?.arrows).not.toBeNull()
   })
 
-  it('平衡に達した frame も、間引きの間隔にかかわらず矢印を送る', () => {
+  it('自動停止（settled）した frame も、間引きの間隔にかかわらず矢印を送る', () => {
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
     h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
@@ -317,7 +334,7 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     }
     expect(h.timers.size).toBe(0)
     const last = h.frames().at(-1)
-    expect(last?.stats.settled).toBe(true)
+    expect(last?.stats.stopReason).toBe('settled')
     expect(last?.arrows).not.toBeNull()
   })
 

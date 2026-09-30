@@ -58,7 +58,7 @@ describe('outflowBoundaryMask（spec 07 §5.1）', () => {
     ])
   })
 
-  it('内側の無効セルの周り（斜めを含む）が 1 になり、無効セルそのものは 0', () => {
+  it('内側の無効セルの上下左右が 1 になり（斜めは 0。FlowSolver の面の表が 4 近傍。spec 08 §3.7）、無効セルそのものは 0', () => {
     const { validMask, width, height } = grid([
       '#######',
       '#######',
@@ -71,9 +71,9 @@ describe('outflowBoundaryMask（spec 07 §5.1）', () => {
     expect(rowsOf(outflowBoundaryMask(validMask, width, height), width)).toEqual([
       '1111111',
       '1000001',
-      '1011101',
+      '1001001',
       '1010101',
-      '1011101',
+      '1001001',
       '1000001',
       '1111111',
     ])
