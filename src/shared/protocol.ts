@@ -8,8 +8,14 @@ import type { OutflowCells } from '../simulation/outflowCells.ts'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain.ts'
 import type { RainfallInput, StepStats } from '../simulation/types.ts'
 
-/** 再生速度（spec 04 §5.2）。'max' は「最速」（step 数の上限を持たず、時間予算だけで回す） */
-export type PlaybackSpeed = 0.25 | 0.5 | 1 | 2 | 4 | 'max'
+/**
+ * 再生速度（spec 08 §6.1、R08-5）。数は実時間の倍率（1 は実時間、60 は実時間 1 秒でシミュレーションの 1 分）。
+ * 'max' は「最速」（目標を持たず、時間予算だけで回す）
+ */
+export type PlaybackSpeed = 1 | 10 | 60 | 600 | 'max'
+
+/** 既定の再生速度（60 倍。spec 08 §6.1）。Worker のスケジューラと、メインの再生のストアの初期値 */
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 60
 
 /**
  * 再生の命令（spec 04 §5.1）。setArrows は spec の setArrowSpacing の代わり。
@@ -85,7 +91,8 @@ export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
  * arrows は [列, 行, 方位（度。北が 0、時計回り）, 大きさ（m／step）] の並び。null は前の矢印のまま。
  * stats.events は前に送った frame からの越流イベントの累計（見送った frame の分を含む）。
  * runId はこの frame を生んだ直前の start・reset の通し番号（SimulationCommand の説明を参照）。
- * loadTerrain の直後は 0（まだ実行が始まっていない）
+ * loadTerrain の直後は 0（まだ実行が始まっていない）。
+ * simSecondsPerSecond は実際の倍率（実時間 1 秒あたりに進んだシミュレーションの秒。spec 08 §6.1）
  */
 export interface FrameMessage {
   type: 'frame'
@@ -95,6 +102,7 @@ export interface FrameMessage {
   arrows: Float32Array | null
   stats: StepStats
   stepsPerSecond: number
+  simSecondsPerSecond: number
   runId: number
 }
 

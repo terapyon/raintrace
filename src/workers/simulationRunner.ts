@@ -80,7 +80,8 @@ export class SimulationRunner {
       setTimer: ports.setTimer,
       clearTimer: ports.clearTimer,
       step: () => this.step(),
-      sendFrame: (stats, stepsPerSecond) => this.sendFrame(stats, stepsPerSecond),
+      sendFrame: (stats, stepsPerSecond, simSecondsPerSecond) =>
+        this.sendFrame(stats, stepsPerSecond, simSecondsPerSecond),
       // exactOptionalPropertyTypes のため、無いときは項目ごと渡さない
       ...(ports.onStepTime === undefined ? {} : { onStepTime: ports.onStepTime }),
     })
@@ -111,10 +112,11 @@ export class SimulationRunner {
     this.runId = 0
   }
 
-  /** 再生を止め、保留中の frame を捨てる（新しい地点の読み込みの開始、地形の差し替え） */
+  /** 再生を止め、保留中の frame を捨て、時刻を 0 に戻す（開始・Reset・新しい地点の読み込み・地形の差し替え。エンジンも 0 から） */
   suspend(): void {
     this.scheduler.pause()
     this.scheduler.discardPending()
+    this.scheduler.rewind()
   }
 
   handle(command: SimulationCommand): void {
@@ -208,7 +210,11 @@ export class SimulationRunner {
     return stats
   }
 
-  private sendFrame(stats: StepStats, stepsPerSecond: number): boolean {
+  private sendFrame(
+    stats: StepStats,
+    stepsPerSecond: number,
+    simSecondsPerSecond: number,
+  ): boolean {
     const loaded = this.loaded
     if (loaded === null) return true
     const buffer = loaded.free.pop()
@@ -231,6 +237,7 @@ export class SimulationRunner {
         arrows,
         stats: { ...stats, events },
         stepsPerSecond,
+        simSecondsPerSecond,
         runId: this.runId,
       },
       transfer,

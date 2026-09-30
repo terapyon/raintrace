@@ -98,6 +98,7 @@ export function frameMessage(
     arrows: null,
     stats: statsAt(step),
     stepsPerSecond: 60,
+    simSecondsPerSecond: 0,
     runId: 1,
     ...overrides,
   }

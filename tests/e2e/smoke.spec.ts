@@ -126,12 +126,12 @@ test('Button・ToggleButton の文字が大文字にならない（単位の m�
   // 戻っていても要素は見つかる。実際に見える文字は innerText で確かめる（toHaveText・textContent は
   // CSS の text-transform を反映しないため使えない）
   const rangeButton = page.getByRole('button', { name: strings.rainfall.rangeSizeValue(250) })
-  const speedButton = page.getByRole('button', { name: strings.playback.speedValue(0.25) })
+  const speedButton = page.getByRole('button', { name: strings.playback.speedValue(10) })
   const stepButton = page.getByRole('button', { name: strings.playback.step })
   await expect(rangeButton).toBeVisible()
   await expect(speedButton).toBeVisible()
   await expect(stepButton).toBeVisible()
   expect(await rangeButton.innerText()).toBe(strings.rainfall.rangeSizeValue(250))
-  expect(await speedButton.innerText()).toBe(strings.playback.speedValue(0.25))
+  expect(await speedButton.innerText()).toBe(strings.playback.speedValue(10))
   expect(await stepButton.innerText()).toBe(strings.playback.step)
 })

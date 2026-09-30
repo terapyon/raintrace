@@ -366,7 +366,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     const c0 = await outflowCount(page, clip)
     // 再生の速さと競争しないよう、開始してすぐ一時停止し、あとは「1 step 進める」で決まった量だけ進める
     // （Task 9 のレビューの修正ラウンド 1）。step が同じなら画素数も同じになる（実測）
-    await page.getByRole('button', { name: strings.playback.speedValue(0.25), exact: true }).click()
+    await page.getByRole('button', { name: strings.playback.speedValue(1), exact: true }).click()
     await startAndPauseAtOnce(page)
     await expect(page.getByRole('button', { name: strings.playback.resume })).toBeVisible()
     let step = await settledStep(page)

@@ -6,10 +6,10 @@ const stats = (step: number): DisplayStats =>
   displayStats({ step, totalWater: 31.4, storedWater: 31.4, maxDepth: 0.1, floodedArea: 300 })
 
 describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () => {
-  it('既定は idle・1x・統計なし', () => {
+  it('既定は idle・60 倍・統計なし', () => {
     expect(createSimulationStore().getState()).toMatchObject({
       status: 'idle',
-      speed: 1,
+      speed: 60,
       stats: null,
       stepsPerSecond: 0,
       spills: [],
@@ -55,7 +55,7 @@ describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () =
 
   it('reset で統計・越流・エラーを消す。速度は残す', () => {
     const store = createSimulationStore()
-    store.getState().setSpeed(4)
+    store.getState().setSpeed(600)
     store.getState().started()
     store.getState().setStats(stats(5), 58)
     store
@@ -64,7 +64,7 @@ describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () =
     store.getState().reset()
     expect(store.getState()).toMatchObject({
       status: 'idle',
-      speed: 4,
+      speed: 600,
       stats: null,
       stepsPerSecond: 0,
       spills: [],

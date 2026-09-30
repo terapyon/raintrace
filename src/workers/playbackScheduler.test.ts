@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import type { PlaybackSpeed } from '../shared/protocol'
-import type { StepStats } from '../simulation/types'
-import { PlaybackScheduler, TICK_INTERVAL_MS } from './playbackScheduler'
+import { DEFAULT_PLAYBACK_SPEED, type PlaybackSpeed } from '../shared/protocol'
+import type { StepStats, StopReason } from '../simulation/types'
+import { PlaybackScheduler, TICK_BUDGET_MS, TICK_INTERVAL_MS } from './playbackScheduler'
 
 interface Options {
+  /** 1 step で進める偽の時計（ms） */
   stepMs?: number
-  settleAt?: number
+  /** 1 step の dt（シミュレーションの秒） */
+  dtS?: number
+  /** この step 数で自動停止する */
+  stopAt?: number
+  stopReason?: StopReason
   buffers?: number
   speed?: PlaybackSpeed
 }
 
-function stats(step: number, settled: boolean): StepStats {
+function stats(step: number, timeS: number, stopReason: StopReason | null): StepStats {
   return {
     step,
     totalWater: 0,
@@ -18,34 +23,42 @@ function stats(step: number, settled: boolean): StepStats {
     outflowWater: 0,
     maxDepth: 0,
     floodedArea: 0,
-    settled,
+    settled: stopReason === 'settled',
     massError: 0,
     events: [],
-    timeS: step,
+    timeS,
     dtS: 1,
     raining: false,
     rainDepthMm: 0,
     outflowRateM3PerS: 0,
-    stopReason: settled ? 'settled' : null,
+    stopReason,
   }
 }
 
 /**
- * 偽の時計とタイマー。step は時計を stepMs 進め、settleAt 回目で settled を返す。
- * frame は buffers 枚まで送れ、returnBuffer で 1 枚戻る
+ * 偽の時計とタイマー。step は時計を stepMs 進め、シミュレーションの時刻を dtS 進め、stopAt 回目で stopReason を返す。
+ * frame は buffers 枚まで送れ、returnBuffer で 1 枚戻る。restartEngine はエンジンの reset（時刻 0 から）の代わり
  */
 function harness({
-  stepMs = 1,
-  settleAt = Number.POSITIVE_INFINITY,
+  stepMs = 0,
+  dtS = 1,
+  stopAt = Number.POSITIVE_INFINITY,
+  stopReason = 'settled',
   buffers = Number.POSITIVE_INFINITY,
-  speed = 1,
+  speed = DEFAULT_PLAYBACK_SPEED,
 }: Options = {}) {
   const clock = { now: 0 }
   let steps = 0
+  let simTime = 0
   let free = buffers
   let nextId = 1
   const timers = new Map<number, { at: number; run: () => void }>()
-  const frames: { step: number; settled: boolean; stepsPerSecond: number }[] = []
+  const frames: {
+    step: number
+    stopReason: StopReason | null
+    stepsPerSecond: number
+    simSecondsPerSecond: number
+  }[] = []
   const stepsPerTick: number[] = []
   const scheduler = new PlaybackScheduler({
     now: () => clock.now,
@@ -60,12 +73,13 @@ function harness({
     step: () => {
       clock.now += stepMs
       steps++
-      return stats(steps, steps >= settleAt)
+      simTime += dtS
+      return stats(steps, simTime, steps >= stopAt ? stopReason : null)
     },
-    sendFrame: (s, stepsPerSecond) => {
+    sendFrame: (s, stepsPerSecond, simSecondsPerSecond) => {
       if (free <= 0) return false
       free--
-      frames.push({ step: s.step, settled: s.settled, stepsPerSecond })
+      frames.push({ step: s.step, stopReason: s.stopReason, stepsPerSecond, simSecondsPerSecond })
       return true
     },
   })
@@ -88,6 +102,7 @@ function harness({
     timers,
     clock,
     steps: () => steps,
+    simTime: () => simTime,
     ticks: (n: number) => {
       for (let k = 0; k < n; k++) tick()
     },
@@ -95,49 +110,83 @@ function harness({
       free++
       scheduler.bufferReturned()
     },
+    restartEngine: () => {
+      steps = 0
+      simTime = 0
+    },
   }
 }
 
-describe('PlaybackScheduler: 速度（spec 04 §5.2、R04-5）', () => {
-  it.each([
-    [1, [1, 1, 1, 1]],
-    [0.5, [0, 1, 0, 1]],
-    [0.25, [0, 0, 0, 1, 0, 0, 0, 1]],
-    [2, [2, 2]],
-    [4, [4, 4]],
-  ] as const)(
-    '%s x の 1 tick あたりの step 数（端数は次の tick へ繰り越す）',
-    (speed, expected) => {
-      const h = harness({ speed })
+describe('PlaybackScheduler: 実時間の倍率（spec 08 §6.1、R08-5）', () => {
+  it.each([1, 10, 60, 600] as const)(
+    '%s 倍: 実時間 1 秒（60 tick）で、シミュレーションはおよそ倍率の秒だけ進む（越えるのは最大 1 step の dt）',
+    (speed) => {
+      const dtS = 0.25
+      const h = harness({ speed, dtS })
       h.scheduler.play()
-      h.ticks(expected.length)
-      expect(h.stepsPerTick).toEqual(expected)
+      h.ticks(60)
+      expect(h.simTime()).toBeGreaterThanOrEqual(speed - dtS)
+      expect(h.simTime()).toBeLessThanOrEqual(speed + dtS)
     },
   )
 
-  it('速度を変えると、それまでの端数は捨てる', () => {
-    const h = harness({ speed: 0.25 })
+  it('play の直後の最初の tick は 1 tick 分（1/60 秒）の実時間を進めたとみなし、1 step 以上回す（計画で決めたこと 17）', () => {
+    const h = harness({ speed: 1, dtS: 1 })
     h.scheduler.play()
+    h.ticks(1)
+    expect(h.stepsPerTick).toEqual([1])
+  })
+
+  it('目標を越える 1 step は許し、越えた分は次の tick から差し引く（実時間の再生で dt 1 秒なら約 1 秒に 1 step）', () => {
+    const h = harness({ speed: 1, dtS: 1 })
+    h.scheduler.play()
+    h.ticks(59)
+    expect(h.steps()).toBe(1)
     h.ticks(3)
-    h.scheduler.setSpeed(0.5)
+    expect(h.steps()).toBe(2)
+  })
+
+  it('速度を変えると、目標を今の時刻に戻す（越えた分・貯めた分を捨てる。Review Focus 3）', () => {
+    const h = harness({ speed: 'max', stepMs: 1, dtS: 1 })
+    h.scheduler.play()
     h.ticks(2)
-    expect(h.stepsPerTick).toEqual([0, 0, 0, 0, 1])
+    const before = h.simTime()
+    h.scheduler.setSpeed(1)
+    h.ticks(1)
+    // 1 倍に切り替えた直後の tick は、1/60 秒ぶんの目標で 1 step だけ
+    expect(h.simTime() - before).toBe(1)
+  })
+
+  it('rewind で時刻と目標を 0 に戻す（開始・Reset・地形の差し替え。前の実行の目標で一気に進まない。Review Focus 2）', () => {
+    const h = harness({ speed: 60, dtS: 1 })
+    h.scheduler.play()
+    h.ticks(10)
+    expect(h.simTime()).toBeGreaterThan(5)
+    h.scheduler.pause()
+    h.scheduler.rewind()
+    h.restartEngine()
+    h.scheduler.play()
+    h.ticks(1)
+    // 60 倍の最初の tick は目標 1 秒なので 1 step（dt 1 秒）。rewind しないと前の実行の時刻が目標に残る
+    expect(h.stepsPerTick.at(-1)).toBe(1)
   })
 })
 
 describe('PlaybackScheduler: 時間予算', () => {
-  it('12ms を使い切ったら打ち切る。上限に届かなかった分は次の tick へ繰り越さない', () => {
-    const h = harness({ speed: 4, stepMs: 5 })
+  it('12ms を使い切ったら打ち切る。目標に届かなかった分は次の tick へ繰り越さない', () => {
+    // 600 倍は 1 tick に 10 秒の目標。1 step 5ms なので 3 step で予算を使い切る
+    const h = harness({ speed: 600, stepMs: 5, dtS: 1 })
     h.scheduler.play()
-    h.ticks(3)
-    expect(h.stepsPerTick).toEqual([3, 3, 3])
+    h.ticks(2)
+    expect(h.stepsPerTick).toEqual([3, 3])
+    expect(h.simTime()).toBe(6)
   })
 
-  it('「最速」は上限を持たず、時間予算だけで回す', () => {
+  it('「最速」は目標を持たず、時間予算だけで回す', () => {
     const h = harness({ speed: 'max', stepMs: 1 })
     h.scheduler.play()
     h.ticks(2)
-    expect(h.stepsPerTick).toEqual([12, 12])
+    expect(h.stepsPerTick).toEqual([TICK_BUDGET_MS, TICK_BUDGET_MS])
   })
 
   it('1 step が予算を超えても、1 tick に少なくとも 1 step は回す', () => {
@@ -148,7 +197,7 @@ describe('PlaybackScheduler: 時間予算', () => {
   })
 
   it('次の tick は、1/60 秒からその tick の所要時間を引いた後。所要時間が 1/60 秒を超えたらすぐ', () => {
-    const fast = harness({ stepMs: 5 })
+    const fast = harness({ speed: 60, stepMs: 5, dtS: 1 })
     fast.scheduler.play()
     fast.ticks(1)
     expect([...fast.timers.values()][0]?.at).toBeCloseTo(TICK_INTERVAL_MS, 9)
@@ -158,13 +207,27 @@ describe('PlaybackScheduler: 時間予算', () => {
     expect([...slow.timers.values()][0]?.at).toBe(20)
   })
 
-  it('実行速度（step／秒）を 1 秒の窓で測り、frame に付ける', () => {
-    const h = harness({ stepMs: 0 })
+  it('実行速度（step／秒）と実際の倍率（シミュレーションの秒／実時間の秒）を 1 秒の窓で測り、frame に付ける', () => {
+    // 60 倍・dt 0.5 秒: 1 tick に 2 step、1 秒に約 120 step・約 60 秒（最初の窓は play の直後の 1 tick 分を含むので
+    // 61 tick ぶん。窓の端の丸めで 1 tick 前後する）
+    const h = harness({ speed: 60, dtS: 0.5 })
     h.scheduler.play()
     h.ticks(70)
-    expect(h.scheduler.stepsPerSecond).toBeGreaterThan(59)
-    expect(h.scheduler.stepsPerSecond).toBeLessThan(62)
+    expect(h.scheduler.stepsPerSecond).toBeGreaterThan(115)
+    expect(h.scheduler.stepsPerSecond).toBeLessThan(125)
+    expect(h.scheduler.simSecondsPerSecond).toBeGreaterThan(58)
+    expect(h.scheduler.simSecondsPerSecond).toBeLessThan(63)
     expect(h.frames.at(-1)?.stepsPerSecond).toBe(h.scheduler.stepsPerSecond)
+    expect(h.frames.at(-1)?.simSecondsPerSecond).toBe(h.scheduler.simSecondsPerSecond)
+  })
+
+  it('計算が追いつかないときの実際の倍率は、倍率より小さい（誤りにはしない。spec 08 §6.1）', () => {
+    // 600 倍・1 step 5ms・dt 1 秒: 1 tick に 3 step しか回らず、1 秒に約 180 秒しか進まない
+    const h = harness({ speed: 600, stepMs: 5, dtS: 1 })
+    h.scheduler.play()
+    h.ticks(70)
+    expect(h.scheduler.simSecondsPerSecond).toBeGreaterThan(150)
+    expect(h.scheduler.simSecondsPerSecond).toBeLessThan(200)
   })
 })
 
@@ -178,11 +241,11 @@ describe('PlaybackScheduler: frame（tech-spec §5.2）', () => {
     expect(h.frames.map((f) => f.step)).toEqual([1, 3])
   })
 
-  it('step の無い tick（0.25x の 3 tick）では frame を送らない', () => {
-    const h = harness({ speed: 0.25 })
+  it('step の無い tick（実時間・dt 1 秒の 2〜59 tick 目）では frame を送らない', () => {
+    const h = harness({ speed: 1, dtS: 1 })
     h.scheduler.play()
-    h.ticks(3)
-    expect(h.frames).toEqual([])
+    h.ticks(10)
+    expect(h.frames.map((f) => f.step)).toEqual([1])
   })
 
   it('discardPending で保留中の frame を捨てる（reset・地形の差し替え）', () => {
@@ -195,21 +258,26 @@ describe('PlaybackScheduler: frame（tech-spec §5.2）', () => {
   })
 })
 
-describe('PlaybackScheduler: 平衡での自動停止', () => {
-  it('settled の step で止まり、タイマーを残さない。その frame はバッファが返却され次第送る', () => {
-    const h = harness({ buffers: 0, settleAt: 3 })
-    h.scheduler.play()
-    h.ticks(10)
-    expect(h.steps()).toBe(3)
-    expect(h.scheduler.isRunning).toBe(false)
-    expect(h.timers.size).toBe(0)
-    expect(h.frames).toEqual([])
-    h.returnBuffer()
-    expect(h.frames).toEqual([{ step: 3, settled: true, stepsPerSecond: 0 }])
-  })
+describe('PlaybackScheduler: 自動停止（spec 08 §3.9・§6.1）', () => {
+  it.each(['settled', 'cap'] as const)(
+    '%s の step で止まり、タイマーを残さない。その frame はバッファが返却され次第送る',
+    (reason) => {
+      const h = harness({ buffers: 0, stopAt: 3, stopReason: reason })
+      h.scheduler.play()
+      h.ticks(10)
+      expect(h.steps()).toBe(3)
+      expect(h.scheduler.isRunning).toBe(false)
+      expect(h.timers.size).toBe(0)
+      expect(h.frames).toEqual([])
+      h.returnBuffer()
+      expect(h.frames).toEqual([
+        { step: 3, stopReason: reason, stepsPerSecond: 0, simSecondsPerSecond: 0 },
+      ])
+    },
+  )
 
-  it('1 tick の途中で settled になったら、その tick の残りの step を回さない', () => {
-    const h = harness({ speed: 4, settleAt: 2 })
+  it('1 tick の途中で止まったら、その tick の残りの step を回さない', () => {
+    const h = harness({ speed: 600, stopAt: 2 })
     h.scheduler.play()
     h.ticks(2)
     expect(h.stepsPerTick).toEqual([2])
@@ -218,7 +286,7 @@ describe('PlaybackScheduler: 平衡での自動停止', () => {
 
 describe('PlaybackScheduler: 一時停止と Step', () => {
   it('pause でタイマーを外し、play で再開する', () => {
-    const h = harness()
+    const h = harness({ speed: 60, dtS: 1 })
     h.scheduler.play()
     h.ticks(2)
     h.scheduler.pause()
@@ -230,7 +298,7 @@ describe('PlaybackScheduler: 一時停止と Step', () => {
     expect(h.steps()).toBe(3)
   })
 
-  it('stepOnce は一時停止中だけ 1 step 進めて frame を送る。再生中は何もしない', () => {
+  it('stepOnce は一時停止中だけ 1 step（その時の dt）進めて frame を送る。再生中は何もしない', () => {
     const h = harness()
     h.scheduler.stepOnce()
     expect(h.steps()).toBe(1)
@@ -239,53 +307,65 @@ describe('PlaybackScheduler: 一時停止と Step', () => {
     h.scheduler.stepOnce()
     expect(h.steps()).toBe(1)
   })
+
+  it('一時停止中の Step で進んだ時刻から再開する（目標は再開の時刻から数える）', () => {
+    const h = harness({ speed: 1, dtS: 1 })
+    for (let n = 0; n < 5; n++) h.scheduler.stepOnce()
+    h.scheduler.play()
+    h.ticks(1)
+    // 目標は 5 + 1/60 秒。時刻 5 から 1 step で 6
+    expect(h.simTime()).toBe(6)
+  })
 })
 
-describe('PlaybackScheduler: 止めたら実行速度を 0 に戻す（Step・Reset・平衡の frame に古い値を載せない）', () => {
+describe('PlaybackScheduler: 止めたら実行速度と実際の倍率を 0 に戻す', () => {
   it('pause で 0 にし、その後の Step の frame も 0', () => {
-    const h = harness({ stepMs: 0 })
+    const h = harness({ speed: 60, dtS: 0.5 })
     h.scheduler.play()
     h.ticks(70)
-    expect(h.scheduler.stepsPerSecond).toBeGreaterThan(59)
+    expect(h.scheduler.stepsPerSecond).toBeGreaterThan(100)
     h.scheduler.pause()
     expect(h.scheduler.stepsPerSecond).toBe(0)
+    expect(h.scheduler.simSecondsPerSecond).toBe(0)
     h.scheduler.stepOnce()
     expect(h.frames.at(-1)?.stepsPerSecond).toBe(0)
+    expect(h.frames.at(-1)?.simSecondsPerSecond).toBe(0)
   })
 
   it('再開（play）の最初の 1 秒の frame は、前の再生の値ではなく 0', () => {
-    const h = harness({ stepMs: 0 })
+    const h = harness({ speed: 60, dtS: 0.5 })
     h.scheduler.play()
     h.ticks(70)
     h.scheduler.pause()
     h.scheduler.play()
     h.ticks(1)
     expect(h.scheduler.stepsPerSecond).toBe(0)
-    expect(h.frames.at(-1)?.stepsPerSecond).toBe(0)
+    expect(h.frames.at(-1)?.simSecondsPerSecond).toBe(0)
   })
 
-  it('平衡で自動で止まったら 0 にし、平衡の frame にも 0 を載せる', () => {
-    const h = harness({ stepMs: 0, settleAt: 100 })
+  it('自動停止したら 0 にし、停止の frame にも 0 を載せる', () => {
+    const h = harness({ speed: 60, dtS: 0.5, stopAt: 200 })
     h.scheduler.play()
     h.ticks(99)
-    expect(h.frames.at(-1)?.stepsPerSecond).toBeGreaterThan(59)
+    expect(h.frames.at(-1)?.stepsPerSecond).toBeGreaterThan(100)
     h.ticks(1)
     expect(h.scheduler.isRunning).toBe(false)
-    expect(h.scheduler.stepsPerSecond).toBe(0)
-    expect(h.frames.at(-1)).toEqual({ step: 100, settled: true, stepsPerSecond: 0 })
+    expect(h.frames.at(-1)).toEqual({
+      step: 200,
+      stopReason: 'settled',
+      stepsPerSecond: 0,
+      simSecondsPerSecond: 0,
+    })
   })
 })
 
-describe('PlaybackScheduler: 1 step の所要時間（計測用の onStepTime。spec 06 §3、計画で決めたこと 1）', () => {
-  /**
-   * step ごとに時計を stepMs[k] 進める。onStepTime を渡すかを選べる。play の直後の tick を 1 回だけ回す。
-   * settleAt 回目の step で settled を返す
-   */
+describe('PlaybackScheduler: 1 step の所要時間（計測用の onStepTime。spec 06 §3）', () => {
+  /** step ごとに時計を stepMs[k] 進める。play の直後の tick を 1 回だけ回す。stopAt 回目で自動停止する */
   function timed(
     stepMs: readonly number[],
     speed: PlaybackSpeed,
     withTiming: boolean,
-    settleAt = Number.POSITIVE_INFINITY,
+    stopAt = Number.POSITIVE_INFINITY,
   ) {
     const clock = { now: 0 }
     let nowCalls = 0
@@ -305,7 +385,7 @@ describe('PlaybackScheduler: 1 step の所要時間（計測用の onStepTime。
       step: () => {
         clock.now += stepMs[k % stepMs.length] ?? 1
         k++
-        return stats(k, k >= settleAt)
+        return stats(k, k, k >= stopAt ? 'settled' : null)
       },
       sendFrame: () => true,
       ...(withTiming ? { onStepTime: (ms: number) => times.push(ms) } : {}),
@@ -322,13 +402,13 @@ describe('PlaybackScheduler: 1 step の所要時間（計測用の onStepTime。
     expect(t.times).toEqual([5, 3, 4])
   })
 
-  it('速度 1: ループを上限で抜けた最後の step は、実行速度の窓の now() で閉じる', () => {
+  it('実時間: 目標に届いてループを抜けた最後の step は、実行速度の窓の now() で閉じる', () => {
     const t = timed([7], 1, true)
     expect(t.steps()).toBe(1)
     expect(t.times).toEqual([7])
   })
 
-  it('平衡で止まった tick の最後の step も数える', () => {
+  it('自動停止した tick の最後の step も数える', () => {
     const t = timed([2, 6], 'max', true, 2)
     expect(t.steps()).toBe(2)
     expect(t.times).toEqual([2, 6])
@@ -338,7 +418,7 @@ describe('PlaybackScheduler: 1 step の所要時間（計測用の onStepTime。
     // play 1 + tick の開始 1 + 予算の判定 4 + 実行速度の窓 1 + 次の tick の予約 1 = 8（「最速」・5・3・4 ms）
     expect(timed([5, 3, 4], 'max', true).nowCalls()).toBe(8)
     expect(timed([5, 3, 4], 'max', false).nowCalls()).toBe(8)
-    // play 1 + tick の開始 1 + 予算の判定 1 + 実行速度の窓 1 + 次の tick の予約 1 = 5（速度 1）
+    // play 1 + tick の開始 1 + 予算の判定 1 + 実行速度の窓 1 + 次の tick の予約 1 = 5（実時間）
     expect(timed([7], 1, true).nowCalls()).toBe(5)
     expect(timed([7], 1, false).nowCalls()).toBe(5)
   })

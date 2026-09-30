@@ -1,5 +1,9 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import type { PlaybackSpeed, SimFailureReason } from '../shared/protocol'
+import {
+  DEFAULT_PLAYBACK_SPEED,
+  type PlaybackSpeed,
+  type SimFailureReason,
+} from '../shared/protocol'
 import type { SimulationEvent, StepStats } from '../simulation/types'
 
 export type PlaybackStatus = 'idle' | 'running' | 'paused' | 'settled'
@@ -43,7 +47,7 @@ export type SimulationStore = StoreApi<SimulationState & SimulationActions>
 export function createSimulationStore(): SimulationStore {
   return createStore<SimulationState & SimulationActions>()((set) => ({
     status: 'idle',
-    speed: 1,
+    speed: DEFAULT_PLAYBACK_SPEED,
     stats: null,
     stepsPerSecond: 0,
     spills: [],

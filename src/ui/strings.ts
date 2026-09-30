@@ -90,7 +90,8 @@ export const strings = {
     step: '1 step 進める',
     reset: 'リセット',
     speed: '速度',
-    speedValue: (speed: number) => `${speed}x`,
+    /** 実時間の倍率（spec 08 §6.2）。1 は「実時間」 */
+    speedValue: (speed: number) => (speed === 1 ? '実時間' : `${speed} 倍`),
     max: '最速',
     settled: (step: number) => `平衡に達しました（Step ${step}）`,
     reload: '再読み込み',
