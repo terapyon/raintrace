@@ -96,7 +96,7 @@ build-info/       ビルドの情報（Vite のマニフェスト・チャンク
 ただし**共有可能な URL** は提供する。地図位置とシミュレーション条件を `URLSearchParams` で表現し、`history.replaceState()` で更新する。
 
 ```
-/?lat=35.6812&lon=139.7671&z=17&size=500&mm=100&r=10
+/?lat=35.6812&lon=139.7671&z=17&size=500&mmh=100&dur=60&all=0&r=10
 ```
 
 | パラメータ | 意味 | 既定値 |
@@ -104,12 +104,16 @@ build-info/       ビルドの情報（Vite のマニフェスト・チャンク
 | `lat`, `lon` | 降雨中心（10進度） | なし（未指定なら地点未選択） |
 | `z` | 地図ズーム | 17 |
 | `size` | シミュレーション範囲の一辺（m） | 500 |
-| `mm` | 降雨量（mm） | 100 |
+| `mmh` | 時間雨量（mm/h）。1〜300 の整数（実装 spec 08 §6.4） | 100 |
+| `dur` | 継続時間（分）。10・20・30・60・120・180・360 のどれか | 60 |
+| `all` | `1` なら範囲全体に降らせる、`0` なら円（オフでも `0` を書く） | 0 |
 | `r` | 降雨半径（m） | 10 |
+
+古い URL の `mm`（総量の雨量）は読まない。無いものとして扱い、雨は保存値（無ければ既定）になる。`mm` は次に URL を書くときに消える（実装 spec 08 §6.4、R08-8、N3）。
 
 シミュレーション結果そのものは URL に載せない。同じ URL から同じ初期条件で再現できることのみを保証する。
 
-URL と localStorage（§8.3）の両方にある項目（`size`・`mm`・`r`）は、URL の値を優先する。URL の値は設定に適用するので、localStorage にも保存される（保存値は『最後に使った値』のため。実装 spec 04）。
+URL と localStorage（§8.3）の両方にある項目（`size`・`mmh`・`dur`・`all`・`r`）は、URL の値を優先する。URL の値は設定に適用するので、localStorage にも保存される（保存値は『最後に使った値』のため。実装 spec 04）。
 
 ## 3.4 デプロイ
 
@@ -358,7 +362,7 @@ DemGrid でタイルを結合し、範囲を切り出す   (§7.6)
         ↓
 SimulationEngine.loadTerrain()
         ↓
-addRainfall() → step() ループ
+setRainfall() → step() ループ（雨は t = 0 に登録し、step ごとに投入。実装 spec 08 §4.2）
         ↓
 水深バッファ（Transferable）+ 統計値 → メインスレッド
         ↓
@@ -412,12 +416,14 @@ Phase 1〜4（base-spec §55）は TypeScript + TypedArray で実装する。Rus
 base-spec §22-23 が指定する Active Cell 方式を適用した場合の概算（base-spec の Active Cell は、実装 spec 03 §3.5 で濡れたセルの外接矩形の走査範囲として実装した）:
 
 ```
-全セル総当たり   : 250,000 cells × 8近傍 = 2.0M ops/step
-                   × 60 step/sec         = 120M ops/sec
+全セル総当たり   : 250,000 cells × 面 2（東・南）= 0.5M faces/step
+                   × 60 step/sec              = 30M face-updates/sec
 Active Cell 適用 : 水のある領域のみ（数百〜数万セル）
-                   30,000 × 8 = 240K ops/step
-                   × 60                  = 14.4M ops/sec
+                   30,000 × 2 = 60K faces/step
+                   × 60                       = 3.6M face-updates/sec
 ```
+
+実装 spec 08 で流れの式を 4 近傍の局所慣性式に替えた。1 面あたりの演算（`Math.cbrt` と割り算）は 8 近傍の拡散式の 1 近傍より重く、1 step は今の約 2 倍（実装 spec 08 §7.1）。概算の桁は変わらない。
 
 V8 は単型の `Float32Array` 上のループを十分に最適化するため、Active Cell 方式であれば TypeScript で目標性能に届く公算が高い。また PoC の主目的は base-spec §56 が述べるとおり「DEM から期待した窪地・流路が得られるか」の検証であり、速度ではない。アルゴリズムが固まる前に WASM を導入すると試行錯誤の反復速度が落ちる。
 
@@ -426,55 +432,108 @@ V8 は単型の `Float32Array` 上のループを十分に最適化するため�
 将来の差し替えに備え、エンジンを実装非依存のインターフェースとして定義する。
 
 ```ts
-// src/simulation/types.ts
+// src/simulation/types.ts（実装 spec 08 §5.1）
 export interface TerrainMeta {
-  width: number        // 列数
-  height: number       // 行数
-  cellSizeM: number    // セルの一辺（m）。§7.6
+  /** 列数 */
+  width: number
+  /** 行数 */
+  height: number
+  /** セルの一辺（m）。tech-spec §7.6 */
+  cellSizeM: number
 }
 
+/** 雨（spec 08 §4.1〜§4.3、§5.1）。時間雨量 × 継続時間で、円か範囲全体に降らせる */
 export interface RainfallInput {
-  x: number            // グリッドの北西端から東向きの距離（m）
-  y: number            // グリッドの北西端から南向きの距離（m）
+  /** グリッドの北西端から東向きの距離（m） */
+  x: number
+  /** グリッドの北西端から南向きの距離（m） */
+  y: number
+  /** 円の半径（m）。wholeRange のときは使わない */
   radiusM: number
-  amountMm: number
-}
-
-export interface StepStats {
-  step: number         // 実行済みの step 数（base-spec §33 の「Step N」）
-  totalWater: number   // 累積の投入水量（m³）
-  storedWater: number  // 領域内にある現在の水量（m³）
-  outflowWater: number // 累積の領域外流出量（m³）
-  maxDepth: number     // 最大水深（m）
-  floodedArea: number  // 水深が描画閾値（1cm）以上のセルの面積（m²）
-  settled: boolean     // この step で、θ を超える水面差による流れが無かった（§6.6）
-  massError: number    // totalWater − storedWater − outflowWater（m³）
-  events: SimulationEvent[]  // この step で起きた越流イベント
+  /** 時間雨量（mm/h）。durationS = 0 のときは一度に置く雨の量（mm） */
+  intensityMmPerH: number
+  /** 継続時間（s）。0 は開始のときに一度に置く（テスト用。UI からは選べない） */
+  durationS: number
+  /** 範囲全体に降らせる（R08-4） */
+  wholeRange: boolean
 }
 
 export interface SimulationEvent {
-  type: 'spill'        // 窪地の最低点の水位が spill 標高 − 1cm に達した（base-spec §21）
+  /** 窪地の最低点の水位が spill 標高 − 1cm に達した（base-spec §21） */
+  type: 'spill'
   step: number
+  /** 経過時間（s） */
+  timeS: number
   depressionId: number
   spillElevation: number
 }
 
+/** 自動停止の理由（spec 08 §3.9）。settled は水の動きがほぼ止まった、cap は雨がやんでから上限の時間に達した */
+export type StopReason = 'settled' | 'cap'
+
+export interface StepStats {
+  /** 実行済みの step 数（base-spec §33 の「Step N」） */
+  step: number
+  /** 累積の投入水量（m³） */
+  totalWater: number
+  /** 領域内にある現在の水量 Σ h × A（m³） */
+  storedWater: number
+  /** 累積の領域外流出量（m³） */
+  outflowWater: number
+  /** 最大水深（m） */
+  maxDepth: number
+  /** 水深が描画閾値（1cm）以上のセルの面積（m²） */
+  floodedArea: number
+  /**
+   * 雨が終わっていて、すべての面の流速が停止の流速未満という状態が SETTLE_HOLD_S 続いた（どのセルの水深も
+   * DRY_DEPTH_M 以下ならすぐ。spec 08 §3.9）。雨の間は常に false
+   */
+  settled: boolean
+  /** totalWater − storedWater − outflowWater（m³） */
+  massError: number
+  /** この step で起きた越流イベント */
+  events: SimulationEvent[]
+  /** 経過時間（s）。降雨の開始が 0 */
+  timeS: number
+  /** この step の時間刻み（s） */
+  dtS: number
+  /** この step の終わりの時点で雨が降っている */
+  raining: boolean
+  /** 累積雨量（mm）= 時間雨量 × min(t, T_rain) / 3600。durationS = 0 の雨は置いた量 */
+  rainDepthMm: number
+  /** この step の流出量 ÷ dtS（m³/s）。統計の「流出の速さ」（spec 08 §6.2） */
+  outflowRateM3PerS: number
+  /** 自動停止の理由。止める条件に当たらなければ null（spec 08 §3.9、R08-6） */
+  stopReason: StopReason | null
+}
+
 export interface SimulationEngine {
   loadTerrain(elevation: Float32Array, validMask: Uint8Array, meta: TerrainMeta): void
-  addRainfall(rain: RainfallInput): void
+  /**
+   * 雨を登録する（spec 08 §4.2）。reset の後、最初の step の前（t = 0）に呼ぶ。最初の step の後に呼ぶと Error。
+   * t = 0 での 2 回目は前の登録を置き換える（一度に置いた水はそのまま残る）。
+   * 雨の間は各 step の終わりに投入する。durationS = 0 はここで一度に置く
+   */
+  setRainfall(rain: RainfallInput): void
   step(): StepStats
+  /** 水・流量・経過時間・統計・越流の通知済みの記録を戻し、雨の登録を消す。地形と窪地の一覧は残す */
   reset(): void
   /**
-   * 内部の水深配列（読み取り専用。転送バッファへのコピー元にのみ使う）。
-   * step() のたびに別の配列に入れ替わるので、step の後に呼び直す
+   * 内部の水深配列。呼び出し側は読み取り専用として扱い、転送バッファへのコピー元にのみ使う。
+   * step() のたびに別の配列に入れ替わるので、step() の後は呼び直す
    */
   waterDepth(): Float64Array
   /** 越流イベントの判定に使う窪地（実装 spec 02 の地形解析の結果） */
   setDepressions(list: { id: number; pitIndex: number; spillElevation: number }[]): void
-  /** 現在の状態から計算した、各セルの流出のベクトル（水の流れの矢印用） */
+  /**
+   * 各セルの中心の流速（m/s。x は東、y は南が正。spec 08 §3.10）。水の流れの矢印用。
+   * 戻り値の配列はエンジンが使い回し、次の flowVectors()・loadTerrain で上書きされる。呼び出し側はすぐに読み切る
+   */
   flowVectors(): { x: Float32Array; y: Float32Array }
 }
 ```
+
+`setRainfall` は `reset` の後、最初の `step` の前（t = 0）にだけ受け付け、それより後に呼ぶと Error にする（実装 spec 08 の計画の Task 5 で決めた。途中で雨の強さを変えるには API を改める）。累積の投入水量 `totalWater` は step ごとの足し算ではなく、一度に置いた水の量と、雨の量 `ρ · |S| · A · min(t, T_rain)`（ρ はセルの水深の増える速さ、|S| は雨のセルの数、A はセルの面積、T_rain は雨の終わりの時刻）の和として閉じた式で求める（`TsSimulationEngine.rainVolume`）。雨の終わりの step は dt を切って T_rain に揃えるので、雨が終わった時点の総量は式どおりになる。
 
 TypeScript 実装（`TsSimulationEngine`）と将来の WASM 実装（`WasmSimulationEngine`）が同一インターフェースを満たす。呼び出し側（Worker）は実装を知らない。`FlowSolver.ts` はエンジン内部で 1 step 分の水移動を計算するモジュールであり、外部には公開しない。
 
@@ -482,9 +541,9 @@ base-spec の API 例との対応:
 
 | base-spec | 本書 | 変更理由 |
 |---|---|---|
-| §44 `SimulationConfig` | `TerrainMeta` | `timestep` は持たない。base-spec §33 のとおり step は物理時間と対応しないため |
-| §44 `Rainfall` | `RainfallInput` | 座標系（グリッド北西端からの m）と単位を名前で明示した |
-| §45 `step()` など | 同名のメソッド | 変更なし |
+| §44 `SimulationConfig` | `TerrainMeta` | `timestep` は持たない。dt はエンジンが毎 step 決め（実装 spec 08 §3.3）、`StepStats.dtS` に載せる |
+| §44 `Rainfall` | `RainfallInput` | 座標系（グリッド北西端からの m）と単位を名前で明示した。時間雨量 × 継続時間と、範囲全体の雨（実装 spec 08 §4） |
+| §45 `step()` など | 同名のメソッド | 変更なし。`addRainfall` は `setRainfall`（登録し、step ごとに投入。実装 spec 08 §4.2） |
 | §46 `SimulationResult` | `StepStats` + `waterDepth()` | 水深配列は §5.2 の転送設計で統計値と別経路になるため分けた。統計のフィールド名は base-spec を踏襲 |
 
 ## 6.3 Rust WASM への移行基準（決定）
@@ -496,6 +555,8 @@ base-spec の API 例との対応:
 > - **p95 が 16ms を超える**
 
 実測が上記に届かない限り、TypeScript 実装を維持する。「速そうだから」という理由での導入を認めない。
+
+1 step の時間は dt によらない。step 数は dt（水深で決まる）で決まる（実装 spec 08 §7.3）。基準の値は変えない（実装 spec 08 の N6。08 の実測がこれに当たるかの検討は後続に回す）。
 
 ## 6.4 WASM を採用する場合の方針
 
@@ -523,6 +584,7 @@ base-spec の API 例との対応:
 | 標高 | `Float32Array` | GSI の記録単位は 0.01m。単精度の丸め誤差は標高 4000m でも 0.3mm 未満 |
 | 有効セルマスク | `Uint8Array` | 無効値セルの判定（§7.2） |
 | 水深（Worker 内） | `Float64Array` | 数百万回の水移動で丸め誤差が累積し、質量保存を崩すのを避ける |
+| 面の単位幅流量 `qx`・`qy`（Worker 内） | `Float64Array` | 運動量を step をまたいで持つ。水深と同じく丸め誤差の累積を避ける（実装 spec 08 §3.1） |
 | 水深（描画用の転送バッファ） | `Float32Array` | 表示には単精度で十分。転送量が半分になる |
 | 質量保存の累計値（投入・流出・湛水） | `number`（f64） | 加算の反復による誤差の蓄積を避ける |
 | 中間計算 | `number`（f64） | JavaScript の数値演算は常に倍精度。WASM でも f64 に揃える（§6.4） |
@@ -557,8 +619,23 @@ GSI の標高 PNG は 0.01m 単位で標高を記録している（地理院の�
 |---|---|---|
 | 質量保存の許容誤差 | (初期水量 + 投入水量の累計) × 1e-9 | 各 step での質量保存の検査（§11.3） |
 | 水面標高の数値誤差 | 1cm | 平衡状態の水面標高と、体積から求めた理論値との差（§11.2）。目標の 10cm に対し十分な余裕を取る |
-| 水深の比較許容値（epsilon） | 1e-5 m | 水深・水面の比較の許容値。流れの閾値 θ と同じ値 |
-| 流れの閾値 θ | 1e-5 m | 水面差がこれ以下の近傍には流さない。池の水面は 1 セルあたり最大 θ まで傾いたまま止まりうるので、512 セル幅でも 5mm に収まる値とした（実装 spec 03 §3.4） |
+| 水深の比較許容値（epsilon） | 1e-5 m | 水深・水面の比較の許容値。面を通れる水深の閾値 `DRY_DEPTH_M` と同じ値 |
+| 面を通れる水深の閾値 `DRY_DEPTH_M` | 1e-5 m | 面を通れる水の深さ h_f がこれ以下の面の流量を 0 にする（R03-3 の θ を実装 spec 08 §3.4 で読み替えた）。局所慣性式では池の水面は平らになり、θ の傾きは無くなった |
+
+流れの式の定数（実装 spec 08 §3.12。`src/simulation/constants.ts`）:
+
+| 名前 | 値 | 用途 |
+|---|---|---|
+| `GRAVITY` | 9.81 m/s² | 局所慣性式 |
+| `MANNING_N` | 0.03 | Manning の粗度係数（R08-3。テストは `EngineOptions` で差し替える） |
+| `CFL_ALPHA` | 0.5 | dt = min(DT_MAX_S, α·Δx / max(√(g·h_max), u_max)) |
+| `THETA` | 0.8 | de Almeida ほか（2012）の θ 重み付け |
+| `DT_MAX_S` | 1 s | dt の上限 |
+| `FROUDE_MAX` | 1 | フルード数の上限 |
+| `SETTLE_VELOCITY_M_PER_S` | 0.01 m/s | 自動停止（雨の後、すべての面の流速がこれ未満。R08-6） |
+| `SETTLE_HOLD_S` | 300 s | 自動停止: `SETTLE_VELOCITY_M_PER_S` の条件がこの時間（シミュレーションの時間）続いたら settled。どのセルの水深も `DRY_DEPTH_M` 以下なら続く時間を待たずに settled（実装 spec 08 §3.9。水を一度に置いたときに初めの step で止まる誤りを直すため、計画の Task 8 のレビューで足した。R08-6 の意味は変えない。閉じた盆地の停止は約 300 秒遅れる） |
+| `SETTLE_CAP_S` | 21,600 s | 雨がやんでから止めるまでの上限（6 時間。R08-6）。継続時間 0 の雨・雨なしでは t = 0 から数える |
+| `ARROW_MIN_VELOCITY_M_PER_S` | 0.005 m/s | 水の流れの矢印を出す流速の下限 |
 
 ### 表示
 
@@ -730,10 +807,12 @@ Cloudflare Pages の `_headers` で、CSP などのレスポンスヘッダを�
 
 ```ts
 interface PersistedSettings {
-  schemaVersion: 1
+  schemaVersion: 2
   rainfall: {
-    amountMm: number      // 既定 100
-    radiusM: number       // 既定 10
+    intensityMmPerH: number   // 既定 100。1〜300 の整数（時間雨量）
+    durationMin: 10 | 20 | 30 | 60 | 120 | 180 | 360   // 既定 60（継続時間）
+    radiusM: number           // 既定 10
+    wholeRange: boolean       // 既定 false（範囲全体に降らせる）
   }
   area: {
     sizeM: 250 | 500 | 1000   // 既定 500
@@ -753,7 +832,7 @@ interface PersistedSettings {
 }
 ```
 
-保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。実装 spec 05 から、保存する値は**範囲 500 m での間隔**で、実際の間隔は範囲の一辺に比例させる（1000 m で 2 倍、250 m で半分。保存の形は変えていない）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。`showOutflowCells` は実装 spec 07 で足した任意の項目で、v0.2.0 の保存値には無い。欠けていれば既定の `true` で補い、他の設定（注意事項の了解を含む）を捨てない。型が違えば、ほかの項目と同じく全体を捨てる。形は変わらないので `schemaVersion` は 1 のまま。
+保存する値は上の形そのままとする（zustand の persist の既定の包み `{ state, version }` を外す）。`showFlowVectors` は水の流れの矢印の表示、`flowVectorSpacingM` は水の流れと地形の流向で共通の矢印の間隔（実装 spec 04）。実装 spec 05 から、保存する値は**範囲 500 m での間隔**で、実際の間隔は範囲の一辺に比例させる（1000 m で 2 倍、250 m で半分。保存の形は変えていない）。範囲を小さくしたときは、半径を範囲の半分に収めてから保存する（保存値が常に検証を通る形になる）。`showOutflowCells` は実装 spec 07 で足した任意の項目で、v0.2.0 の保存値には無い。欠けていれば既定の `true` で補い、他の設定（注意事項の了解を含む）を捨てない。型が違えば、ほかの項目と同じく全体を捨てる。形は変わらないので `schemaVersion` は 1 のまま。実装 spec 08 で `rainfall` の形が互換でなく変わったので、`schemaVersion` を 2 に上げた。
 
 ### バージョニング方針（決定）
 
@@ -762,6 +841,8 @@ interface PersistedSettings {
 保存対象は再入力が容易な UI 設定のみであり、失っても利用者の損失が小さい。マイグレーションコードを維持するコストの方が上回る。
 
 schemaVersion のマイグレーションはしない。外した選択肢の値（矢印の間隔 5）だけ 10 に読み替える（R06-11。§3.3・実装 `src/state/persistedSettings.ts` の `clampArrowSpacing`）。
+
+例外として、v1 → v2 は雨量（`amountMm`）だけを既定の時間雨量・継続時間・範囲全体に戻し、半径を含むそれ以外を今の規則で検証して残す（R08-8、N1・N2。`src/state/persistedSettings.ts` の `parsePersistedSettings`）。保存するときは常に v2 の形で書く。08 の後で v0.2.0・07 のビルドに戻すと、v2 の保存値は捨てられ、注意事項がもう一度出る（ユーザーの裁定 N2）。
 
 読み込み時は必ず形状を検証し、不正な値（型不一致、範囲外）が含まれる場合も同様に破棄する。localStorage の内容は改変可能であるため、信頼せずに検証する。
 
@@ -850,8 +931,8 @@ base-spec §37 の構成に従う。
 ## 9.7 地図の印の説明と流出の表示（実装 spec 07）
 
 - **地図の ○**: 青は最低点（範囲の中で標高が最も低い有効セル）、オレンジはあふれ出し点（有意な窪地ごとの spill セル）。クリック（±4 px の矩形で `queryRenderedFeatures`）で説明と数値のポップオーバーを開く。重なった ○ は 1 つのポップオーバーに、最低点を先、あふれ出し点は窪地の id の昇順で並べる。○ の上ではカーソルを指の形にする。3D でも同じ（circle は地形に焼かれず直接描かれる。地形に隠れた ○ は MapLibre の遮蔽の扱いで薄く描かれるが、クリックは当たる）。色は `src/map/overlayColors.ts` の 1 か所に置き、地図と凡例が共有する
-- **水が減る理由**: エンジンに排水の項は無く、水が減るのは範囲の端と無効セル（海・データ欠損）への流出だけ（§6.6、base-spec §18）。統計の「領域外流出量」にツールチップで説明を付け、水深の凡例に「1 cm 未満は表示しない」の注記を置く
-- **流出しているセルの帯**: 「近傍（FlowSolver の近傍の表）にグリッドの外か無効セルを含む有効セル」のマスクを地形の読み込みのときに Worker で 1 回だけ作り（`src/simulation/outflowCells.ts`。地形の解析と同じく `TerrainPayload.outflow` で Transferable として送る）、マスクのセルから範囲の一辺の 1% の帯（多始点の幅優先探索の `nearest`）を広げる。描画のたびに、`nearest` の指すマスクのセルの水深が 1 mm 以上の帯のセルを濃いピンク（#c2185b、不透明度 0.9）で塗る。帯の内側のセルそのものは流出していないので、凡例は「この辺りから範囲の外へ流出中」とする
+- **水が減る理由**: エンジンに排水の項は無く、水が減るのは範囲の端と無効セル（海・データ欠損）への流出だけ（§6.6、base-spec §18）。統計の「領域外流出量」にツールチップで説明を付け、水深の凡例に「1 cm 未満は表示しない」の注記を置く。統計には『流出の速さ』（その時点の 1 時間あたりの量）の行もあり、ツールチップは合計と速さの両方を説明する（実装 spec 08 §6.5）
+- **流出しているセルの帯**: 「上下左右（FlowSolver の 4 近傍の面の表。実装 spec 08 §3.7 で 8 近傍から替わった）にグリッドの外か無効セルを含む有効セル」のマスクを地形の読み込みのときに Worker で 1 回だけ作り（`src/simulation/outflowCells.ts`。地形の解析と同じく `TerrainPayload.outflow` で Transferable として送る（`nearest`・`band` だけ。`mask` は実装 spec 08 §5.3 で送らなくした））、マスクのセルから範囲の一辺の 1% の帯（多始点の幅優先探索の `nearest`）を広げる。描画のたびに、`nearest` の指すマスクのセルの水深が 1 mm 以上の帯のセルを濃いピンク（#c2185b、不透明度 0.9）で塗る。帯の内側のセルそのものは流出していないので、凡例は「この辺りから範囲の外へ流出中」とする
   - 2D は canvas ソース `water-outflow`（2D の水深の直後）。塗るセルが変わった描画だけ転送する
   - 3D は水面の Custom Layer のシェーダで描く（`u_outflowNearest` は R32F に平らな添字、smooth の varying を 0.5 で切る）。3D で canvas の raster を地形に貼ると、RenderToTexture のキャッシュで再生中に更新されない（maplibre-gl-dev.mjs 22990 ほか。spec 07 §5.2）ため
   - 表示の切り替えは `display.showOutflowCells`（§8.3）。性能は `docs/perf/2026-09-29-outflow.md`（R07-6: spec 07 §6 の「差 0.5 fps 以内」は 1 フレームの時間で読む）
@@ -943,11 +1024,14 @@ base-spec §47 の4ケースを必須テストとする。
 
 | ケース | 検証内容 |
 |---|---|
-| 平面 | 完全に平坦な地形で、水面が均等になること |
-| 傾斜面 | 高所から低所へ移動すること。逆流しないこと |
-| 単純窪地 | 窪地に蓄積し、平衡状態で水面が水平になること |
-| 越流 | 水位上昇後、最も低い峠（spill point）から隣接領域へ流れること |
-| 平衡水位 | 閉じた窪地に既知の体積の水を入れ、平衡後の水面標高が体積から求めた理論値と 1cm 以内で一致すること（§6.6） |
+| 平面 | 縁で囲んだ平らな盆地に一度に置いた水が広がり、止めた後の水面の最大と最小の差が 1cm 以内 |
+| 傾斜面 | 水の重心が下り方向へ移る。置いた位置より 1cm 以上高い標高のセルは水を得ない（慣性で上る分を 1cm まで許す） |
+| 単純窪地 | 窪地に蓄積し、止めた後の水面が 1cm 以内で平ら |
+| 越流 | 峠でつながった窪地の一方に容量を超える水を置くと、越流イベントが 1 回だけ出て、もう一方が水を得る |
+| 平衡水位 | 閉じた窪地に既知の体積の水を入れ、止めた後の水面標高が理論値と 1cm 以内で一致すること（§6.6） |
+| 満水との一致 | 十分な水を入れて止めた水面が、4 近傍の Priority-Flood の満水の水面と一致する（池 1cm、池の外 5mm） |
+
+平衡を見るテストは UI の停止（流速 1cm/s）とは別の止め方で回す: 雨の後、流れによる水深の変化の最大が 0.1 mm/h（満水との一致は 3 mm/h）未満になるまで（実装 spec 08 §9.1）。
 
 ## 11.3 質量保存の property-based テスト
 
@@ -958,9 +1042,10 @@ base-spec §48 の質量保存はランダム入力に対する不変条件で�
     |初期水量 + 投入水量 − (現在水量 + 累積流出量)| ≤ (初期水量 + 投入水量) × 1e-9   (§6.6)
 ```
 
-- 地形はランダム生成（平坦、単調傾斜、複数窪地、無効値混在の各パターン）
+- 地形はランダム生成（平坦、単調傾斜、複数窪地、凹凸、1 セルで 3 m 下がる段差、無効値混在の各パターン）。雨は一度に置くものと継続時間のあるもの
 - 各 step 後に不変条件を検査する
 - 反例が見つかった場合、fast-check の縮小機能により最小反例を得る
+- ほかの性質: 非負・有限（水深と面の流量）、静水の保存（標高と水面を 1/256 m の格子に載せ、ビット単位で変わらない）、時間刻み（dt ≤ DT_MAX_S、dt ≤ α·Δx/√(g·h_max)、雨の終わりをまたがない）、決定性、走査範囲（bbox と full のビット単位の一致、範囲の外の水深と流量が 0）。03 の局所的な最大値原理は局所慣性式では成り立たないので外した（実装 spec 08 §9.2）
 
 このテストは CI の必須ゲートとする。失敗した場合マージを許可しない。
 
@@ -971,12 +1056,13 @@ WebGL の描画結果に対するスクリーンショット比較は環境差�
 1. アプリが起動し、地図タイルが読み込まれる
 2. 地図をクリックすると降雨マーカーが表示される
 3. DEM 情報バッジに使用中の DEM が表示される
-4. 既定の設定（100mm・10m）で Start を押すと、投入水量が 31.4 m³ になり、Step が進む
-5. Reset を押すと統計値が 0 に戻る
+4. 既定の設定（100 mm/h・1 時間・10 m）で開始し、速度を「最速」にすると、経過時間が進み「降雨中」と出る。雨が終わると「降雨終了」になり、投入水量が 31.4 m³ になる
+5. Reset を押すと投入水量・経過時間・Step が 0 に戻り、もう一度開始すると新しい実行が 0 から進む
 6. 免責ダイアログが初回に表示され、了解後は再表示されない
-7. `?mm=50&r=20` を付けて開くと入力欄にその値が入る
+7. `?mmh=50&dur=120&all=0&r=20` を付けて開くと入力欄にその値が入る。古い `?mm=50&r=20` では雨は既定で半径は 20 m、URL から `mm` が消える
 8. 範囲内のクリックでセル情報が開き、『ここを降雨中心にする』で範囲を読み込み直す
-9. キーボードだけで雨量・半径の入力から Start・Pause・Reset まで操作できる（実装 spec 04 §11.2）
+9. キーボードだけで時間雨量・継続時間・範囲全体・半径の入力から開始・一時停止・リセットまで操作できる
+10. 範囲全体の雨をオンにすると半径の欄が無効になり、開始すると投入水量が範囲の有効セルの面積 × 雨量で増えていく
 
 実装 spec 05 の 3D は `tests/e2e/view3d.spec.ts` の 8 件で確かめる。3D の状態は §5.3 の印（`data-view3d`・`data-view3d-framed`・`data-water-builds`・`data-map-zoom`・`data-map-pitch`・`data-drawn-tile-zoom`・`data-visible-overlay-layers`）で待ち、判定する。
 
@@ -1213,7 +1299,9 @@ Renovate は GitHub App としてリポジトリへの書き込み権限を持�
 | 地点クリックから 2D の地形表示まで | < 3秒 | キャッシュなし、一般的な回線 |
 | 3D に切り替えてから最初の 3D のフレームまで | < 3秒 | 同上。three のチャンク（動的 import、gzip 126.5 KB）の取得を含む。3D は利用者が選んで入るものになったので、クリックからの時間と分けた（実装 spec 06 §5） |
 | メインスレッドの最長ブロック時間 | < 50ms | 全操作を通じて |
-| 平衡までの時間 | 幅 30 セル程度の池（半径 10m・100mm）は 60 秒以内、幅 100 セル規模の池（半径 100m・100mm）は 5 分以内 | 「最速」（R04-5）で測る。1x は step 数 ÷ 60 で報告するが、目標にしない。届かなければ fill-spill-merge 法の spec を起こす（2026-09-17 の裁定 R06-6。R06-3 の 1x の目標を改めた） |
+| 開始から停止までの時間 | 基準を置かない（記録のみ。実装 spec 08 の R08-9） | 「最速」で、3 地点の 500 m・100 mm/h × 1 時間（半径 10 m・100 m）と範囲全体。06 の平衡の目標（R06-6）は、この記録に置き換えた。実測は `docs/perf/2026-09-30-physical-time.md` |
+
+実装 spec 08 の実測（記録のみ。R08-9。2026-09-30〜10-01、実 GPU・headless の Chrome、固定の DEM）: 1 step の中央値は 500 m・全面を濡らす雨で 21.10〜21.70 ms（p95 25.50〜32.40 ms。3 地点）、1000 m で 80.30・84.30 ms（綾瀬・渋谷。みなとみらいの 1000 m は窓の途中で停止に達し、4.00 ms と軽いので並べない）。範囲全体の雨の 1 step の中央値は、500 m で 19.70〜20.50 ms（3 地点）、1000 m で 96.20 ms（渋谷、p95 110.30 ms）。1 step の目標 8 ms・p95 16 ms は変えない（N6）。08 の実測はこの目標と §6.3 の WASM の移行基準（中央値 8 ms）を超えるが、08 では判定しない（N6。後続への引き継ぎは実装 spec 08 §14）。Node のベンチマークでは、1 step の中央値は 08 の前（8 近傍の拡散式）の 1.95 倍（半径 10 m）・2.16 倍（半径 100 m）。開始から停止までは、半径 10 m で 43.0〜118.2 秒、半径 100 m で 1,432.3〜2,596.7 秒（約 24〜43 分）で、停止の理由は 6 通りすべて `cap`（雨がやんでから 6 時間。`settled` は 0 件）。範囲全体の雨は、500 m の綾瀬が 2,602.2 秒（約 43 分）で `cap` に達し、渋谷・みなとみらいの 500 m は実時間 60 分の打ち切りでシミュレーションの 3:10:58・3:28:53 まで、渋谷の 1000 m は 0:56:50 までしか進まなかった。60 倍での実際の倍率は、半径 10 m で 60.0（3 地点）、範囲全体で 6.4〜10.7。詳細は `docs/perf/2026-09-30-physical-time.md`
 
 05 の地形のタイルの生成はメインスレッド、hillshade の既定は auto（淡色・標準の地図で付け、写真の地図では付けない。hillshade は地形と別の raster-dem のソースで `tileSize: 512`。§5.5）。本番のタイルの経路の測り直し（実装 spec 05 の計画 Task 6、実 GPU・headless）で決めた。
 
@@ -1401,17 +1489,19 @@ Worker:
   validMask      Uint8Array(250,000)    = 0.25 MB
   water          Float64Array(250,000)  = 2.0  MB
   activeCells    Int32Array(250,000)    = 1.0  MB
+  qx・qy         Float64Array((N+1)·N) × 2 = 約 4 MB（500 m）・約 17 MB（1000 m）
+  hfx・hfy       Float64Array((N+1)·N) × 2 = 約 4 MB（500 m）・約 17 MB（1000 m）
 Worker ⇄ メイン:
   転送用 × 2     Float32Array(250,000)  = 2.0  MB
 メインスレッド:
   elevation と validMask のコピー       = 1.25 MB
 ─────────────────────────────────────────────────
-                                          約 7.5 MB
+                                          約 15.5 MB
 ```
 
-1000m 四方（1,000,000 セル）を選択した場合でも約 30MB であり、実用範囲に収まる。
+1000m 四方（1,000,000 セル）を選択した場合でも約 64MB であり、実用範囲に収まる。面の配列 `qx`・`qy`（単位幅流量）と `hfx`・`hfy`（面を通れる水深）は実装 spec 08 で足した（`src/simulation/FlowSolver.ts` の面の表。ほかに面の種類 `kindX`・`kindY` の Uint8Array が約 0.5 MB〈500 m〉）。
 
-spec 07 は上の表に、地形ごと（一辺 N セル）の配列をメインスレッドに足す: 流出の帯の最寄りのマスクのセルの添字 `nearest`（Int32Array、4N² B）と帯のセルの添字 `band`（Int32Array、帯のセル数だけ。N² よりずっと小さい）、Worker で作る境界のマスク `mask`（Uint8Array、N² B）も転送されてここに残る（`OutflowCells`。tech-spec §9.7 の `TerrainPayload.outflow`）。3D はさらに `nearest` を Float32Array に複製した分（4N² B。`outflowNearestData`）と、そのテクスチャ（R32F）を持つ。1000 m は N ≈ 1031 で、4N² B はいずれも約 4.25 MB。
+spec 07 は上の表に、地形ごと（一辺 N セル）の配列をメインスレッドに足す: 流出の帯の最寄りのマスクのセルの添字 `nearest`（Int32Array、4N² B）と帯のセルの添字 `band`（Int32Array、帯のセル数だけ。N² よりずっと小さい）（`OutflowCells`。tech-spec §9.7 の `TerrainPayload.outflow`）。Worker で作る境界のマスク `mask`（Uint8Array、N² B）は、実装 spec 08 §5.3 で送らなくした（1000 m で約 1 MB 減る）。3D はさらに `nearest` を Float32Array に複製した分（4N² B。`outflowNearestData`）と、そのテクスチャ（R32F）を持つ。1000 m は N ≈ 1031 で、4N² B はいずれも約 4.25 MB。
 
 ## 14.4 MapLibre 6.6.0 の内部への依存（版を上げるときの確認点）
 
@@ -1541,8 +1631,19 @@ MapLibre のアトリビューションコントロールに含める形で実�
 | §60 技術スタック候補 | §1 | React・MUI・Zustand などを追加して確定 |
 | §55 Phase 1 の「3D terrain」 | 実装 spec 02・S・05 | Phase 1 は 2D 表示までとし、3D はスパイク S と実装 spec 05 に移す |
 | §55 Phase 2 の「水の平衡計算」 | 実装 spec 03 | 別のアルゴリズムを持たず、動的モデルを収束まで回して得る |
-| §55 Phase 4 の「降雨時間」 | 実装 spec 04 | PoC では瞬時の投入のみとし、降雨時間は後回しにする |
-| §16 の threshold | 実装 spec 03 | 流れの閾値を 1e-5 m と定める（§6.6） |
+| §55 Phase 4 の「降雨時間」 | 実装 spec 04 → 08 | 04 は瞬時の投入のみとした（R04-3）。実装 spec 08 で継続時間の間の降雨を実装し、差異を解消した |
+| §16 の threshold | 実装 spec 03 → 08 | 03 は水面差の閾値 1e-5 m（R03-3）。08 で面を通れる水深の閾値 DRY_DEPTH_M（1e-5 m）に読み替えた（§6.6） |
+| §2 正確な流速・流体力学的乱流を考慮しない | 実装 spec 08 | 近似の流速を計算する（局所慣性式）。「正確な流速」を保証しないことは変わらない |
+| §11 降雨量から水量への変換 | 実装 spec 08 | 水量 = 面積 × 時間雨量 × 継続時間 |
+| §12 均一降雨（時間変化降雨は将来） | 実装 spec 08 | 継続時間の間、一定の強さで降り続ける。強さが変わる雨は将来のまま |
+| §13〜§16 mass-conserving grid model・8 近傍・flow ∝ ΔH・物理的な流速まで再現しない | 実装 spec 08 | 4 近傍の局所慣性式（Manning の摩擦）。質量保存は保つ |
+| §33 現実時間との対応を保証しない | 実装 spec 08 | 経過時間（物理時間）を表示する |
+| §34 速度 0.25x〜4x | 実装 spec 08 | 実時間の倍率（実時間・10・60・600 倍・最速） |
+| §37・§38 UI・統計 | 実装 spec 08 | 時間雨量・継続時間・範囲全体の入力、経過時間・降雨の状態・累積雨量・流出の速さの表示 |
+| §44 `timestep` | 実装 spec 08 | エンジンが毎 step 決める dt（`StepStats.dtS`） |
+| §45 `addRainfall` | 実装 spec 08 | `setRainfall`（登録し、step ごとに投入） |
+| §53.2 降雨時間は将来 | 実装 spec 08 | 実装した |
+| §54 浅水流モデルは初期実装の対象外 | 実装 spec 08 | 浅水方程式の簡略形（局所慣性式）を採る。完全な浅水流（移流項を含む）は対象外のまま |
 
 ---
 
