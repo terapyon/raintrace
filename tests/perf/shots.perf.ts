@@ -12,8 +12,8 @@ import { acknowledgeDisclaimer } from '../e2e/support/app'
 // 撮影（spec 05 §5 の手動、§6 の 4）。pnpm build:perf の後に RAINTRACE_SHOTS=<組> pnpm perf:fps -g 撮影 で回す。
 // (c) は有効のまま撮る（アプリの見え方）。どの画像が 3D・2D で描かれたかを index.md に書く
 const SHIBUYA = { lat: '35.658000', lon: '139.701600' }
-// 水が画面で見えるよう、500mm・半径 50m を「最速」で 20 秒回してから撮る（04 の URL の mm・r）
-const WATER = { water: '1', mm: '500', r: '50', settle: '20000' }
+// 水が画面で見えるよう、250 mm/h × 2 時間・半径 50 m を「最速」で 20 秒回してから撮る（spec 08 の URL の mmh・dur・r）
+const WATER = { water: '1', mmh: '250', dur: '120', r: '50', settle: '20000' }
 const VIEWPORT = { width: 960, height: 600 }
 const outDir = fileURLToPath(new URL('../../.handoff/05-screenshots/', import.meta.url))
 

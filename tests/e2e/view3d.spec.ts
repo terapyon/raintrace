@@ -175,10 +175,11 @@ test.describe('3D の表示（spec 05 §5）', () => {
   test('3D で強い降雨をすると、範囲の中心付近の画素が実際に水の配色へ変わる（Task 8 の申し送り。着手前の確かめ P6 の probe の常設化）', async ({
     page,
   }) => {
-    test.setTimeout(90_000)
-    // 500 mm・半径 200 m（範囲 500 m 四方の 4 分の 1 の円）は着手前の確かめ P6 と同じ強さ。水面の面積が
+    test.setTimeout(150_000)
+    // 250 mm/h × 2 時間（総量 500 mm）・半径 200 m（spec 08 §9.4。同じ総量を 2 時間かけて降らせる）。
+    // 半径 200 m は範囲 500 m 四方の 4 分の 1 の円で、総量は着手前の確かめ P6 と同じ。水面の面積が
     // 画素で判定できるほど広がる（P6: 既定の 100mm・10m では潜水面積が範囲の 0.26% しかなく判定できなかった）
-    await page.goto(`${SHIBUYA}&mm=500&r=200`)
+    await page.goto(`${SHIBUYA}&mmh=250&dur=120&r=200`)
     await waitTerrain(page)
     // 矢印（濃い青の icon。#0d47a1）は 3D でも描かれ、水の配色の判定を汚すので消しておく。
     // このテストは three の Custom Layer（水面）だけを見る
@@ -220,11 +221,23 @@ test.describe('3D の表示（spec 05 §5）', () => {
     // 描いた印（data-water-ready）を待ってから撮る（Task 17a のレビュー R1）
     await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
 
-    const after = waterColoredFraction(decodePng(await page.screenshot({ clip })))
-    // 実測（本タスク、3 回）: before は 0、after は 0.855〜0.859。シェーダを discard させると after も 0 になる
+    // spec 08 から雨は 2 時間かけて降るので、冠水面積が 50,000 m² を超えた直後は中心付近の水がまだ薄く、水の配色に
+    // ならない（Task 14 の実測: 直後に 1 回撮ると after − before = 0.024）。配色に変わるまで撮り直して待つ
+    // （しきい値は変えない。計画の Task 14 Step 4 の許した 90 秒・150 秒）
+    let after = 0
+    await expect
+      .poll(
+        async () => {
+          after = waterColoredFraction(decodePng(await page.screenshot({ clip })))
+          return after - before
+        },
+        { timeout: 90_000, intervals: [1_000] },
+      )
+      .toBeGreaterThan(0.3)
+    // 実測（05 の Task 8、3 回）: before は 0、after は 0.855〜0.859。シェーダを discard させると after も 0 になる
     // （報告に記録）。しきい値は大きな余裕を取っている
+    console.log(`[実測] view3d-rain ${JSON.stringify({ before, after })}`)
     expect(before).toBeLessThan(0.05)
-    expect(after - before).toBeGreaterThan(0.3)
   })
 
   test('3D でズームアウトして、画面の中心で描かれる地形タイルが境界より粗くなると 2D に落ちて知らせ、近づくと 3D に戻る（spec 05 §4.3）', async ({

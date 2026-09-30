@@ -93,7 +93,7 @@ type Size = (typeof SIZES)[number]
 
 interface SetDef {
   variants: readonly Variant[]
-  /** 水面ありの条件の URL に足す雨（mm・r）。省けば既定の雨（05 と同じ） */
+  /** 水面ありの条件の URL に足す雨（mmh・dur・r）。省けば既定の雨（05 と同じ） */
   waterRain?: Readonly<Record<string, string>>
   /** 05 にあった組か。05 の記録を上書きしないよう、06 で足した組の結果の既定の書き先を分ける */
   from05?: true
@@ -103,12 +103,13 @@ interface SetDef {
 }
 
 /**
- * 3 地点の組の水面ありの条件の雨（平衡に届かない。R-b。05 の shots.perf の水面の撮影と同じ雨）。既定の雨
- * （100 mm・半径 10 m）はみなとみらいで約 3 秒で平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを
+ * 3 地点の組の水面ありの条件の雨（平衡に届かない。R-b。05 の shots.perf の水面の撮影と同じ雨）。spec 08 から、
+ * 総量 500 mm を 250 mm/h × 2 時間で降らせる（N7。05〜07 の記録は一度に置いた 500 mm で測ったので、水の広がり方が
+ * 違う）。既定の雨（100 mm・半径 10 m）はみなとみらいで約 3 秒で平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを
  * 比べられなくなる。05 と比べる組（water・isolate。渋谷）には使わない。渋谷は既定の雨で窓の間に平衡に届かず
  * （04 の実測 47.9 秒）、05 の 51.0 fps はその雨で測ったため
  */
-const WATER_RAIN = { mm: '500', r: '50' } as const
+const WATER_RAIN = { mmh: '250', dur: '120', r: '50' } as const
 
 const WATER_VARIANTS: readonly Variant[] = [
   { label: '既定・地形のみ', water: '0' },
@@ -202,13 +203,13 @@ const SETS: Record<string, SetDef> = {
   'outflow-500': {
     sizes: ['500'],
     views: ['z17 ×5 p60'],
-    waterRain: { mm: '500', r: '250' },
+    waterRain: { mmh: '250', dur: '120', r: '250' },
     variants: OUTFLOW_VARIANTS,
   },
   'outflow-1000': {
     sizes: ['1000'],
     views: ['z17 ×5 p60'],
-    waterRain: { mm: '500', r: '500' },
+    waterRain: { mmh: '250', dur: '120', r: '500' },
     variants: OUTFLOW_VARIANTS,
   },
 }

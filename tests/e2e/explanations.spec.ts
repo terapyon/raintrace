@@ -16,8 +16,16 @@ import { routeGsi } from './support/gsi'
 import { type Blob, colorBlobs, decodePng, outflowBandCount } from './support/png'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
-/** 範囲（500 m）に内接する円の雨。縁まで水が届き、流出の帯が出る（07 のスパイクと同じ雨） */
-const EDGE_RAIN = '&mm=500&r=250'
+/**
+ * 範囲全体の雨（spec 08 §9.4、R3 の裁定）。縁の全周が同時に濡れ、流出の帯が決定的に出る（円の雨は縁に届くまでに
+ * 時間がかかり、07 の「最初の数 step で帯が出る」前提が崩れる）。強さは spec の 250 mm/h から下げた（計画で決めた
+ * こと 37）: 250 mm/h では縁が約 15 step で 1 mm に届いて帯が一度に飽和し、t1 → t2 で増えない。
+ * 20 mm/h の推移（2026-09-30、3D・SwiftShader、60 倍で再生しながら約 0.5 秒ごとに読んだ 1 回。帯の色の画素数）:
+ * step 4 で 0、45 で 202、95 で 688、198 で 1340、278 で 1622、324 で 4538、370 で 4734、以後は 12,821 step まで
+ * 5411 へゆっくり増えるだけ（ほぼ飽和）。増え始め（約 45 step）から飽和（約 370 step）まで約 325 step あり、
+ * t1・t2 がその間に入るので 20 mm/h にした
+ */
+const EDGE_RAIN = '&mmh=20&dur=120&all=1'
 /** ○ を探す画面（md 未満。パネルは下で、たためる。範囲の端の ○ が右のパネルに隠れない。計画で決めたこと 14） */
 const NARROW = { width: 800, height: 900 }
 /** たたんだ下のパネルの見出しの分（px） */
@@ -37,20 +45,31 @@ const MARKER_MIN_PX = 10
  * 実測（2026-09-29、SwiftShader）: 2D の c1 − c0 = 856〜2040（最速で再生しながら読む）。3D は step 1 で
  * 読むので c1 − c0 = 1057（3 回とも同じ）。以上は枠の赤も含む判定での値。
  * 帯の色だけで数える今の版（spec 08 Task 9 の修正ラウンド 2、2026-09-30）: 2D の c0 = 0、c1 − c0 = 1870。
- * 3D は c0 = 0、step 1 で c1 = 1032
+ * 3D は c0 = 0、step 1 で c1 = 1032。
+ * 実測（2026-09-30、SwiftShader、範囲全体の 20 mm/h。spec 08 Task 14）: 2D の c1 − c0 = 223〜672（最速で再生しながら
+ * 読み、200 を超えた最初の読み）、3D は 663〜1500（10 倍で再生しながら待ち、step 111〜249 で一時停止）。計画で決めた
+ * こと 24 の規則（最小 ÷ 4）では 55 になるが、200 から緩めない（コントローラーの指示）
  */
 const OUTFLOW_MIN_PX = 200
 /**
  * t1 から t2 への増え方の下限（3D。M2）。SwiftShader の揺れ（色の分類ではほぼ 0）より十分大きく。
  * 実測（2026-09-29、3 回）: step 1 → 31 で c2 − c1 = 1315（3 回とも同じ）。同じカメラで 3 回読んだ数は ×2・×1 とも
  * 完全に一致した。一時停止が遅れた場合も、step 11〜30 から 30 step で 454〜640 増えた（修正前の版での実測）。
- * 帯の色だけで数える今の版（2026-09-30）: step 1 → 31 で c2 − c1 = 1442（c2 = 2474）
+ * 帯の色だけで数える今の版（2026-09-30）: step 1 → 31 で c2 − c1 = 1442（c2 = 2474）。
+ * 実測（2026-09-30、SwiftShader、範囲全体の 20 mm/h。spec 08 Task 14）: t1 → t2（160 step）で、t1 を 10 倍で待つ今の版
+ * は 8 回で c2 − c1 = 878〜3407（t1 = step 111〜112 で 878〜881、172 で 2171、208〜249 で 3261〜3407）。帯は step 約 335 まではゆっくり
+ * 増え（112 で 666、249 で 1500、331 で 1879）、その後の数 step で約 4500 に跳ねるので、t2 がその跳ねを越えるかで
+ * 増え方が変わる。計画で決めたこと 24 の規則（4 回の最小 ÷ 4）で 219 にした。
+ * t1 を 60 倍で待つ版は、負荷なしで t1 = step 177〜196・c2 − c1 = 3154〜3443 だったが、並列の負荷で t1 が 296〜331 に
+ * 遅れると帯が飽和に近づき、335 まで落ちた
  */
-const OUTFLOW_GROWTH_PX = 100
-/** t1 までに進める step 数の上限（帯が出ないまま、ここで止まる） */
-const T1_MAX_STEPS = 60
-/** t1 から t2 までに進める step 数（3D。M2）。決まった量だけ進め、再生の速さと競争しない */
-const T2_STEPS = 30
+const OUTFLOW_GROWTH_PX = 219
+/**
+ * t1 から t2 までに進める step 数（3D。M2）。決まった量だけ進め、再生の速さと競争しない。
+ * EDGE_RAIN の推移で、t1（帯が OUTFLOW_MIN_PX を超える約 45 step）から飽和（約 370 step）までの半分を 10 刻みに
+ * 切り下げた（計画で決めたこと 37）
+ */
+const T2_STEPS = 160
 /**
  * 帯を消した後の許容（揺れ）。画素はすべて帯そのものの色だけで数える（outflowCount → outflowBandCount。
  * 範囲の枠・降雨マーカーの赤を色で除く）。2D は降雨の前との差、3D は切った後に残る帯の色の画素の数と比べる。
@@ -134,40 +153,6 @@ async function shownStep(page: Page): Promise<number> {
   const match = /Step (\d+)/.exec(text)
   if (match === null) throw new Error(`step の表示が読めません: ${text}`)
   return Number(match[1])
-}
-
-/**
- * 「開始」を押し、ボタンが「一時停止」に変わった最初のフレームで押す（ページの中で続けて押す）。Playwright の
- * click を 2 回続けると、その間に進む step 数が機械の負荷で揺れるので、一時停止の時点をなるべく早く揃える
- */
-async function startAndPauseAtOnce(page: Page): Promise<void> {
-  await page.evaluate(
-    ({ start, pause }) =>
-      new Promise<void>((resolve, reject) => {
-        const byText = (text: string): HTMLButtonElement | undefined =>
-          [...document.querySelectorAll('button')].find((b) => b.textContent === text)
-        const startButton = byText(start)
-        if (startButton === undefined) {
-          reject(new Error('開始のボタンがありません'))
-          return
-        }
-        startButton.click()
-        const deadline = performance.now() + 10_000
-        const tryPause = (): void => {
-          const pauseButton = byText(pause)
-          if (pauseButton !== undefined) {
-            pauseButton.click()
-            resolve()
-          } else if (performance.now() > deadline) {
-            reject(new Error('一時停止のボタンが出ません'))
-          } else {
-            requestAnimationFrame(tryPause)
-          }
-        }
-        requestAnimationFrame(tryPause)
-      }),
-    { start: strings.playback.start, pause: strings.playback.pause },
-  )
 }
 
 /** 一時停止の後、表示中の step が動かなくなるまで待って返す（最後のフレームが届くまで） */
@@ -296,10 +281,10 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     expect(errors).toEqual([])
   })
 
-  test('2D: 縁まで雨を置いて再生すると water-outflow に流出の色が出て、切ると消え、切っている間の Reset の後に入れ直しても古い帯は出ない（§5.2・§5.3、推奨 R4、Review Focus 4）', async ({
+  test('2D: 範囲全体に雨を降らせて再生すると water-outflow に流出の色が出て、切ると消え、切っている間の Reset の後に入れ直しても古い帯は出ない（§5.2・§5.3、推奨 R4、Review Focus 4）', async ({
     page,
   }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(180_000)
     const errors = collectErrors(page)
     await page.goto(`${SHIBUYA}${EDGE_RAIN}`)
     await waitTerrain(page)
@@ -319,7 +304,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
           c1 = await outflowCount(page, clip)
           return c1 - c0
         },
-        { timeout: 60_000 },
+        { timeout: 120_000 },
       )
       .toBeGreaterThan(OUTFLOW_MIN_PX)
     // 切ると消える
@@ -344,7 +329,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
   test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると帯の色が残らない', async ({
     page,
   }) => {
-    test.setTimeout(150_000)
+    test.setTimeout(240_000)
     const errors = collectErrors(page)
     await page.goto(`${SHIBUYA}${EDGE_RAIN}`)
     await waitTerrain(page)
@@ -364,19 +349,24 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await nextFrames(page)
     await nextFrames(page)
     const c0 = await outflowCount(page, clip)
-    // 再生の速さと競争しないよう、開始してすぐ一時停止し、あとは「1 step 進める」で決まった量だけ進める
-    // （Task 9 のレビューの修正ラウンド 1）。step が同じなら画素数も同じになる（実測）
-    await page.getByRole('button', { name: strings.playback.speedValue(1), exact: true }).click()
-    await startAndPauseAtOnce(page)
+    // t1: 10 倍で再生しながら、帯が出るまで待って一時停止する（範囲全体の雨は 1 step が 1 秒前後なので、
+    // 1 step ずつ進めると t1 までの往復が長い。計画で決めたこと 24）。計画の 60 倍では、並列の負荷で一時停止が
+    // 遅れて t1 が step 296〜331 になり、帯が飽和に近づいて t1 → t2 の増え方が 335 まで落ちた（Task 14 の実測）。
+    // 10 倍なら一時停止の遅れが数十 step に収まる
+    await page.getByRole('button', { name: strings.playback.speedValue(10), exact: true }).click()
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    await expect
+      .poll(async () => (await outflowCount(page, clip)) - c0, {
+        timeout: 120_000,
+        intervals: [500],
+      })
+      .toBeGreaterThan(OUTFLOW_MIN_PX)
+    await page.getByRole('button', { name: strings.playback.pause }).click()
     await expect(page.getByRole('button', { name: strings.playback.resume })).toBeVisible()
     let step = await settledStep(page)
     const pausedStep = step
-    // t1: 帯が出るまで 1 step ずつ進める（canvas を地形に貼る方式のように最初の絵で凍ると、c0 のまま上限に届く）
-    let c1 = await outflowCount(page, clip)
-    for (let n = 0; c1 - c0 <= OUTFLOW_MIN_PX && n < T1_MAX_STEPS; n++) {
-      step = await stepOnce(page, step)
-      c1 = await outflowCount(page, clip)
-    }
+    await nextFrames(page)
+    const c1 = await outflowCount(page, clip)
     expect(c1 - c0).toBeGreaterThan(OUTFLOW_MIN_PX)
     const s1 = step
     // t2: 同じカメラのまま、決まった step 数だけ進めると、さらに増える（最初に描いた 1 回で凍ると c1 のまま）
