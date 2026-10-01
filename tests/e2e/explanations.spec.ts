@@ -173,13 +173,35 @@ async function settledStep(page: Page): Promise<number> {
   return last
 }
 
-/** 一時停止のまま「1 step 進める」を押し、表示が step + 1 になって描かれるまで待つ */
-async function stepOnce(page: Page, step: number): Promise<number> {
-  await page.getByRole('button', { name: strings.playback.step, exact: true }).click()
-  await expect(page.getByTestId('stat-step')).toHaveText(`Step ${step + 1}`)
-  await nextFrames(page)
-  await nextFrames(page)
-  return step + 1
+/**
+ * 一時停止のまま「1 step 進める」を count 回押し、そのたびに表示が step + 1 になるまで待つ。描画は待たない（読む前に
+ * 呼び手が nextFrames で待つ）。押して待つ往復はブラウザの中で回す: Playwright の click と toHaveText で 1 step ずつ
+ * 往復する版は 1 step に手元で約 370 ms かかり、CI では 160 step が 240 秒に収まらなかった（PR #15 の初回の CI）
+ */
+async function stepMany(page: Page, step: number, count: number): Promise<number> {
+  await page.evaluate(
+    async ({ label, from, count }) => {
+      const button = [...document.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === label,
+      )
+      const stat = document.querySelector('[data-testid="stat-step"]')
+      if (button === undefined || stat === null)
+        throw new Error('1 step 進めるのボタンか step の表示がありません')
+      for (let n = 1; n <= count; n++) {
+        const expected = `Step ${from + n}`
+        button.click()
+        const deadline = performance.now() + 10_000
+        while (stat.textContent !== expected) {
+          if (performance.now() > deadline) {
+            throw new Error(`「${expected}」になりません: ${stat.textContent ?? ''}`)
+          }
+          await new Promise((resolve) => setTimeout(resolve, 5))
+        }
+      }
+    },
+    { label: strings.playback.step, from: step, count },
+  )
+  return step + count
 }
 
 /** 垂直強調のボタンを押す */
@@ -330,7 +352,8 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
   test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると帯の色が残らない', async ({
     page,
   }) => {
-    test.setTimeout(240_000)
+    // 手元では約 1 分。CI は手元より数倍遅い（07 の 30 step の版で 2.2 分）ので余裕を持たせる
+    test.setTimeout(360_000)
     const errors = collectErrors(page)
     await page.goto(`${SHIBUYA}${EDGE_RAIN}`)
     await waitTerrain(page)
@@ -371,9 +394,11 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     expect(c1 - c0).toBeGreaterThan(OUTFLOW_MIN_PX)
     const s1 = step
     // t2: 同じカメラのまま、決まった step 数だけ進めると、さらに増える（最初に描いた 1 回で凍ると c1 のまま）
-    for (let n = 0; n < T2_STEPS; n++) step = await stepOnce(page, step)
+    step = await stepMany(page, step, T2_STEPS)
     const s2 = step
     expect(s2).toBe(s1 + T2_STEPS)
+    await nextFrames(page)
+    await nextFrames(page)
     const c2 = await outflowCount(page, clip)
     expect(c2 - c1).toBeGreaterThan(OUTFLOW_GROWTH_PX)
     // 一時停止のまま、同じカメラで 3 回読んだ画素数が一致する（ちらつかない）。垂直強調 ×2 と ×1（推奨 R3）。
