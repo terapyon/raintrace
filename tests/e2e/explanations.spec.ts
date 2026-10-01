@@ -57,20 +57,25 @@ const OUTFLOW_MIN_PX = 200
  * 実測（2026-09-29、3 回）: step 1 → 31 で c2 − c1 = 1315（3 回とも同じ）。同じカメラで 3 回読んだ数は ×2・×1 とも
  * 完全に一致した。一時停止が遅れた場合も、step 11〜30 から 30 step で 454〜640 増えた（修正前の版での実測）。
  * 帯の色だけで数える今の版（2026-09-30）: step 1 → 31 で c2 − c1 = 1442（c2 = 2474）。
- * 実測（2026-09-30、SwiftShader、範囲全体の 20 mm/h。spec 08 Task 14）: t1 → t2（160 step）で、t1 を 10 倍で待つ今の版
+ * 実測（2026-09-30、SwiftShader、範囲全体の 20 mm/h。spec 08 Task 14）: t1 → t2（160 step）で、t1 を 10 倍で待つ当時の版
  * は 8 回で c2 − c1 = 878〜3407（t1 = step 111〜112 で 878〜881、172 で 2171、208〜249 で 3261〜3407）。帯は step 約 335 まではゆっくり
  * 増え（112 で 666、249 で 1500、331 で 1879）、その後の数 step で約 4500 に跳ねるので、t2 がその跳ねを越えるかで
  * 増え方が変わる。計画で決めたこと 24 の規則（4 回の最小 ÷ 4）で 219 にした。
  * t1 を 60 倍で待つ版は、負荷なしで t1 = step 177〜196・c2 − c1 = 3154〜3443 だったが、並列の負荷で t1 が 296〜331 に
- * 遅れると帯が飽和に近づき、335 まで落ちた
+ * 遅れると帯が飽和に近づき、335 まで落ちた。10 倍の版も CI では t1 が頭打ちの直前まで遅れて 182 に落ちた（PR #15 の
+ * 3 回目の CI）。
+ * t1・t2 を決まった step にした今の版（2026-10-01、t1 = 100・t2 = 200）: 単独 3 回と、4 コアで view3d と同時の 2 回の
+ * 計 5 回すべてで c1 = 544・c2 = 1245・c2 − c1 = 701（読みは決定的）。計画で決めたこと 24 の規則（最小 ÷ 4）で 175
  */
-const OUTFLOW_GROWTH_PX = 219
+const OUTFLOW_GROWTH_PX = 175
 /**
- * t1 から t2 までに進める step 数（3D。M2）。決まった量だけ進め、再生の速さと競争しない。
- * EDGE_RAIN の推移で、t1（帯が OUTFLOW_MIN_PX を超える約 45 step）から飽和（約 370 step）までの半分を 10 刻みに
- * 切り下げた（計画で決めたこと 37）
+ * t1 の step と、t1 から t2 までに進める step 数（3D。M2）。どちらも決まった量だけ進め、再生の速さと競争しない。
+ * EDGE_RAIN の帯の推移（2026-10-01、SwiftShader、5 step ごと）: step 53 で出始め、78 で 228、100 で約 566、
+ * 200 で約 1253、333 で 1773 → 3785 に跳ね、370 頃に約 4700 で頭打ち。t1 は帯が OUTFLOW_MIN_PX を十分に超える 100、
+ * t2 は跳ねの手前の 200 にした（計画で決めたこと 37 の 160 step は、t1 を再生で待つ版の値）
  */
-const T2_STEPS = 160
+const T1_STEP = 100
+const T2_STEPS = 100
 /**
  * 帯を消した後の許容（揺れ）。画素はすべて帯そのものの色だけで数える（outflowCount → outflowBandCount。
  * 範囲の枠・降雨マーカーの赤を色で除く）。2D は降雨の前との差、3D は切った後に残る帯の色の画素の数と比べる。
@@ -378,22 +383,18 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await nextFrames(page)
     const c0 = await outflowCount(page, clip)
     lap('c0')
-    // t1: 10 倍で再生しながら、帯が出るまで待って一時停止する（範囲全体の雨は 1 step が 1 秒前後なので、
-    // 1 step ずつ進めると t1 までの往復が長い。計画で決めたこと 24）。計画の 60 倍では、並列の負荷で一時停止が
-    // 遅れて t1 が step 296〜331 になり、帯が飽和に近づいて t1 → t2 の増え方が 335 まで落ちた（Task 14 の実測）。
-    // 10 倍なら一時停止の遅れが数十 step に収まる
-    await page.getByRole('button', { name: strings.playback.speedValue(10), exact: true }).click()
+    // t1: 実時間で開始してすぐ一時停止し、決まった step（T1_STEP）まで 1 step ずつ進める。再生しながら帯が出るまで
+    // 待って止める版は、一時停止の遅れが機械の速さで変わり、CI では t1 が帯の頭打ちの直前（step 約 355）になって
+    // t1 → t2 の増え方が 182 まで落ちた（PR #15 の 3 回目の CI）
+    await page.getByRole('button', { name: strings.playback.speedValue(1), exact: true }).click()
     await page.getByRole('button', { name: strings.playback.start }).click()
-    await expect
-      .poll(async () => (await outflowCount(page, clip)) - c0, {
-        timeout: 120_000,
-        intervals: [500],
-      })
-      .toBeGreaterThan(OUTFLOW_MIN_PX)
     await page.getByRole('button', { name: strings.playback.pause }).click()
     await expect(page.getByRole('button', { name: strings.playback.resume })).toBeVisible()
     let step = await settledStep(page)
     const pausedStep = step
+    expect(pausedStep).toBeLessThan(T1_STEP)
+    step = await stepMany(page, step, T1_STEP - step)
+    await nextFrames(page)
     await nextFrames(page)
     const c1 = await outflowCount(page, clip)
     expect(c1 - c0).toBeGreaterThan(OUTFLOW_MIN_PX)
