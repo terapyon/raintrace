@@ -352,8 +352,12 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
   test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると帯の色が残らない', async ({
     page,
   }) => {
-    // 手元では約 1 分。CI は手元より数倍遅い（07 の 30 step の版で 2.2 分）ので余裕を持たせる
-    test.setTimeout(360_000)
+    // 手元では約 1 分。CI（2 並列で 3D の SwiftShader が重なる）は 6 倍以上遅く、360 秒では ×1 の確認の手前で
+    // 時間切れになった（PR #15 の 2 回目の CI）。区切りごとの経過を出して、遅い所を CI のログで分かるようにする
+    test.setTimeout(600_000)
+    const startedAt = Date.now()
+    const lap = (label: string) =>
+      console.log(`[経過] 3D の帯 ${label} ${((Date.now() - startedAt) / 1000).toFixed(1)} 秒`)
     const errors = collectErrors(page)
     await page.goto(`${SHIBUYA}${EDGE_RAIN}`)
     await waitTerrain(page)
@@ -373,6 +377,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await nextFrames(page)
     await nextFrames(page)
     const c0 = await outflowCount(page, clip)
+    lap('c0')
     // t1: 10 倍で再生しながら、帯が出るまで待って一時停止する（範囲全体の雨は 1 step が 1 秒前後なので、
     // 1 step ずつ進めると t1 までの往復が長い。計画で決めたこと 24）。計画の 60 倍では、並列の負荷で一時停止が
     // 遅れて t1 が step 296〜331 になり、帯が飽和に近づいて t1 → t2 の増え方が 335 まで落ちた（Task 14 の実測）。
@@ -393,6 +398,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     const c1 = await outflowCount(page, clip)
     expect(c1 - c0).toBeGreaterThan(OUTFLOW_MIN_PX)
     const s1 = step
+    lap('c1')
     // t2: 同じカメラのまま、決まった step 数だけ進めると、さらに増える（最初に描いた 1 回で凍ると c1 のまま）
     step = await stepMany(page, step, T2_STEPS)
     const s2 = step
@@ -401,6 +407,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     await nextFrames(page)
     const c2 = await outflowCount(page, clip)
     expect(c2 - c1).toBeGreaterThan(OUTFLOW_GROWTH_PX)
+    lap('c2')
     // 一時停止のまま、同じカメラで 3 回読んだ画素数が一致する（ちらつかない）。垂直強調 ×2 と ×1（推奨 R3）。
     // 各垂直強調で帯を切った画素数も読み、切ると帯の分が消えることを確かめる
     const flicker: Record<string, number[]> = {}
@@ -447,6 +454,7 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
       await page.getByLabel(strings.panel.showOutflow).check()
       await nextFrames(page)
       previousShot = await page.screenshot({ clip })
+      lap(`×${ex}`)
     }
     logMeasured('3D', {
       pausedStep,
