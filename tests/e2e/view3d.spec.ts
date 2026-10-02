@@ -26,7 +26,7 @@ const readyCount = async (element: Locator): Promise<number> =>
 const layersOf = async (element: Locator, name: string): Promise<string[]> =>
   (await element.getAttribute(name))?.split(',') ?? []
 
-test.describe('3D の表示（spec 05 §5）', () => {
+test.describe('3D の表示（spec 05 §5）', { tag: '@3d' }, () => {
   // 一部のテストは 30 秒までの per-assertion wait を複数重ねる。Playwright の既定のテストの timeout
   // （30 秒）はそれより短いので、SwiftShader の遅い CI でも収まるよう引き上げる（着手前の検査 P8 の許容。
   // Task 4 の申し送りの反映）
