@@ -35,7 +35,8 @@ function Value({ label, value, testId }: { label: string; value: number; testId:
  * スクロールも止めない。Escape は Modal が onClose に渡す（焦点がポップオーバーの中にあるとき）
  */
 export function CellInfoPopover({ popover, cell, onConfirm, onClose }: Props) {
-  const open = popover.kind !== 'closed'
+  // 印の説明（kind: marker）は MarkerInfoPopover が出す（spec 07 §3.4、計画で決めたこと 9）
+  const open = popover.kind === 'cell' || popover.kind === 'outside'
   return (
     <Popover
       open={open}
@@ -47,7 +48,10 @@ export function CellInfoPopover({ popover, cell, onConfirm, onClose }: Props) {
       disableEnforceFocus
       slotProps={{
         root: { sx: { pointerEvents: 'none' } },
-        paper: { sx: { pointerEvents: 'auto' } },
+        // 閉じた後も消える間（transition）は紙が開いた位置に残る。そこでクリックを受けると、同じ位置の地図の
+        // クリックが紙に吸われて届かない（spec 08 Task 14 の修正ラウンド 1。閉じた直後の同じ点のクリックが
+        // 開かなかった）。開いている間だけ受ける
+        paper: { sx: { pointerEvents: open ? 'auto' : 'none' } },
       }}
     >
       <Box data-testid="cell-info" sx={{ p: 1.5, minWidth: 200 }}>

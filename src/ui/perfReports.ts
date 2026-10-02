@@ -2,6 +2,9 @@
  * 計測の結果の形（spec 06 §3）。tests/perf/ は型だけを import する（tsconfig.node.json は vite/client の型を
  * 持たないので、TerrainSession などに届く import を tests から張らない。計画で決めたこと 14）
  */
+
+import type { StopReason } from '../simulation/types'
+import type { RainfallSettings } from '../state/persistedSettings'
 import type { DisplayStats } from '../state/simulationStore'
 import type {
   LongTaskSample,
@@ -17,15 +20,24 @@ export interface StepsReport {
   /** 測ったときの 3D の状態（data-view3d。2D なら off） */
   view3d: string
   sizeM: number
-  rain: { amountMm: number; radiusM: number }
+  rain: RainfallSettings
   terrain: { demLevel: number; cellSizeM: number; invalidRatio: number } | null
-  /** 平衡に届いたか（until=settle で cap に届いた、または until=window で窓が終わったら false） */
-  settled: boolean
-  /** 平衡（または打ち切り・窓の終わり）の時点の step 数。打ち切りは統計の 10Hz の遅れぶん少ないことがある */
+  /**
+   * 自動停止（settled・cap。spec 08 §3.9）で止まった。until=settle で計測の上限（capMs）に届いた、
+   * または until=window で窓が終わったら false
+   */
+  stopped: boolean
+  /** 自動停止の理由（止まらなければ null） */
+  stopReason: StopReason | null
+  /** 止まった（または打ち切り・窓の終わりの）時点の step 数。打ち切りは統計の 10Hz の遅れぶん少ないことがある */
   steps: number
   elapsedMs: number
-  /** steps ÷ 60 を分にした値（1x なら何分か。報告するだけで目標にはしない。R06-6） */
-  minutesAt1x: number
+  /** 経過時間（シミュレーションの秒） */
+  simTimeS: number
+  /** 実際の倍率 = simTimeS ÷ 実時間の秒（spec 08 §6.1・§7.3） */
+  actualRatio: number
+  /** dt（s）の標本（統計を入れるたび。10Hz）の数・中央値・最小。標本が無ければ null */
+  dt: { count: number; medianS: number; minS: number } | null
   stepsPerSecond: number
   final: DisplayStats | null
   stepTimes: StepTimeSummary & { series: TimedStepSnapshot[] }

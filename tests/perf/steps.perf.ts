@@ -1,5 +1,5 @@
 /**
- * 1 step の所要時間と平衡までの時間（spec 06 §4.1・§4.2・§5、計画で決めたこと 3〜5）。pnpm build:perf の後に回す。
+ * 1 step の所要時間と、開始から自動停止までの時間（spec 06 §4.1・§4.2・§5、spec 08 §7.3）。pnpm build:perf の後に回す。
  *
  * 最初に 1 回だけ DEM を記録する（地理院に接続する）:
  *   RAINTRACE_DEM=record pnpm perf:fps tests/perf/steps.perf.ts -g 記録
@@ -11,9 +11,10 @@
  * 環境変数: RAINTRACE_STEPS_SITES（所要時間の計測は ayase,shibuya,minatomirai。RAINTRACE_DEM=record のときは
  * これに nemuro〈段 2。probe=load 専用。ユーザーの裁定 R5〉も選べ、既定は 4 地点すべてを記録する）・
  * RAINTRACE_STEPS_SIZES（500,1000）・
- * RAINTRACE_STEPS_RAINS（r10,r100,full）・RAINTRACE_STEPS_MODE（2d|3d）・RAINTRACE_STEPS_UNTIL（settle|window。
+ * RAINTRACE_STEPS_RAINS（r10,r100,all,full）・RAINTRACE_STEPS_MODE（2d|3d）・RAINTRACE_STEPS_UNTIL（settle|window。
  * 既定は 2d なら settle、3d なら window）・RAINTRACE_STEPS_CAP_MS（300000）・RAINTRACE_STEPS_WINDOW_MS（60000）・
- * RAINTRACE_STEPS_OUT_DIR（.handoff/06-perf）・RAINTRACE_DEM（replay|record|live）
+ * RAINTRACE_STEPS_SPEED（1・10・60・600・max。既定 max）・RAINTRACE_STEPS_OUT_DIR（.handoff/06-perf）・
+ * RAINTRACE_DEM（replay|record|live）
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
@@ -42,13 +43,21 @@ import {
 
 const SIZES = ['500', '1000'] as const
 type Size = (typeof SIZES)[number]
-/** 降雨（計画で決めたこと 3）。full は半径を範囲の半分（R04-6 の上限）にして、外接矩形を範囲全体にする */
+/**
+ * 降雨（spec 08 §7.3。どれも 100 mm/h × 1 時間）。all は範囲全体、full は半径を範囲の半分（R04-6 の上限）にして
+ * 外接矩形を範囲全体にする円（06 の「全面を濡らす雨」を時間雨量に読み替えたもの。1 step の時間の行に使う）
+ */
 const RAINS = {
-  r10: { label: '半径 10 m・100 mm', mm: '100', radius: (_size: Size): string => '10' },
-  r100: { label: '半径 100 m・100 mm', mm: '100', radius: (_size: Size): string => '100' },
+  r10: { label: '半径 10 m・100 mm/h × 1 時間', all: '0', radius: (_size: Size): string => '10' },
+  r100: {
+    label: '半径 100 m・100 mm/h × 1 時間',
+    all: '0',
+    radius: (_size: Size): string => '100',
+  },
+  all: { label: '範囲全体・100 mm/h × 1 時間', all: '1', radius: (_size: Size): string => '10' },
   full: {
-    label: '全面を濡らす雨（半径 = 範囲の半分・100 mm）',
-    mm: '100',
+    label: '全面を濡らす雨（半径 = 範囲の半分・100 mm/h × 1 時間）',
+    all: '0',
     radius: (size: Size): string => String(Number(size) / 2),
   },
 } as const
@@ -65,6 +74,10 @@ const until: 'settle' | 'window' =
   untilEnv === 'settle' || untilEnv === 'window' ? untilEnv : mode === '2d' ? 'settle' : 'window'
 const capMs = Number(process.env.RAINTRACE_STEPS_CAP_MS ?? '300000')
 const windowMs = Number(process.env.RAINTRACE_STEPS_WINDOW_MS ?? '60000')
+const speedEnv = process.env.RAINTRACE_STEPS_SPEED ?? 'max'
+if (!['1', '10', '60', '600', 'max'].includes(speedEnv)) {
+  throw new Error(`RAINTRACE_STEPS_SPEED は 1・10・60・600・max のどれか: ${speedEnv}`)
+}
 const outDir = outDirFromEnv(process.env.RAINTRACE_STEPS_OUT_DIR, '.handoff/06-perf')
 /** 読み込み・3D の準備・止まっている間の再描画の数え・報告の書き出しの余裕 */
 const OVERHEAD_MS = 180_000
@@ -80,16 +93,24 @@ interface Row {
 const fixed = (value: number | null, digits: number): string =>
   value === null ? '—' : value.toFixed(digits)
 
+/** シミュレーションの秒を「h:mm:ss」にする */
+function clock(seconds: number): string {
+  const s = Math.floor(seconds)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return `${h}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
 function formatTable(rows: readonly Row[]): string {
   const lines = [
-    `mode=${mode}・until=${until}（cap ${capMs / 1000} 秒・窓 ${windowMs / 1000} 秒）。1 step の値は 1 秒ごとの直近 300 step の要約の、中央値の中央値と p95 の 95 パーセンタイル（計画で決めたこと 2）`,
+    `mode=${mode}・until=${until}（cap ${capMs / 1000} 秒・窓 ${windowMs / 1000} 秒）・speed=${speedEnv}。1 step の値は 1 秒ごとの直近 300 step の要約の、中央値の中央値と p95 の 95 パーセンタイル（計画で決めたこと 2）`,
     '',
-    '| 地点 | 範囲 | 雨 | 3D | 平衡 | step | 所要 (s) | 1x 換算 (分) | step／秒 | 1 step 中央値 (ms) | 1 step p95 (ms) | 1 step 最大 (ms) | 長いタスク（数・最大 ms） | 止まっている間の render（2 秒） | 質量誤差 (m³) | DEM（固定・素通し・欠け） |',
-    '|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---|',
+    '| 地点 | 範囲 | 雨 | 3D | 停止 | step | 所要 (s) | 経過 (h:mm:ss) | 実際の倍率 | dt 中央値 (s) | dt 最小 (s) | step／秒 | 1 step 中央値 (ms) | 1 step p95 (ms) | 1 step 最大 (ms) | 長いタスク（数・最大 ms） | 止まっている間の render（2 秒） | 質量誤差 (m³) | DEM（固定・素通し・欠け） |',
+    '|---|---|---|---|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---|',
   ]
   for (const { site, size, rain, dem, report: r } of rows) {
     lines.push(
-      `| ${SITES[site].label} | ${size} m | ${RAINS[rain].label} | ${r.view3d} | ${r.settled ? '平衡' : '届かず'} | ${r.steps} | ${(r.elapsedMs / 1000).toFixed(1)} | ${r.minutesAt1x.toFixed(1)} | ${r.stepsPerSecond.toFixed(0)} | ${fixed(r.stepTimes.medianMs, 2)} | ${fixed(r.stepTimes.p95Ms, 2)} | ${fixed(r.stepTimes.maxMs, 2)} | ${r.longTasks.supported ? `${r.longTasks.count}・${r.longTasks.maxMs.toFixed(0)}` : '未対応'} | ${r.idleRenders} | ${fixed(r.final?.massError ?? null, 6)} | ${dem.fixture}・${dem.passthrough}・${dem.missing} |`,
+      `| ${SITES[site].label} | ${size} m | ${RAINS[rain].label} | ${r.view3d} | ${r.stopped ? (r.stopReason ?? '—') : '打ち切り'} | ${r.steps} | ${(r.elapsedMs / 1000).toFixed(1)} | ${clock(r.simTimeS)} | ${r.actualRatio.toFixed(1)} | ${fixed(r.dt?.medianS ?? null, 3)} | ${fixed(r.dt?.minS ?? null, 3)} | ${r.stepsPerSecond.toFixed(0)} | ${fixed(r.stepTimes.medianMs, 2)} | ${fixed(r.stepTimes.p95Ms, 2)} | ${fixed(r.stepTimes.maxMs, 2)} | ${r.longTasks.supported ? `${r.longTasks.count}・${r.longTasks.maxMs.toFixed(0)}` : '未対応'} | ${r.idleRenders} | ${fixed(r.final?.massError ?? null, 6)} | ${dem.fixture}・${dem.passthrough}・${dem.missing} |`,
     )
   }
   return `${lines.join('\n')}\n`
@@ -119,7 +140,9 @@ test('1 step の所要時間と平衡までの時間（spec 06 §4.2）', async 
           lat: SITES[site].lat,
           lon: SITES[site].lon,
           size,
-          mm: RAINS[rain].mm,
+          mmh: '100',
+          dur: '60',
+          all: RAINS[rain].all,
           r: RAINS[rain].radius(size),
           probe: 'steps',
           mode,
@@ -127,6 +150,7 @@ test('1 step の所要時間と平衡までの時間（spec 06 §4.2）', async 
           cap: String(capMs),
           ms: String(windowMs),
           fallback: '0',
+          speed: speedEnv,
         })
         const holder: { dem: DemRouteCounts | null } = { dem: null }
         const report = await withFreshPage(
@@ -154,7 +178,7 @@ test('1 step の所要時間と平衡までの時間（spec 06 §4.2）', async 
     }
   }
   mkdirSync(outDir, { recursive: true })
-  const name = `steps-${mode}-${until}`
+  const name = `steps-${mode}-${until}-${speedEnv}-${rains.join('-')}-${sizes.join('-')}`
   writeFileSync(new URL(`${name}.json`, outDir), `${JSON.stringify(rows, null, 2)}\n`)
   const table = formatTable(rows)
   writeFileSync(new URL(`${name}.md`, outDir), table)

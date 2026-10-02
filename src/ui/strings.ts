@@ -63,23 +63,28 @@ export const strings = {
     loading: '標高データを読み込んでいます',
     retry: '再試行',
     showWaterFlow: '水の流れ',
+    showOutflow: '流出しているセル',
     terrain: '地形',
     collapse: 'たたむ',
     expand: '開く',
   },
   rainfall: {
     title: '降雨',
-    amount: '雨量（mm）',
-    amountSlider: '雨量のスライダー',
+    intensity: '時間雨量（mm/h）',
+    intensitySlider: '時間雨量のスライダー',
+    intensityError: '1〜300 の整数で入力してください',
+    duration: '継続時間',
+    /** 継続時間の選択肢（spec 08 §4.1）: 60 分未満は「N 分」、以上は「N 時間」 */
+    durationValue: (minutes: number) => (minutes < 60 ? `${minutes} 分` : `${minutes / 60} 時間`),
+    wholeRange: '範囲全体に降らせる',
     radius: '半径（m）',
     radiusSlider: '半径のスライダー',
-    amountError: '1〜1000 の整数で入力してください',
     radiusError: (maxM: number) => `1〜${maxM} m の範囲で入力してください`,
     rangeSize: '範囲の大きさ',
     rangeSizeValue: (sizeM: number) => `${sizeM} m`,
-    // 1000 m は 1 step の所要時間が基準を超える（tech-spec §14.1）。ユーザー裁定（2026-09-18、M6）:
-    // 選択肢は残し、注意書きを出す
-    rangeSizeHeavyHint: '範囲 1000 m は動作が重くなることがあります。',
+    // 1000 m は計算に時間がかかる（tech-spec §14.1、spec 08 §7.2）。ユーザー裁定（2026-09-18、M6）: 選択肢は残し、注意書きを出す
+    rangeSizeHeavyHint:
+      '範囲 1000 m は計算に時間がかかることがあります（雨を範囲全体に降らせると特に）。',
   },
   playback: {
     title: '再生',
@@ -89,9 +94,13 @@ export const strings = {
     step: '1 step 進める',
     reset: 'リセット',
     speed: '速度',
-    speedValue: (speed: number) => `${speed}x`,
+    /** 実時間の倍率（spec 08 §6.2）。1 は「実時間」 */
+    speedValue: (speed: number) => (speed === 1 ? '実時間' : `${speed} 倍`),
     max: '最速',
-    settled: (step: number) => `平衡に達しました（Step ${step}）`,
+    /** 自動停止（spec 08 §3.9・§6.2）。settled は水の動きが止まったとき、cap は雨の後の上限で止めたとき */
+    settled: (elapsed: string) => `水の動きがほぼ止まりました（経過 ${elapsed}）`,
+    // 「6 時間」は SETTLE_CAP_S（src/simulation/constants.ts）。ui は simulation の値を import しないので文で持つ
+    cap: (elapsed: string) => `計算の上限（雨がやんでから 6 時間）に達しました（経過 ${elapsed}）`,
     reload: '再読み込み',
   },
   simErrors: {
@@ -101,18 +110,29 @@ export const strings = {
   },
   stats: {
     title: '統計',
+    elapsed: '経過時間',
+    rain: '降雨',
+    rainDepth: '累積雨量',
     step: 'Step',
     total: '投入水量',
     stored: '領域内の水量',
     outflow: '領域外流出量',
+    outflowHelpLabel: '領域外流出量の説明',
+    outflowHelp:
+      '範囲の端や、海などの標高データの無い場所から、外へ流れ出た水の量です。「領域外流出量」は開始からの合計、「流出の速さ」はその時点の 1 時間あたりの量です。下水道・地面への浸み込み・蒸発は考えていません。',
+    outflowRate: '流出の速さ',
     maxDepth: '最大水深',
     floodedArea: '湛水面積',
     speed: '実行速度',
+    raining: (remaining: string) => `降雨中（残り ${remaining}）`,
+    rainEnded: '降雨終了',
+    playbackRate: (ratio: string, stepsPerSecond: string) =>
+      `実時間の ${ratio} 倍（${stepsPerSecond}）`,
   },
   spill: {
     title: '越流',
-    started: (spillElevation: string, step: number) =>
-      `窪地（spill 標高 ${spillElevation}）から越流が始まりました（Step ${step}）`,
+    started: (spillElevation: string, elapsed: string) =>
+      `窪地（spill 標高 ${spillElevation}）から越流が始まりました（経過 ${elapsed}）`,
   },
   display: {
     waterPalette: '水深の配色',
@@ -138,10 +158,14 @@ export const strings = {
     waterMid: '0.5 m',
     waterMax: '1 m 以上',
     waterAria: '水深の凡例。1 cm 未満は表示しない。浅いほど明るい青、1 m 以上は最も濃い青',
+    waterThinNote: '1 cm 未満の薄い水は表示しません（領域内の水量には含みます）。',
     depression: '窪地（満水時の深さ）',
     depressionMin: '0 m',
     depressionMax: '0.35 m 以上',
     depressionAria: '窪地の凡例。5 cm 刻みの 8 段で、深いほど濃い赤紫',
+    markersAria: '地図の印の凡例。青い丸は最低点、オレンジの丸はあふれ出し点',
+    outflow: 'この辺りから範囲の外へ流出中',
+    outflowAria: '流出の凡例。濃いピンクの帯は、この辺りから範囲の外へ水が流れ出ていることを示す',
   },
   cellInfo: {
     elevation: '標高',
@@ -150,6 +174,23 @@ export const strings = {
     noData: '標高データなし',
     useAsCenter: 'ここを降雨中心にする',
     newPoint: 'ここを新しい地点にする',
+    close: '閉じる',
+  },
+  /** 地図の ○ の説明（spec 07 §3.4） */
+  markerInfo: {
+    lowest: {
+      title: '最低点',
+      body: '範囲の中でいちばん低い地点です。水が集まりやすい場所の目安です。',
+    },
+    spill: {
+      title: 'あふれ出し点',
+      body: 'くぼ地が水で満たされると、ここから水があふれ出します。',
+    },
+    elevation: '標高',
+    spillElevation: 'あふれる標高',
+    maxDepth: 'くぼ地の最大の深さ',
+    capacity: 'ためられる水の量',
+    area: 'くぼ地の面積',
     close: '閉じる',
   },
   /** 数値の単位と組み立て（src/ui/format.ts が使う。桁の丸めは format.ts が行い、ここは文字列だけ） */
@@ -161,6 +202,11 @@ export const strings = {
     area: (value: string) => `${value} m²`,
     stepsPerSecond: (value: string) => `${value} step/秒`,
     step: (step: number) => `Step ${step}`,
+    hoursMinutes: (hours: number, minutes: number) => `${hours}時間${minutes}分`,
+    minutesSeconds: (minutes: number, seconds: number) => `${minutes}分${seconds}秒`,
+    seconds: (seconds: number) => `${seconds}秒`,
+    rainDepth: (fallen: number, total: number) => `${fallen} mm / ${total} mm`,
+    cubicMetersPerHour: (value: string) => `${value} m³/時`,
     none: '—',
   },
   errors: {
@@ -176,6 +222,7 @@ export const strings = {
       '本シミュレーションは地形標高データを用いた簡易モデルです。',
       '実際の浸水・洪水・災害を予測するものではありません。',
       '建物、道路構造、下水道、河川流量、排水設備等は考慮されていません。',
+      '範囲の端や標高データの無い場所に達した水は、範囲の外へ流れ出たものとして扱います。',
     ],
     acknowledge: '了解しました',
     close: '閉じる',

@@ -108,3 +108,83 @@ export function waterColoredFraction(img: DecodedPng): number {
   }
   return count / total
 }
+
+/**
+ * 流出の帯そのものの色（#c2185b を不透明度 0.9 で重ねた色。spec 07 §5.2）の画素の数。
+ * 07 のスパイク（.handoff/07-spike-3d-outflow.md）の判定（計測のマゼンタ（255, 0, 255）・水の青・○ のオレンジは
+ * 含まない）に、青が緑より十分大きい（b − g ≥ 40）ことを加えたもの。07 の判定だけでは範囲の枠と降雨マーカーの赤
+ * （#d32f2f）も当たり、降雨の前との差で使う必要があった。帯（b − g = 67）は水の上に 0.9 で重ねても b − g が
+ * 50〜69 に入り、枠・降雨マーカーの赤（b − g = 0）とその縁のにじみは 20 未満だった（2026-09-30 の実測、
+ * spec 08 Task 9 の修正ラウンド 1・2）。枠の赤を色で除くので、3D で水面が枠を覆う分や、負荷で降雨の前の読みが
+ * 枠を描き終わる前になる分に左右されない
+ */
+export function outflowBandCount(img: DecodedPng): number {
+  const { width, height, channels, data } = img
+  let count = 0
+  for (let i = 0; i < width * height; i++) {
+    const o = i * channels
+    const r = data[o] ?? 0
+    const g = data[o + 1] ?? 0
+    const b = data[o + 2] ?? 0
+    if (r >= 140 && g <= 90 && b >= 40 && b <= 150 && r - b >= 60 && b - g >= 40) count++
+  }
+  return count
+}
+
+/** 同じ色の画素の塊（4 連結）。x・y は画素の中心の平均（画像の中の座標） */
+export interface Blob {
+  x: number
+  y: number
+  count: number
+}
+
+/** rgb に近い（各成分の差が tolerance 以下の）画素の塊を、大きい順に返す（○ を探す。spec 07 の E2E） */
+export function colorBlobs(
+  img: DecodedPng,
+  rgb: readonly [number, number, number],
+  tolerance: number,
+): Blob[] {
+  const { width, height, channels, data } = img
+  const total = width * height
+  const hit = new Uint8Array(total)
+  for (let i = 0; i < total; i++) {
+    const o = i * channels
+    const near =
+      Math.abs((data[o] ?? 0) - rgb[0]) <= tolerance &&
+      Math.abs((data[o + 1] ?? 0) - rgb[1]) <= tolerance &&
+      Math.abs((data[o + 2] ?? 0) - rgb[2]) <= tolerance
+    if (near) hit[i] = 1
+  }
+  const blobs: Blob[] = []
+  const stack: number[] = []
+  for (let start = 0; start < total; start++) {
+    if (hit[start] !== 1) continue
+    hit[start] = 2
+    stack.push(start)
+    let sx = 0
+    let sy = 0
+    let n = 0
+    while (stack.length > 0) {
+      const c = stack.pop() as number
+      const x = c % width
+      const y = (c - x) / width
+      sx += x
+      sy += y
+      n++
+      const neighbors = [
+        x > 0 ? c - 1 : -1,
+        x < width - 1 ? c + 1 : -1,
+        y > 0 ? c - width : -1,
+        y < height - 1 ? c + width : -1,
+      ]
+      for (const j of neighbors) {
+        if (j >= 0 && hit[j] === 1) {
+          hit[j] = 2
+          stack.push(j)
+        }
+      }
+    }
+    blobs.push({ x: sx / n + 0.5, y: sy / n + 0.5, count: n })
+  }
+  return blobs.sort((a, b) => b.count - a.count)
+}

@@ -3,6 +3,7 @@ import type { FrameMessage, WorkerToMainMessage } from '../shared/protocol'
 import { TsSimulationEngine } from '../simulation/TsSimulationEngine'
 import type { TerrainGrid } from '../simulation/terrain/types'
 import { gridFromRows, makeDepression } from '../simulation/testing/terrainGrids.test-support'
+import type { RainfallInput } from '../simulation/types'
 import { TICK_INTERVAL_MS } from './playbackScheduler'
 import { ARROW_INTERVAL_MS, SimulationRunner } from './simulationRunner'
 
@@ -21,7 +22,14 @@ function basin(center: number | null = 0): TerrainGrid {
   ])
 }
 
-const RAIN = { x: 2.5, y: 2.5, radiusM: 1, amountMm: 100 }
+const RAIN: RainfallInput = {
+  x: 2.5,
+  y: 2.5,
+  radiusM: 1,
+  intensityMmPerH: 100,
+  durationS: 0,
+  wholeRange: false,
+}
 
 /**
  * 偽の時計・タイマーと、転送を本当に行う post（structuredClone の transfer で元の ArrayBuffer を切り離す。
@@ -95,6 +103,7 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
   it('start で雨を置いて再生し、frame の水深はエンジンの水深を単精度にしたもの', () => {
     const h = setup()
     h.runner.loadTerrain(7, basin(), [])
+    h.runner.handle({ type: 'setSpeed', speed: 1 })
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     h.run(1)
     const frame = h.frames()[0]
@@ -107,13 +116,44 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
   })
 
   it('バッファが 2 枚とも手元に無ければ frame を見送り、返却されると最新の状態で送る', () => {
+    const engineStep = vi.spyOn(TsSimulationEngine.prototype, 'step')
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
-    h.run(5)
-    expect(h.frames().map((f) => f.step)).toEqual([1, 2])
+    h.run(6)
+    expect(h.frames()).toHaveLength(2)
+    const sent = h.frames()[1]?.step ?? 0
+    // 見送りの間もエンジンは進む。返却の時点のエンジンの最新の step
+    const latest = engineStep.mock.results.at(-1)?.value.step
+    expect(latest).toBeGreaterThan(sent)
     h.returnAll()
-    expect(h.frames().map((f) => f.step)).toEqual([1, 2, 5])
+    expect(h.frames()).toHaveLength(3)
+    // 遅れて送る 3 枚目は、見送った途中の状態ではなく最新の状態
+    expect(h.frames()[2]?.step).toBe(latest)
+  })
+
+  it('frame に実際の倍率（simSecondsPerSecond）を載せる。再生の最初の 1 秒は 0', () => {
+    const h = setup()
+    h.runner.loadTerrain(1, basin(), [])
+    h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
+    h.run(1)
+    expect(h.frames()[0]?.simSecondsPerSecond).toBe(0)
+  })
+
+  it('もう一度 start すると時刻 0 から数え直す（前の実行の目標で一気に進まない。suspend の rewind、Review Focus 2）', () => {
+    const h = setup()
+    h.runner.loadTerrain(1, basin(), [])
+    h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
+    for (let n = 0; n < 10; n++) {
+      h.run(1)
+      h.returnAll()
+    }
+    expect(h.frames().at(-1)?.stats.timeS ?? 0).toBeGreaterThan(5)
+    h.runner.handle({ type: 'start', rain: RAIN, runId: 2 })
+    h.run(1)
+    // 60 倍の最初の tick は目標 1 秒。越えるのは最大 1 step の dt
+    const stats = h.frames().at(-1)?.stats
+    expect(stats?.timeS).toBeLessThan(1 + (stats?.dtS ?? 0))
   })
 
   it('大きさの違うバッファの返却は捨てる（前の地形のバッファ）', () => {
@@ -125,31 +165,36 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
     expect(h.frames()).toHaveLength(2)
   })
 
-  it('平衡に達すると自動で止まり、その frame（settled）を送る', () => {
+  it('自動停止（settled）すると自動で止まり、その frame（settled）を送る', () => {
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
-    h.runner.handle({ type: 'setSpeed', speed: 4 })
+    h.runner.handle({ type: 'setSpeed', speed: 600 })
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     for (let n = 0; n < 5000 && h.timers.size > 0; n++) {
       h.run(1)
       h.returnAll()
     }
     expect(h.timers.size).toBe(0)
-    expect(h.frames().at(-1)?.stats.settled).toBe(true)
+    expect(h.frames().at(-1)?.stats.stopReason).toBe('settled')
   })
 
-  it('setSpeed(4) なら 1 tick に 4 step', () => {
+  it('setSpeed(600) なら最初の 1 tick（1/60 秒）でシミュレーションの 10 秒進む（越えるのは最大 1 step の dt）', () => {
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
-    h.runner.handle({ type: 'setSpeed', speed: 4 })
+    h.runner.handle({ type: 'setSpeed', speed: 600 })
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     h.run(1)
-    expect(h.frames()[0]?.step).toBe(4)
+    const stats = h.frames()[0]?.stats
+    expect(stats?.step).toBeGreaterThan(1)
+    expect(stats?.timeS).toBeGreaterThanOrEqual(10 - 1e-9)
+    expect(stats?.timeS).toBeLessThan(10 + (stats?.dtS ?? 0))
   })
 
   it('pause で止まり、step で 1 step 進み、resume で続く', () => {
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
+    // 実時間の最初の tick は 1 step
+    h.runner.handle({ type: 'setSpeed', speed: 1 })
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     h.runner.handle({ type: 'pause' })
     h.run(3)
@@ -180,13 +225,13 @@ describe('SimulationRunner: 再生と frame（spec 04 §5、tech-spec §5.2）',
   it('1 tick の途中の step で起きた越流イベントも、その tick の frame に入れる（最後の step の分だけにしない）', () => {
     const h = setup()
     // 床の中央を最低点とし、spill 標高を床と同じ 0m にする（雨が落ちた step 1 で通知される）。
-    // 4x の 1 tick は step 1〜4 で、frame の統計は step 4 のもの（step 4 の events は空）
+    // 600 倍の 1 tick は step 1 から数 step で、frame の統計は最後の step のもの（その events は空）
     h.runner.loadTerrain(1, basin(), [makeDepression({ id: 3, pitIndex: 12, spillElevation: 0 })])
-    h.runner.handle({ type: 'setSpeed', speed: 4 })
+    h.runner.handle({ type: 'setSpeed', speed: 600 })
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     h.run(1)
     const frame = h.frames()[0]
-    expect(frame?.step).toBe(4)
+    expect(frame?.step).toBeGreaterThan(1)
     expect(frame?.stats.events.map((e) => [e.depressionId, e.step])).toEqual([[3, 1]])
   })
 
@@ -212,7 +257,7 @@ describe('SimulationRunner: runId（タスクレビューの重要な指摘・�
       h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
       // バッファ 2 枚を使い切る（返却しない）。reset の step 0 の frame が送れない状況を作る
       h.run(5)
-      expect(h.frames().map((f) => f.step)).toEqual([1, 2])
+      expect(h.frames()).toHaveLength(2)
       expect(h.frames().every((f) => f.runId === 1)).toBe(true)
 
       // バッファが無いまま reset（ZERO_STATS は保留のまま送れない）→ すぐに start。
@@ -244,12 +289,21 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     // 北西のセル (1, 1) に雨を置き、1 step 後に中央から南東へ流れる状態を作る
     h.runner.handle({
       type: 'start',
-      rain: { x: 1.5, y: 1.5, radiusM: 0.4, amountMm: 1000 },
+      rain: {
+        x: 1.5,
+        y: 1.5,
+        radiusM: 0.4,
+        intensityMmPerH: 1000,
+        durationS: 0,
+        wholeRange: false,
+      },
       runId: 1,
     })
     h.runner.handle({ type: 'pause' })
-    h.runner.handle({ type: 'step' })
-    h.returnAll()
+    for (let n = 0; n < 3; n++) {
+      h.runner.handle({ type: 'step' })
+      h.returnAll()
+    }
     // 止まっている間の切り替えは、今の状態の frame を送り直して反映する
     h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
     const shown = h.frames().at(-1)?.arrows
@@ -304,12 +358,12 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     expect(h.frames().at(-1)?.arrows).not.toBeNull()
   })
 
-  it('平衡に達した frame も、間引きの間隔にかかわらず矢印を送る', () => {
+  it('自動停止（settled）した frame も、間引きの間隔にかかわらず矢印を送る', () => {
     const h = setup()
     h.runner.loadTerrain(1, basin(), [])
     h.runner.handle({ type: 'setArrows', visible: true, spacingM: 5 })
     h.returnAll()
-    h.runner.handle({ type: 'setSpeed', speed: 4 })
+    h.runner.handle({ type: 'setSpeed', speed: 600 })
     h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
     for (let n = 0; n < 5000 && h.timers.size > 0; n++) {
       h.run(1)
@@ -317,7 +371,7 @@ describe('SimulationRunner: 水の流れの矢印', () => {
     }
     expect(h.timers.size).toBe(0)
     const last = h.frames().at(-1)
-    expect(last?.stats.settled).toBe(true)
+    expect(last?.stats.stopReason).toBe('settled')
     expect(last?.arrows).not.toBeNull()
   })
 

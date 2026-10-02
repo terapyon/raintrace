@@ -51,6 +51,8 @@ export interface FrameView {
   arrows: Float32Array | null
   stats: FrameMessage['stats']
   stepsPerSecond: number
+  /** 実際の倍率。FrameMessage と同じ */
+  simSecondsPerSecond: number
   runId: number
 }
 
@@ -260,6 +262,7 @@ export class SimulationClient {
       arrows: message.arrows,
       stats: message.stats,
       stepsPerSecond: message.stepsPerSecond,
+      simSecondsPerSecond: message.simSecondsPerSecond,
       runId: message.runId,
     }
     try {

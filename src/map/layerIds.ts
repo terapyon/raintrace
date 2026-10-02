@@ -12,7 +12,12 @@ export const TERRAIN_LAYER_IDS = {
   markers: 'terrain-markers',
 } as const
 
-export const WATER_LAYER_IDS = { water: 'water-depth', arrows: 'water-arrows' } as const
+export const WATER_LAYER_IDS = {
+  water: 'water-depth',
+  /** 流出の帯（spec 07 §5.2）。2D の水深の直後 */
+  outflow: 'water-outflow',
+  arrows: 'water-arrows',
+} as const
 
 /**
  * 重ね描きのレイヤーの下から上への並び（04 の重ね描き・spec 05 §3.3・§3.6 の並びを写したもの）。
@@ -24,6 +29,7 @@ export const OVERLAY_LAYER_ORDER: readonly string[] = [
   TERRAIN_LAYER_IDS.elevation,
   TERRAIN_LAYER_IDS.depressions,
   WATER_LAYER_IDS.water,
+  WATER_LAYER_IDS.outflow,
   VIEW3D_LAYER_IDS.water,
   TERRAIN_LAYER_IDS.outline,
   TERRAIN_LAYER_IDS.flow,

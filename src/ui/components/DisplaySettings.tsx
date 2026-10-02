@@ -17,6 +17,8 @@ import {
 import type { SettingsStore } from '../../state/settingsStore'
 import { strings } from '../strings'
 import { DepressionLegend } from './DepressionLegend'
+import { MarkerLegend } from './MarkerLegend'
+import { OutflowLegend } from './OutflowLegend'
 import { Row } from './TerrainInfo'
 import { View3dSettings } from './View3dSettings'
 import { WaterLegend } from './WaterLegend'
@@ -24,8 +26,8 @@ import { WaterLegend } from './WaterLegend'
 type Display = PersistedSettings['display']
 
 /**
- * 表示の切り替え（spec 04 §6）。水の流れ・配色・矢印の間隔は保存する設定、標高・窪地・地形の流向は
- * 02 の画面の一時状態（計画で決めたこと 10）
+ * 表示の切り替え（spec 04 §6）。水の流れ・配色・矢印の間隔・流出しているセル（spec 07）は保存する設定、
+ * 標高・窪地・地形の流向は 02 の画面の一時状態（計画で決めたこと 10）
  */
 export function DisplaySettings({ app, settings }: { app: AppStore; settings: SettingsStore }) {
   const layers = useStore(app, (s) => s.display)
@@ -104,6 +106,17 @@ export function DisplaySettings({ app, settings }: { app: AppStore; settings: Se
         label={strings.panel.showDepressions}
       />
       <DepressionLegend />
+      <MarkerLegend />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={display.showOutflowCells}
+            onChange={(_, checked) => setDisplay({ showOutflowCells: checked })}
+          />
+        }
+        label={strings.panel.showOutflow}
+      />
+      <OutflowLegend />
       <Row label={strings.map.basemap}>
         <ToggleButtonGroup
           size="small"

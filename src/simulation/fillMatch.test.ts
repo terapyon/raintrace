@@ -1,97 +1,92 @@
 import { describe, expect, it } from 'vitest'
-import { FLOW_THRESHOLD_M } from './constants.ts'
 import { analyzeDepressions } from './terrain/analyzeDepressions.ts'
 import {
   buildTerrain,
   engineOn,
-  outletDistances,
-  runUntilSettled,
+  QUIET_FILL_M_PER_S,
+  runUntilQuiet,
   type Terrain,
 } from './testing/fixtures.test-support.ts'
 
-/** 02 の地形解析による満水時の水面 F（無効セルは 0）。02 の API に合わせるのはこの関数だけ */
-function filledSurface(t: Terrain): Float32Array {
-  return analyzeDepressions({ elevation: t.elevation, validMask: t.validMask, ...t.meta }).fill
-}
+/** 池のセル（4 近傍の Priority-Flood で窪地に入るセル）の |H − F| の許容（tech-spec §6.6 の目標。spec 08 §9.1） */
+const POND_TOLERANCE_M = 0.01
+/**
+ * 池の外の有効セルの水深の許容（spec 08 §9.1）。止め方 3 mm/h の後も、緩い斜面には mm の膜が残る
+ * （試作の最大 3.36 mm）。本物の不一致（1 cm 以上）は捕まえる。**後から黙って緩めない**（M0 の承認の軽微 m2。
+ * 外れたら先に止め方の閾値か manningN を動かし、レビュー役に渡す）
+ */
+const OUTSIDE_TOLERANCE_M = 0.005
+/** 上限の step 数（spec 08 §9.1。試作では 6,708〜32,646 step） */
+const MAX_STEPS = 1_000_000
 
-/** 流出口が下り続ける地形（流出口の先が平らだと、θ の傾きが流出口の先まで積み上がる） */
-const TERRAINS: [string, Terrain][] = [
+/**
+ * 地形と摩擦（spec 08 §9.1 の表。n は地形ごとに選んだ。凹凸は n = 0.03 だと排水の慣性で池の水位が F より約 17 mm 下がる）。
+ * 「凹凸（24 × 24）」は素の Node で 750 ms を超えるため fillMatch.slow.test.ts に移した（Task 6 Step 4）
+ */
+const TERRAINS: [string, Terrain, number][] = [
   [
-    '凹凸（24 × 24、セル 1m）',
-    buildTerrain(24, 24, 1, (x, y) => 10 + 0.5 * Math.sin(x * 0.7) * Math.cos(y * 0.6) + 0.02 * x),
-  ],
-  [
-    '凹凸と無効セル（24 × 20、セル 3.9m）',
+    '凹凸と無効セル（24 × 20、セル 3.9 m、n = 0.03）',
     buildTerrain(24, 20, 3.9, (x, y) =>
       x >= 9 && x <= 11 && y >= 8 && y <= 10
         ? Number.NaN
         : 10 + 0.8 * Math.sin(x * 0.9) * Math.sin(y * 0.8),
     ),
+    0.03,
   ],
   [
-    '入れ子の窪地（20 × 20、セル 1m、東の縁に高さ 1.5m の切れ目）',
-    buildTerrain(20, 20, 1, (x, y) => {
-      if (x === 0 || y === 0 || x === 19 || y === 19) return x === 19 && y === 10 ? 1.5 : 3
-      const bowl = 0.1 * Math.hypot(x - 9.5, y - 9.5)
-      const pitA = Math.hypot(x - 6, y - 6) < 2 ? -0.5 : 0
-      const pitB = Math.hypot(x - 13, y - 12) < 2.5 ? -0.3 : 0
+    '入れ子の窪地（12 × 12、セル 1 m、東の縁に高さ 1.5 m の切れ目、n = 0.03）',
+    buildTerrain(12, 12, 1, (x, y) => {
+      if (x === 0 || y === 0 || x === 11 || y === 11) return x === 11 && y === 6 ? 1.5 : 3
+      const bowl = 0.1 * Math.hypot(x - 5.5, y - 5.5)
+      const pitA = Math.hypot(x - 3.5, y - 3.5) < 1.5 ? -0.5 : 0
+      const pitB = Math.hypot(x - 8, y - 7.5) < 1.6 ? -0.3 : 0
       return bowl + pitA + pitB
     }),
+    0.03,
   ],
 ]
 
-describe('満水との一致（spec 03 §6.1、02 の analyzeDepressions）', () => {
-  // この 120,000ms は it.each の 3 つすべてに効く。必要なのは入れ子の窪地だけ（平衡まで約 54,000 step
-  // かかり、カバレッジの計測（pnpm test:coverage）の v8 の計測のオーバーヘッドで既定の 5,000ms を超える）。
-  // GitHub Actions のランナーではこのファイルが 17〜32 秒かかり（2026-09-17 の CI）、30,000ms では
-  // 入れ子の窪地が時間切れで落ちることがあったので、ランナーのばらつきを見込んで 4 倍にした
+describe('満水との一致（spec 08 §9.1、4 近傍の analyzeDepressions）', () => {
   it.each(TERRAINS)(
-    '%s: 十分な水を入れて平衡させた水面が F と一致する',
-    (_, t) => {
-      const F = filledSurface(t)
-      const d = outletDistances(t, F)
-      const { width, height, cellSizeM } = t.meta
-      let validCells = 0
-      for (let i = 0; i < t.validMask.length; i++) if ((t.validMask[i] ?? 0) !== 0) validCells++
-      const engine = engineOn(t)
-      // グリッド全体に 2m の雨。窪地を満たした残りは領域外へ流れ出る
-      engine.addRainfall({
-        x: (width * cellSizeM) / 2,
-        y: (height * cellSizeM) / 2,
-        radiusM: Math.hypot(width, height) * cellSizeM,
-        amountMm: 2000,
+    '%s: 範囲全体に 2 m を一度に置き、水深の変化が 3 mm/h 未満になった水面が 4 近傍の F と一致する',
+    (_, t, manningN) => {
+      const { fill, labels } = analyzeDepressions({
+        elevation: t.elevation,
+        validMask: t.validMask,
+        ...t.meta,
       })
-      runUntilSettled(engine, 200_000)
+      const engine = engineOn(t, { manningN })
+      engine.setRainfall({
+        x: 0,
+        y: 0,
+        radiusM: 1,
+        intensityMmPerH: 2000,
+        durationS: 0,
+        wholeRange: true,
+      })
+      runUntilQuiet(engine, QUIET_FILL_M_PER_S, MAX_STEPS)
       const w = engine.waterDepth()
-      let checked = 0
-      let checkedOutside = 0
+      let pond = 0
+      let outside = 0
+      let pondCells = 0
+      let outsideCells = 0
       for (let i = 0; i < w.length; i++) {
-        const di = d[i] ?? -1
-        if (di < 0) {
-          if ((t.validMask[i] ?? 0) === 0) continue
-          // 窪地の外の有効セル（F_i = Z_i）: そこからは、標高が Z_i 以下のセルだけを通ってグリッドの
-          // 端か無効セルの隣まで届く経路がある。平衡では、経路を下流から 1 ホップさかのぼるごとに
-          // 水面は高々 θ しか上がらず（乾いたセルの水面は標高で Z_i 以下）、終点は仮想セルと同じ標高
-          // なので水深は θ 以下。したがって w_i ≤ θ × (経路長 + 1) ≤ θ × (有効セルの数 + 1)。
-          // 24 × 24 なら約 5.8mm で、DEM の刻み 1cm より小さいので、本物の不一致は捕まえる
-          const wi = w[i] ?? 0
-          expect(wi).toBeGreaterThanOrEqual(0)
-          expect(wi).toBeLessThanOrEqual(FLOW_THRESHOLD_M * (validCells + 1) + 1e-9)
-          checkedOutside++
-          continue
+        if ((t.validMask[i] ?? 0) === 0) continue
+        const d = w[i] ?? 0
+        expect(d).toBeGreaterThanOrEqual(0)
+        if ((labels[i] ?? 0) !== 0) {
+          pond = Math.max(pond, Math.abs((t.elevation[i] ?? 0) + d - (fill[i] ?? 0)))
+          pondCells++
+        } else {
+          outside = Math.max(outside, d)
+          outsideCells++
         }
-        const h = (t.elevation[i] ?? 0) + (w[i] ?? 0)
-        const f = F[i] ?? 0
-        // 許容: F − 1e-9 ≤ H ≤ F + θ × (d(i) + 2) + 1e-9。池の水面は流出口から 1 ホップごとに最大 θ 高くなりうる。
-        // さらに、端・無効セルに接する流出口は、仮想セルが同じ標高なので水面差がその水深そのものになり、
-        // θ 以下の水を持ったまま止まる（+2 のうちの 1 つ分）。下限は、水面が低すぎる不具合を捕まえる
-        expect(h).toBeGreaterThanOrEqual(f - 1e-9)
-        expect(h - f).toBeLessThanOrEqual(FLOW_THRESHOLD_M * (di + 2) + 1e-9)
-        checked++
       }
-      expect(checked).toBeGreaterThan(0)
-      expect(checkedOutside).toBeGreaterThan(0)
+      expect(pondCells).toBeGreaterThan(0)
+      expect(outsideCells).toBeGreaterThan(0)
+      expect(pond).toBeLessThanOrEqual(POND_TOLERANCE_M)
+      expect(outside).toBeLessThanOrEqual(OUTSIDE_TOLERANCE_M)
     },
-    120_000,
+    30_000,
   )
 })

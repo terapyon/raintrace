@@ -1,11 +1,89 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { TERRAIN_LAYER_IDS } from '../../src/map/TerrainOverlay'
 import { WATER_LAYER_IDS } from '../../src/map/WaterOverlay'
 import { strings } from '../../src/ui/strings'
-import { acknowledgeDisclaimer, clickMap, collectErrors, tabTo, waitTerrain } from './support/app'
+import {
+  acknowledgeDisclaimer,
+  clickMap,
+  collectErrors,
+  nextFrames,
+  tabTo,
+  waitTerrain,
+} from './support/app'
 import { routeGsi } from './support/gsi'
+import { clearOfMarkers, findAllMarkers } from './support/markers'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
+
+/** 「降雨中（残り …）」（spec 08 §6.2） */
+const RAINING = new RegExp(strings.stats.raining('.+'))
+
+/** 「60 mm / 200 mm」の降った量（mm） */
+async function fallenMm(page: Page): Promise<number> {
+  const text = (await page.getByTestId('stat-rain-depth').textContent()) ?? ''
+  return Number(/^(\d+) mm/.exec(text)?.[1] ?? Number.NaN)
+}
+
+/** 「1234.5 m³」の数 */
+async function volumeM3(page: Page): Promise<number> {
+  const text = (await page.getByTestId('stat-total').textContent()) ?? ''
+  return Number(text.replace(/[^0-9.]/g, ''))
+}
+
+/** 「1234.5 m³」の数（領域内の水量。stat-stored） */
+async function storedM3(page: Page): Promise<number> {
+  const text = (await page.getByTestId('stat-stored').textContent()) ?? ''
+  return Number(text.replace(/[^0-9.]/g, ''))
+}
+
+/** 一時停止の後、表示中の step が動かなくなるまで待って返す（最後の frame が届くまで） */
+async function stableStep(page: Page): Promise<number> {
+  const read = async (): Promise<number> =>
+    Number(/Step (\d+)/.exec((await page.getByTestId('stat-step').textContent()) ?? '')?.[1])
+  let last = -1
+  await expect
+    .poll(
+      async () => {
+        const previous = last
+        last = await read()
+        return last === previous
+      },
+      { timeout: 10_000, intervals: [300] },
+    )
+    .toBe(true)
+  return last
+}
+
+/**
+ * 降雨マーカーの下（マーカーの画像の下端が地点）の近くで、水深が 0.00 m でないセルを探して、その画面の位置を返す
+ * （セル情報のポップオーバーで読む）。マーカーの画像に当たらないよう、下端より下だけを試す
+ */
+async function findWetPoint(page: Page): Promise<{ x: number; y: number }> {
+  const marker = await page.locator('.maplibregl-marker').boundingBox()
+  if (marker === null) throw new Error('マーカーがありません')
+  const base = { x: marker.x + marker.width / 2, y: marker.y + marker.height }
+  const offsets = [
+    [0, 4],
+    [20, 4],
+    [-20, 4],
+    [0, 24],
+    [20, 24],
+    [-20, 24],
+    [0, 44],
+    [40, 4],
+    [-40, 4],
+  ] as const
+  for (const [dx, dy] of offsets) {
+    const p = { x: base.x + dx, y: base.y + dy }
+    await page.mouse.click(p.x, p.y)
+    const depth = page.getByTestId('cell-depth')
+    await expect(depth).toBeVisible()
+    const text = await depth.textContent()
+    await page.getByRole('button', { name: strings.cellInfo.close }).click()
+    if (text !== '0.00 m') return p
+  }
+  throw new Error('マーカーの近くに水のあるセルが見つかりません')
+}
 /** ダークのときに <html> に付くクラス（Task 10 Step 5 で実ブラウザで確かめた名前。違えばここを直す） */
 const DARK_CLASS = 'dark'
 // MapController が render のたびに data-overlay-layers へ書く並びと同じ（レビュー指摘の修正・fix round 1）。
@@ -21,33 +99,42 @@ const OVERLAY_ORDER_2D = [
   TERRAIN_LAYER_IDS.elevation,
   TERRAIN_LAYER_IDS.depressions,
   WATER_LAYER_IDS.water,
+  WATER_LAYER_IDS.outflow,
   TERRAIN_LAYER_IDS.outline,
   TERRAIN_LAYER_IDS.flow,
   WATER_LAYER_IDS.arrows,
   TERRAIN_LAYER_IDS.markers,
 ].join(',')
 
-test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
+test.describe('降雨と再生（spec 08 §9.4 の 4・5・10）', () => {
   test.beforeEach(async ({ context }) => {
     await routeGsi(context)
     await acknowledgeDisclaimer(context)
   })
 
-  test('既定の設定（100mm・10m）で開始すると、投入水量が「31.4 m³」になり、Step が進む', async ({
+  test('既定の設定（100 mm/h・1 時間・10 m）で開始し、最速にすると経過時間が進んで「降雨中」と出て、雨が終わると「降雨終了」になり、投入水量が「31.4 m³」になる', async ({
     page,
   }) => {
+    test.setTimeout(180_000)
     const errors = collectErrors(page)
     await page.goto(SHIBUYA)
     await waitTerrain(page)
     await expect(page.getByTestId('stat-step')).toHaveText('Step 0')
+    await expect(page.getByTestId('stat-time')).toHaveText(strings.format.seconds(0))
+    await page.getByRole('button', { name: strings.playback.max, exact: true }).click()
     await page.getByRole('button', { name: strings.playback.start }).click()
-    // 実タイルの範囲は円の中がすべて有効セルなので、πr² × 雨量のまま（R04-8）
+    await expect(page.getByTestId('stat-rain-status')).toHaveText(RAINING)
+    await expect(page.getByTestId('stat-time')).not.toHaveText(strings.format.seconds(0))
+    await expect(page.getByTestId('stat-rain-status')).toHaveText(strings.stats.rainEnded, {
+      timeout: 150_000,
+    })
+    // 実タイルの範囲は円の中がすべて有効セルなので、I·T·πr² のまま（R04-8）
     await expect(page.getByTestId('stat-total')).toHaveText('31.4 m³')
-    await expect(page.getByTestId('stat-step')).not.toHaveText('Step 0')
+    await expect(page.getByTestId('stat-rain-depth')).toHaveText(strings.format.rainDepth(100, 100))
     expect(errors).toEqual([])
   })
 
-  test('地形を読み込むと、重ね描きのレイヤーが固定の並び（標高・窪地・水深・枠・流向・矢印・最低点）の順に重なる', async ({
+  test('地形を読み込むと、重ね描きのレイヤーが固定の並び（標高・窪地・水深・流出の帯・枠・流向・矢印・○）の順に重なる', async ({
     page,
   }) => {
     await page.goto(SHIBUYA)
@@ -57,38 +144,71 @@ test.describe('降雨と再生（spec 04 §11.2 の 4・5）', () => {
     await expect(mapEl).toHaveAttribute('data-overlay-order', OVERLAY_ORDER_2D)
   })
 
-  test('Reset で、投入水量が 0 に、Step が 0 に戻り、もう一度開始すると新しい実行が進む', async ({
+  test('Reset で、投入水量・経過時間・Step が 0 に戻り、もう一度開始すると新しい実行が 0 から進む', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+    // 半径 50 m に 300 mm/h。60 倍（既定）で 20 mm 以上降るまで回すと、マーカーの近く（findWetPoint が試す
+    // 40 px ≒ 40 m 以内）のどこかに 5 mm 以上の水がある（雨の間の斜面の膜と、低い所の溜まり）
+    await page.goto(`${SHIBUYA}&mmh=300&dur=60&r=50`)
+    await waitTerrain(page)
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    await expect.poll(() => fallenMm(page), { timeout: 120_000 }).toBeGreaterThanOrEqual(20)
+    await page.getByRole('button', { name: strings.playback.pause }).click()
+    await stableStep(page)
+    const firstTotal = await volumeM3(page)
+    // ポップオーバー（MUI の Modal）が開いている間はパネルが読み上げの木から外れるので、見たら閉じる
+    const wet = await findWetPoint(page)
+    await page.getByRole('button', { name: strings.playback.reset }).click()
+    await expect(page.getByTestId('stat-total')).toHaveText('0.00 m³')
+    await expect(page.getByTestId('stat-step')).toHaveText('Step 0')
+    await expect(page.getByTestId('stat-time')).toHaveText(strings.format.seconds(0))
+    await expect(page.getByLabel(strings.rainfall.intensity)).toBeEnabled()
+    // セル情報は SimulationClient の手元の水深を読む。Worker が reset を処理して step 0 の frame（水深 0）を
+    // 送ったときだけ 0 になる（04 の最終レビューの重要な指摘）
+    // 同じ点のポップオーバーは findWetPoint で閉じたばかり。閉じた後の消える間の紙がクリックを吸うと開かない
+    // （Task 14 で負荷の下に 1 回あった。アプリの不具合で、修正ラウンド 1 で紙は開いている間だけクリックを受ける
+    // ようにした。CellInfoPopover.test.tsx）ので、クリックし直さない
+    await page.mouse.click(wet.x, wet.y)
+    await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
+    await page.getByRole('button', { name: strings.cellInfo.close }).click()
+    // もう一度開始すると、新しい runId の frame が届いて統計が 0 から進む（runId の食い違い・バッファの取りこぼしが
+    // あると frame が捨てられ、0 のまま止まる）。spec 08 の投入水量（stat-total）は閉じた式
+    // （placedWater + ρ・|S|・A・min(t, T)。FlowSolver）で、前の実行の残り水を含まないので、投入水量どうしの
+    // 比較だけでは漏れが分からない。代わりに、始めてすぐは領域内の水量（stat-stored）が投入水量を超えないことを見る
+    // （水は投入水量の範囲でしか領域内に留まれないので、前の実行の水が残っていればここで上回る）
+    await page.getByRole('button', { name: strings.playback.start }).click()
+    await expect(page.getByTestId('stat-step')).not.toHaveText('Step 0')
+    expect(await storedM3(page)).toBeLessThanOrEqual(await volumeM3(page))
+    await page.getByRole('button', { name: strings.playback.pause }).click()
+    await stableStep(page)
+    const secondTotal = await volumeM3(page)
+    expect(secondTotal).toBeGreaterThan(0)
+    expect(secondTotal).toBeLessThan(firstTotal)
+  })
+
+  test('範囲全体の雨をオンにすると半径の欄が無効になり、開始すると投入水量が範囲の有効セルの面積 × 雨量で増えていく（計画で決めたこと 25）', async ({
     page,
   }) => {
     await page.goto(SHIBUYA)
     await waitTerrain(page)
+    await page.getByLabel(strings.rainfall.wholeRange).check()
+    await expect(page.getByLabel(strings.rainfall.radius)).toBeDisabled()
+    // 実時間で開始してすぐ止め、「1 step 進める」で進める（乾いた地形の最初の step の dt は 1 秒）
+    await page.getByRole('button', { name: strings.playback.speedValue(1), exact: true }).click()
     await page.getByRole('button', { name: strings.playback.start }).click()
-    await expect(page.getByTestId('stat-total')).toHaveText('31.4 m³')
-    // 降雨中心のすぐ南のセルを開き、水があることを確かめておく（マーカーの画像は下端が地点）。
-    // ポップオーバー（MUI の Modal）が開いている間はパネルが読み上げの木から外れるので、見たら閉じる
-    const marker = await page.locator('.maplibregl-marker').boundingBox()
-    if (marker === null) throw new Error('マーカーがありません')
-    const nearCenter = { x: marker.x + marker.width / 2, y: marker.y + marker.height + 4 }
-    await page.mouse.click(nearCenter.x, nearCenter.y)
-    await expect(page.getByTestId('cell-depth')).not.toHaveText('0.00 m')
-    await page.getByRole('button', { name: strings.cellInfo.close }).click()
-    await page.getByRole('button', { name: strings.playback.reset }).click()
-    await expect(page.getByTestId('stat-total')).toHaveText('0.00 m³')
-    await expect(page.getByTestId('stat-step')).toHaveText('Step 0')
-    await expect(page.getByLabel(strings.rainfall.amount)).toBeEnabled()
-    // セル情報は SimulationClient の手元の水深を読む。client は runId に関わらず届いた frame の水深を持つので、
-    // Worker が reset を処理して step 0 の frame（水深 0）を送ったときだけ 0 になる。Worker が reset を無視して
-    // 前の実行を続けると、session が捨てる frame の水が残り、ここで落ちる（最終レビューの重要な指摘）
-    await page.mouse.click(nearCenter.x, nearCenter.y)
-    await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
-    await page.getByRole('button', { name: strings.cellInfo.close }).click()
-    // 上の 0 は Reset を押した時点でストアが出すので、Worker が reset を処理した後の実行が進むかは分からない。
-    // もう一度開始し、新しい runId の frame が届いて統計が進むことを確かめる（runId の食い違い・バッファの
-    // 取りこぼしがあると frame が捨てられ、0 のまま止まる）。前の実行の水が残っていれば 31.4 にならない
-    // （最終レビューの重要な指摘）
-    await page.getByRole('button', { name: strings.playback.start }).click()
-    await expect(page.getByTestId('stat-total')).toHaveText('31.4 m³')
-    await expect(page.getByTestId('stat-step')).not.toHaveText('Step 0')
+    await page.getByRole('button', { name: strings.playback.pause }).click()
+    let step = await stableStep(page)
+    for (let n = 0; n < 5; n++) {
+      await page.getByRole('button', { name: strings.playback.step, exact: true }).click()
+      step += 1
+      await expect(page.getByTestId('stat-step')).toHaveText(`Step ${step}`)
+    }
+    await expect(page.getByTestId('stat-time')).toHaveText(strings.format.seconds(step))
+    // 投入水量 ÷（step 数 × 100 mm/h の 1 秒分）= 雨が降ったセルの面積。渋谷の 500 m の範囲は無効セルが無い
+    const area = (await volumeM3(page)) / (step * (100 / 1000 / 3600))
+    expect(area).toBeGreaterThan(200_000)
+    expect(area).toBeLessThan(280_000)
   })
 })
 
@@ -118,23 +238,39 @@ test.describe('URL と設定（spec 04 §7）', () => {
     await acknowledgeDisclaimer(context)
   })
 
-  test('?mm=50&r=20 を付けて開くと、入力欄にその値が入っている（§11.2 の 7）', async ({ page }) => {
-    await page.goto(`${SHIBUYA}&mm=50&r=20`)
-    await expect(page.getByLabel(strings.rainfall.amount)).toHaveValue('50')
+  test('?mmh=50&dur=120&all=0&r=20 を付けて開くと、入力欄にその値が入っている（spec 08 §9.4 の 7）', async ({
+    page,
+  }) => {
+    await page.goto(`${SHIBUYA}&mmh=50&dur=120&all=0&r=20`)
+    await expect(page.getByLabel(strings.rainfall.intensity)).toHaveValue('50')
+    await expect(page.getByLabel(strings.rainfall.duration)).toHaveValue('120')
+    await expect(page.getByLabel(strings.rainfall.wholeRange)).not.toBeChecked()
     await expect(page.getByLabel(strings.rainfall.radius)).toHaveValue('20')
     await waitTerrain(page)
-    await expect(page).toHaveURL(/size=500&mm=50&r=20/)
+    await expect(page).toHaveURL(/size=500&mmh=50&dur=120&all=0&r=20/)
   })
 
-  test('変えた雨量は localStorage に保存され、URL に無くても次に開いたときに入っている', async ({
+  test('古い ?mm=50&r=20 を付けて開くと、雨は既定（100 mm/h・1 時間）で半径は 20 m になり、URL から mm が消える（R08-8、N3）', async ({
+    page,
+  }) => {
+    await page.goto(`${SHIBUYA}&mm=50&r=20`)
+    await expect(page.getByLabel(strings.rainfall.intensity)).toHaveValue('100')
+    await expect(page.getByLabel(strings.rainfall.duration)).toHaveValue('60')
+    await expect(page.getByLabel(strings.rainfall.radius)).toHaveValue('20')
+    await waitTerrain(page)
+    await expect(page).toHaveURL(/size=500&mmh=100&dur=60&all=0&r=20/)
+    await expect(page).not.toHaveURL(/[?&]mm=/)
+  })
+
+  test('変えた時間雨量は localStorage に保存され、URL に無くても次に開いたときに入っている', async ({
     page,
   }) => {
     await page.goto(SHIBUYA)
     await waitTerrain(page)
-    await page.getByLabel(strings.rainfall.amount).fill('80')
-    await expect(page).toHaveURL(/mm=80/)
+    await page.getByLabel(strings.rainfall.intensity).fill('80')
+    await expect(page).toHaveURL(/mmh=80/)
     await page.goto('/')
-    await expect(page.getByLabel(strings.rainfall.amount)).toHaveValue('80')
+    await expect(page.getByLabel(strings.rainfall.intensity)).toHaveValue('80')
   })
 
   test('範囲の大きさを 250 m にすると、読み込み直して URL に size=250 が入る', async ({ page }) => {
@@ -146,6 +282,34 @@ test.describe('URL と設定（spec 04 §7）', () => {
     await expect(page.getByTestId('panel')).toContainText(strings.panel.rangeValue(250))
   })
 })
+
+/**
+ * 画面の割合 (fx, fy) の点に近く、どの ○ からも離れた点（ページの座標）。4 px 刻みで ±40 px まで、近い順に探す。
+ * accept で追加の条件を付けられる。○ の位置は窪地の解析で変わる（spec 08 で 4 近傍になり、(0.4, 0.4) が
+ * あふれ出し点の ○ に当たるようになった）ので、決まった点ではなく ○ を避けた点をクリックする（spec 07 の
+ * Review Focus 1 と同じ扱い。アプリの挙動は変えない）
+ */
+async function pointClearOfMarkers(
+  page: Page,
+  fx: number,
+  fy: number,
+  accept: (p: { x: number; y: number }) => boolean = () => true,
+): Promise<{ x: number; y: number }> {
+  const markers = await findAllMarkers(page)
+  const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
+  if (box === null) throw new Error('地図の canvas がありません')
+  const base = { x: box.x + box.width * fx, y: box.y + box.height * fy }
+  const candidates: { x: number; y: number }[] = []
+  for (let dx = -40; dx <= 40; dx += 4) {
+    for (let dy = -40; dy <= 40; dy += 4) candidates.push({ x: base.x + dx, y: base.y + dy })
+  }
+  candidates.sort(
+    (a, b) => Math.hypot(a.x - base.x, a.y - base.y) - Math.hypot(b.x - base.x, b.y - base.y),
+  )
+  const found = candidates.find((p) => clearOfMarkers(p, markers) && accept(p))
+  if (found === undefined) throw new Error(`(${fx}, ${fy}) の近くに ○ から離れた点がありません`)
+  return found
+}
 
 test.describe('地図のクリック（spec 04 §4、R04-1）', () => {
   test.beforeEach(async ({ context }) => {
@@ -159,15 +323,26 @@ test.describe('地図のクリック（spec 04 §4、R04-1）', () => {
     await page.goto(SHIBUYA)
     await waitTerrain(page)
     const before = await page.getByTestId('selected-point').textContent()
-    // fitBounds の後、範囲は画面の中央の正方形（1280 × 720 なら横 320〜960）。右のパネルに隠れない位置
-    await clickMap(page, 0.4, 0.4)
+    // fitBounds の後、範囲は画面の中央の正方形（1280 × 720 なら横 320〜960）。右のパネルに隠れない位置。
+    // ○ に当たると印の説明が開くので、(0.4, 0.4) の近くで ○ から離れた点を選ぶ（2 点目も先に選んでおく）
+    // ○ が描かれてから選ぶ（描かれる前の絵では ○ を避けられない）
+    await expect.poll(async () => (await findAllMarkers(page)).length).toBeGreaterThan(0)
+    await nextFrames(page)
+    const p1 = await pointClearOfMarkers(page, 0.4, 0.4)
+    const p2 = await pointClearOfMarkers(
+      page,
+      0.3,
+      0.3,
+      (p) => p.x <= p1.x - 100 && p.y <= p1.y - 50,
+    )
+    await page.mouse.click(p1.x, p1.y)
     await expect(page.getByTestId('cell-info')).toBeVisible()
     await expect(page.getByTestId('cell-elevation')).toHaveText(/^\d+\.\d{2} m$/)
     await expect(page.getByTestId('cell-depth')).toHaveText('0.00 m')
     // ポップオーバーは背景を持たないので、開いたまま範囲の別の場所（ポップオーバーの左上の外）をクリックすると、
     // そこに開き直す（Task 8。384 × 216 は範囲の中）
     const first = await page.getByTestId('cell-info').boundingBox()
-    await clickMap(page, 0.3, 0.3)
+    await page.mouse.click(p2.x, p2.y)
     await expect
       .poll(async () => (await page.getByTestId('cell-info').boundingBox())?.x ?? 0)
       .toBeLessThan((first?.x ?? 0) - 50)
@@ -205,7 +380,7 @@ test.describe('地図のクリック（spec 04 §4、R04-1）', () => {
   })
 })
 
-test('キーボードだけで、雨量・半径の入力から Start・Pause・Reset まで操作できる（§11.2 の 9、tech-spec §9.5）', async ({
+test('キーボードだけで、時間雨量・継続時間・範囲全体・半径の入力から開始・一時停止・リセットまで操作できる（spec 08 §9.4 の 9、tech-spec §9.5）', async ({
   page,
   context,
 }) => {
@@ -213,19 +388,32 @@ test('キーボードだけで、雨量・半径の入力から Start・Pause・
   await acknowledgeDisclaimer(context)
   await page.goto(SHIBUYA)
   await waitTerrain(page)
-  // 起点として雨量の入力欄に焦点を置く。ここから先はキーボードだけ
-  const amount = page.getByLabel(strings.rainfall.amount)
-  await amount.focus()
+  // 起点として時間雨量の入力欄に焦点を置く。ここから先はキーボードだけ
+  const intensity = page.getByLabel(strings.rainfall.intensity)
+  await intensity.focus()
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.type('120')
+  // 継続時間の select で上矢印を 3 回（1 時間 → 10 分。計画で決めたこと 33）
+  const duration = page.getByLabel(strings.rainfall.duration)
+  await tabTo(page, duration)
+  for (let n = 0; n < 3; n++) await page.keyboard.press('ArrowUp')
+  await expect(duration).toHaveValue('10')
+  // 範囲全体のスイッチは Space でオンにすると半径の欄が無効になり、もう一度 Space でオフに戻す
+  const whole = page.getByLabel(strings.rainfall.wholeRange)
+  await tabTo(page, whole)
+  await page.keyboard.press('Space')
+  await expect(whole).toBeChecked()
+  await expect(page.getByLabel(strings.rainfall.radius)).toBeDisabled()
+  await page.keyboard.press('Space')
+  await expect(whole).not.toBeChecked()
   await tabTo(page, page.getByLabel(strings.rainfall.radius))
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.type('15')
   const primary = page.getByRole('button', { name: strings.playback.start })
   await tabTo(page, primary)
   await page.keyboard.press('Enter')
-  // 120mm・半径 15m: π × 15² × 0.12 = 84.8 m³
-  await expect(page.getByTestId('stat-total')).toHaveText('84.8 m³')
+  // 120 mm/h × 10 分 = 総量 20 mm
+  await expect(page.getByTestId('stat-rain-depth')).toHaveText(/ \/ 20 mm$/)
   // 同じボタンが「一時停止」になり、焦点は外れない
   await expect(page.getByRole('button', { name: strings.playback.pause })).toBeFocused()
   await page.keyboard.press('Enter')

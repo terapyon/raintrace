@@ -77,6 +77,20 @@ describe('CellInfoPopover（spec 04 §4）', () => {
     expect(document.body.style.overflow).not.toBe('hidden')
   })
 
+  it('閉じた後の消える間（transition）の紙はクリックを受けず、同じ位置の地図のクリックを塞がない（spec 08 Task 14 の修正ラウンド 1）', () => {
+    const props = { cell: null, onConfirm: vi.fn(), onClose: vi.fn() }
+    const { rerender } = render(
+      <CellInfoPopover popover={{ kind: 'outside', ...position }} {...props} />,
+    )
+    const paper = screen.getByTestId('cell-info').parentElement
+    if (paper === null) throw new Error('紙がありません')
+    expect(getComputedStyle(paper).pointerEvents).toBe('auto')
+    rerender(<CellInfoPopover popover={{ kind: 'closed' }} {...props} />)
+    // 消える間は紙がまだ DOM にあり、開いた位置（クリックした点）に残っている
+    expect(screen.getByTestId('cell-info').parentElement).toBe(paper)
+    expect(getComputedStyle(paper).pointerEvents).toBe('none')
+  })
+
   it('「閉じる」で閉じる（背景のクリックで閉じる経路が無いので、マウスで閉じる手段）', async () => {
     const onClose = vi.fn()
     render(
@@ -89,5 +103,17 @@ describe('CellInfoPopover（spec 04 §4）', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: strings.cellInfo.close }))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('印の説明（kind: marker）のときは開かない（MarkerInfoPopover が出す。spec 07 §3.4）', () => {
+    render(
+      <CellInfoPopover
+        popover={{ kind: 'marker', markers: [{ marker: 'lowest' }], ...position }}
+        cell={null}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('cell-info')).toBeNull()
   })
 })

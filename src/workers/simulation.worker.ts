@@ -4,6 +4,7 @@ import { rangeCorners } from '../dem/gridRange'
 import { inServiceArea } from '../dem/serviceArea'
 import { PERF_CHANNEL } from '../shared/perfProtocol'
 import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../shared/protocol'
+import { buildOutflowCells } from '../simulation/outflowCells'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
 import type { RunnerPorts } from './simulationRunner'
@@ -106,6 +107,9 @@ async function loadTerrain(
     }
     const analysis = analyzeTerrain(grid)
     const { range, tier } = selection
+    // 流出の縁のマスクと帯（spec 07 §5.1）。validMask だけから作る。地形の解析と同じく読み込みのときに 1 回で、
+    // 転送も 1 回（計画で決めたこと 1）。grid.validMask はこのあとエンジンに渡すが、ここでは読むだけ
+    const outflow = buildOutflowCells(grid.validMask, range.size)
     const geo: TerrainGeo = {
       level: tier.level,
       z: range.z,
@@ -117,7 +121,7 @@ async function loadTerrain(
       breakdown: selection.breakdown,
       invalidRatio: grid.invalidRatio,
     }
-    const { payload, transfer } = packTerrain(grid, analysis, geo)
+    const { payload, transfer } = packTerrain(grid, analysis, geo, outflow)
     // エンジンに渡してから送る。grid への参照はこの関数を抜けると消え、エンジンの複製だけが残る
     runner.loadTerrain(requestId, grid, analysis.depressions)
     post({ type: 'terrainLoaded', requestId, terrain: payload }, transfer)

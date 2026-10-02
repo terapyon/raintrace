@@ -6,18 +6,35 @@ import { strings } from '../strings'
 /** 水深の凡例（spec 04 §6.1） */
 export function WaterLegend({ palette }: { palette: WaterPalette }) {
   return (
-    <Box role="img" aria-label={strings.legend.waterAria} data-testid="water-legend" sx={{ my: 1 }}>
-      <Typography variant="caption" color="text.secondary">
-        {strings.legend.waterTitle(
-          palette === 'stepped' ? strings.legend.waterStepped : strings.legend.waterContinuous,
-        )}
-      </Typography>
-      <Box sx={{ height: 12, borderRadius: 0.5, background: waterLegendCss(palette) }} />
-      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Typography variant="caption">{strings.legend.waterMin}</Typography>
-        <Typography variant="caption">{strings.legend.waterMid}</Typography>
-        <Typography variant="caption">{strings.legend.waterMax}</Typography>
+    <>
+      <Box
+        role="img"
+        aria-label={strings.legend.waterAria}
+        data-testid="water-legend"
+        sx={{ my: 1 }}
+      >
+        <Typography variant="caption" color="text.secondary">
+          {strings.legend.waterTitle(
+            palette === 'stepped' ? strings.legend.waterStepped : strings.legend.waterContinuous,
+          )}
+        </Typography>
+        <Box sx={{ height: 12, borderRadius: 0.5, background: waterLegendCss(palette) }} />
+        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Typography variant="caption">{strings.legend.waterMin}</Typography>
+          <Typography variant="caption">{strings.legend.waterMid}</Typography>
+          <Typography variant="caption">{strings.legend.waterMax}</Typography>
+        </Box>
       </Box>
-    </Box>
+      {/* 1 cm 未満の薄い水は描かない（base-spec §30）。水が「消えた」ように見える理由（spec 07 §4.2） */}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        component="p"
+        data-testid="water-legend-note"
+        sx={{ mb: 1 }}
+      >
+        {strings.legend.waterThinNote}
+      </Typography>
+    </>
   )
 }

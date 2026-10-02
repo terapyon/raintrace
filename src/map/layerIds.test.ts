@@ -57,4 +57,19 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
   it('並びに無い id は例外', () => {
     expect(() => beforeLayerId('no-such-layer', having())).toThrow()
   })
+
+  it('流出の帯（water-outflow）は 2D の水深のすぐ上、3D の水面の下（spec 07 §5.2）', () => {
+    expect(OVERLAY_LAYER_ORDER.indexOf(WATER_LAYER_IDS.outflow)).toBe(
+      OVERLAY_LAYER_ORDER.indexOf(WATER_LAYER_IDS.water) + 1,
+    )
+    expect(
+      beforeLayerId(
+        WATER_LAYER_IDS.outflow,
+        having(VIEW3D_LAYER_IDS.water, TERRAIN_LAYER_IDS.outline),
+      ),
+    ).toBe(VIEW3D_LAYER_IDS.water)
+    expect(beforeLayerId(WATER_LAYER_IDS.water, having(WATER_LAYER_IDS.outflow))).toBe(
+      WATER_LAYER_IDS.outflow,
+    )
+  })
 })

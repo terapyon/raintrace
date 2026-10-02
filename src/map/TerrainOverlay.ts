@@ -3,6 +3,7 @@ import type { TerrainPayload } from '../shared/protocol'
 import { ensureArrowImage } from './arrowImage'
 import { depressionRgba, elevationRgba } from './colormap'
 import { beforeLayerId, TERRAIN_LAYER_IDS } from './layerIds'
+import { MARKER_COLORS } from './overlayColors'
 import { flowFeatures, markerFeatures, outlineFeature } from './terrainFeatures'
 
 /** ストアの DisplaySettings と同じ形（map は state に依存しない） */
@@ -179,7 +180,14 @@ export class TerrainOverlay {
         source: TERRAIN_LAYER_IDS.markers,
         paint: {
           'circle-radius': 6,
-          'circle-color': ['match', ['get', 'kind'], 'lowest', '#1565c0', '#ef6c00'],
+          // 色は凡例（ui の MarkerLegend）と同じ定数（spec 07 §3.6）
+          'circle-color': [
+            'match',
+            ['get', 'kind'],
+            'lowest',
+            MARKER_COLORS.lowest,
+            MARKER_COLORS.spill,
+          ],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
         },

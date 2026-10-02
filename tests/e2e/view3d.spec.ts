@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, test } from '@playwright/test'
 import { TERRAIN_LAYER_IDS } from '../../src/map/TerrainOverlay'
 import { drawnTileZoomForView, MIN_3D_DRAWN_TILE_ZOOM } from '../../src/map/view3d/drawnZoom'
 import { VIEW3D_LAYER_IDS } from '../../src/map/view3d/layerIds'
@@ -9,6 +9,9 @@ import {
   clickMap,
   collectErrors,
   collectWarnings,
+  hideTerrainOverlays,
+  mapElement,
+  switchTo3d,
   waitTerrain,
 } from './support/app'
 import { routeGsi } from './support/gsi'
@@ -16,21 +19,12 @@ import { decodePng, waterColoredFraction } from './support/png'
 
 const SHIBUYA = '/?lat=35.658000&lon=139.701600'
 
-const mapElement = (page: Page): Locator => page.locator('[data-map-loaded="true"]')
-
 /** 水面のすべての区画を描いた回数（data-water-ready。View3d。spec 06 §5.2、Task 17a） */
 const readyCount = async (element: Locator): Promise<number> =>
   Number(await element.getAttribute('data-water-ready'))
 
 const layersOf = async (element: Locator, name: string): Promise<string[]> =>
   (await element.getAttribute(name))?.split(',') ?? []
-
-/** パネルの「3D」を押し、3D の視点へ動き終えるまで待つ（SwiftShader では地形の用意に数秒かかる） */
-async function switchTo3d(page: Page): Promise<void> {
-  await page.getByRole('button', { name: strings.view3d.view3d, exact: true }).click()
-  await expect(mapElement(page)).toHaveAttribute('data-view3d', '3d', { timeout: 30_000 })
-  await expect(mapElement(page)).toHaveAttribute('data-view3d-framed', 'true', { timeout: 30_000 })
-}
 
 test.describe('3D の表示（spec 05 §5）', () => {
   // 一部のテストは 30 秒までの per-assertion wait を複数重ねる。Playwright の既定のテストの timeout
@@ -154,6 +148,7 @@ test.describe('3D の表示（spec 05 §5）', () => {
         TERRAIN_LAYER_IDS.elevation,
         TERRAIN_LAYER_IDS.depressions,
         WATER_LAYER_IDS.water,
+        WATER_LAYER_IDS.outflow,
         VIEW3D_LAYER_IDS.water,
         TERRAIN_LAYER_IDS.outline,
         TERRAIN_LAYER_IDS.flow,
@@ -163,6 +158,8 @@ test.describe('3D の表示（spec 05 §5）', () => {
     )
     const visible3d = (await mapEl.getAttribute('data-visible-overlay-layers'))?.split(',') ?? []
     expect(visible3d).not.toContain(WATER_LAYER_IDS.water)
+    // 2D の流出の帯も 3D の間は隠す（3D は水面のシェーダが描く。spec 07 §5.2）
+    expect(visible3d).not.toContain(WATER_LAYER_IDS.outflow)
     expect(visible3d).toContain(WATER_LAYER_IDS.arrows)
     await page.getByRole('button', { name: strings.view3d.view2d }).click()
     await expect(mapEl).toHaveAttribute('data-view3d', 'off')
@@ -179,14 +176,18 @@ test.describe('3D の表示（spec 05 §5）', () => {
   test('3D で強い降雨をすると、範囲の中心付近の画素が実際に水の配色へ変わる（Task 8 の申し送り。着手前の確かめ P6 の probe の常設化）', async ({
     page,
   }) => {
-    test.setTimeout(90_000)
-    // 500 mm・半径 200 m（範囲 500 m 四方の 4 分の 1 の円）は着手前の確かめ P6 と同じ強さ。水面の面積が
+    test.setTimeout(330_000)
+    // 250 mm/h × 2 時間（総量 500 mm）・半径 200 m（spec 08 §9.4。同じ総量を 2 時間かけて降らせる）。
+    // 半径 200 m は範囲 500 m 四方の 4 分の 1 の円で、総量は着手前の確かめ P6 と同じ。水面の面積が
     // 画素で判定できるほど広がる（P6: 既定の 100mm・10m では潜水面積が範囲の 0.26% しかなく判定できなかった）
-    await page.goto(`${SHIBUYA}&mm=500&r=200`)
+    await page.goto(`${SHIBUYA}&mmh=250&dur=120&r=200`)
     await waitTerrain(page)
-    // 矢印（濃い青の icon。#0d47a1）は 3D でも描かれ、水の配色の判定を汚すので消しておく。
-    // このテストは three の Custom Layer（水面）だけを見る
-    await page.getByLabel(strings.panel.showWaterFlow).click()
+    // 04 の重ね描き（標高の配色・窪地・地形の流向・水の流れの矢印）を消し、three の Custom Layer（水面）だけを見る。
+    // 矢印（濃い青の icon。#0d47a1）と地形の流向（黒い矢印）は水面の上に描かれて画素を覆い、標高・窪地の配色は
+    // 水面（不透明度 0.74）の下で混ざって青を濁らせる。消さないと、1 m 以上の水の色（DEEP_WATER の紺）が
+    // b ≤ 100 になって判定から外れ、雨が降り続けて窪地が 1 m を超えるほど割合が下がる（spec 08 Task 14 の
+    // 修正ラウンド 1 の実測: 0.135 → 0.080。消すと 0.355 まで上がって下がらない）
+    await hideTerrainOverlays(page)
     await switchTo3d(page)
     const mapEl = mapElement(page)
     const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
@@ -209,8 +210,8 @@ test.describe('3D の表示（spec 05 §5）', () => {
       new RegExp(VIEW3D_LAYER_IDS.water),
       { timeout: 30_000 },
     )
-    // 冠水した面積が範囲（500 m 四方 = 250,000 m²）の 20% を超えるまで待つ。実測では雨を強くした直後
-    // （1 秒未満）に到達し、そのまま 140,000〜150,000 m² 前後で安定する
+    // 冠水した面積が範囲（500 m 四方 = 250,000 m²）の 20% を超えるまで待つ（05 の実測では 500 mm を一度に
+    // 置いた直後に到達した。spec 08 の雨では経過 3 分ごろ）
     await expect
       .poll(
         async () => {
@@ -224,11 +225,25 @@ test.describe('3D の表示（spec 05 §5）', () => {
     // 描いた印（data-water-ready）を待ってから撮る（Task 17a のレビュー R1）
     await expect.poll(() => readyCount(mapEl), { timeout: 30_000 }).toBeGreaterThanOrEqual(1)
 
-    const after = waterColoredFraction(decodePng(await page.screenshot({ clip })))
-    // 実測（本タスク、3 回）: before は 0、after は 0.855〜0.859。シェーダを discard させると after も 0 になる
-    // （報告に記録）。しきい値は大きな余裕を取っている
+    // spec 08 から雨は 2 時間かけて降るので、冠水面積が 50,000 m² を超えた直後は中心付近の水がまだ薄く（1〜5 cm の
+    // 帯は淡色の地図とほぼ同じ色で判定に入らない）、水の配色にならない。配色に変わるまで撮り直して待つ。
+    // 実測（修正ラウンド 1、単独、最速）: 経過 12 分ごろ（step 約 4,000、開始から実時間約 90 秒）に 0.30 を越え、
+    // 22 分ごろに 0.355 で頭打ち。負荷のある全体の実行では進みが遅いので待ちを長く取る（しきい値は変えない）
+    let after = 0
+    await expect
+      .poll(
+        async () => {
+          after = waterColoredFraction(decodePng(await page.screenshot({ clip })))
+          return after - before
+        },
+        { timeout: 240_000, intervals: [2_000] },
+      )
+      .toBeGreaterThan(0.3)
+    // 実測（05 の Task 8、3 回。500 mm を一度に置いた）: before は 0、after は 0.855〜0.859。spec 08 の雨では
+    // 頭打ちが 0.355（修正ラウンド 1）。シェーダを discard させると after − before は 0 のまま動かず、この待ちが
+    // 時間切れで落ちる（修正ラウンド 1 で確かめた。報告に記録）
+    console.log(`[実測] view3d-rain ${JSON.stringify({ before, after })}`)
     expect(before).toBeLessThan(0.05)
-    expect(after - before).toBeGreaterThan(0.3)
   })
 
   test('3D でズームアウトして、画面の中心で描かれる地形タイルが境界より粗くなると 2D に落ちて知らせ、近づくと 3D に戻る（spec 05 §4.3）', async ({

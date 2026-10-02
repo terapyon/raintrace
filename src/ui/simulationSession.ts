@@ -6,6 +6,7 @@ import type { WaterPalette } from '../map/waterColormap'
 import { waterArrowFeatures } from '../map/waterFeatures'
 import type { PlaybackSpeed, TerrainPayload } from '../shared/protocol'
 import { arrowSpacingForRange } from '../state/arrowSpacing'
+import type { RainfallSettings } from '../state/persistedSettings'
 import type { SettingsState, SettingsStore } from '../state/settingsStore'
 import type { DisplayStats, SimulationStore } from '../state/simulationStore'
 import { createThrottle, type Throttle } from '../state/throttle'
@@ -16,6 +17,7 @@ export const STATS_INTERVAL_MS = 100
 interface StatsUpdate {
   stats: DisplayStats
   stepsPerSecond: number
+  simSecondsPerSecond: number
 }
 
 /**
@@ -55,12 +57,14 @@ export class SimulationSession {
   private readonly waterListeners = new Set<(water: Float32Array | null) => void>()
   /** 2D の水深の canvas を出すか（3D の間は隠す。計画で決めたこと 16） */
   private depthCanvasVisible = true
+  /** 流出しているセルの表示（設定の display.showOutflowCells。spec 07 §5.3） */
+  private outflowVisible = true
 
   constructor(client: SimulationClient, store: SimulationStore, settings: SettingsStore) {
     this.client = client
     this.store = store
     this.statsThrottle = createThrottle<StatsUpdate>(STATS_INTERVAL_MS, (u) =>
-      this.store.getState().setStats(u.stats, u.stepsPerSecond),
+      this.store.getState().setStats(u.stats, u.stepsPerSecond, u.simSecondsPerSecond),
     )
     // 矢印の地図への反映は 10Hz に間引く（spec 04 §6.2）
     this.arrowsThrottle = createThrottle<Float32Array>(STATS_INTERVAL_MS, (arrows) => {
@@ -89,6 +93,7 @@ export class SimulationSession {
         arrowSpacingForRange(display.flowVectorSpacingM, area.sizeM),
       )
       this.setPalette(display.waterDepthPalette)
+      this.setOutflowVisible(display.showOutflowCells)
     }
     apply(settings.getState())
     settings.subscribe((state, previous) => {
@@ -118,7 +123,8 @@ export class SimulationSession {
     // 異常終了で作り直した Worker（新しい PlaybackScheduler）は速度 1・既定の矢印設定で始まり、
     // ストアが持つ今の速度とずれる。読み込みが済むたびに送り直して揃える（コントローラーの追加の裁定）
     this.client.setSpeed(this.store.getState().speed)
-    this.overlay?.show(terrain.geo)
+    // 流出の帯の表は Worker が地形の読み込みで作って送ってくる（spec 07 §5.1。計画で決めたこと 1）
+    this.overlay?.show(terrain.geo, terrain.outflow)
     this.client.setArrows(this.arrowSettings.visible, this.arrowSettings.spacingM)
     for (const listener of this.terrainListeners) listener(terrain)
   }
@@ -135,7 +141,8 @@ export class SimulationSession {
     overlay.setPalette(this.palette)
     overlay.setArrowsVisible(this.arrowSettings.visible)
     overlay.setDepthVisible(this.depthCanvasVisible)
-    if (this.terrain !== null) overlay.show(this.terrain.geo)
+    overlay.setOutflowVisible(this.outflowVisible)
+    if (this.terrain !== null) overlay.show(this.terrain.geo, this.terrain.outflow)
     this.overlay = overlay
     return () => {
       this.arrowsThrottle.cancel()
@@ -154,6 +161,12 @@ export class SimulationSession {
   setPalette(palette: WaterPalette): void {
     this.palette = palette
     this.overlay?.setPalette(palette)
+  }
+
+  /** 流出しているセルの表示（spec 07 §5.3）。3D は View3dSession が設定から直接受ける */
+  setOutflowVisible(visible: boolean): void {
+    this.outflowVisible = visible
+    this.overlay?.setOutflowVisible(visible)
   }
 
   /** ベースマップの切り替えで消えた水深と矢印のレイヤーを足し直す */
@@ -182,13 +195,26 @@ export class SimulationSession {
     this.overlay?.setDepthVisible(visible)
   }
 
-  start(amountMm: number, radiusM: number): void {
+  /** 雨を登録して再生を始める（spec 08 §4.2）。継続時間は分から秒にする */
+  start(rain: RainfallSettings): void {
     if (this.terrain === null || this.center === null) return
     const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)
     this.runId += 1
-    this.client.start({ x, y, radiusM, amountMm }, this.runId)
+    this.client.start(
+      {
+        x,
+        y,
+        radiusM: rain.radiusM,
+        intensityMmPerH: rain.intensityMmPerH,
+        durationS: rain.durationMin * 60,
+        wholeRange: rain.wholeRange,
+      },
+      this.runId,
+    )
     this.clearWater()
-    this.store.getState().started()
+    this.store
+      .getState()
+      .started({ intensityMmPerH: rain.intensityMmPerH, durationS: rain.durationMin * 60 })
   }
 
   pause(): void {
@@ -235,21 +261,26 @@ export class SimulationSession {
     const { events, ...stats } = frame.stats
     const state = this.store.getState()
     if (events.length > 0) state.addSpills(events)
-    const update = { stats, stepsPerSecond: frame.stepsPerSecond }
+    const update = {
+      stats,
+      stepsPerSecond: frame.stepsPerSecond,
+      simSecondsPerSecond: frame.simSecondsPerSecond,
+    }
     if (state.status === 'running') {
-      if (stats.settled) {
+      if (stats.stopReason !== null) {
         this.statsThrottle.cancel()
-        state.settle(stats, frame.stepsPerSecond)
+        state.settle(stats, frame.stepsPerSecond, frame.simSecondsPerSecond)
       } else {
         this.statsThrottle.push(update)
       }
       return
     }
     // 止まっている間の frame（Step・Reset・矢印の切り替え）はすぐに入れる。
-    // idle の間（reset・失敗の直後）は settled でも状態を変えない
+    // idle の間（reset・失敗の直後）は自動停止でも状態を変えない
     this.statsThrottle.cancel()
-    if (stats.settled && state.status === 'paused') state.settle(stats, frame.stepsPerSecond)
-    else state.setStats(stats, frame.stepsPerSecond)
+    if (stats.stopReason !== null && state.status === 'paused')
+      state.settle(stats, frame.stepsPerSecond, frame.simSecondsPerSecond)
+    else state.setStats(stats, frame.stepsPerSecond, frame.simSecondsPerSecond)
   }
 
   private onCrash(): void {

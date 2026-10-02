@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { parseAmountMm, parseRadiusM } from './validation'
+import { parseIntensityMmPerH, parseRadiusM } from './validation'
 
 describe('入力の検証（spec 04 §9、R04-6）', () => {
   it.each([
     ['1', 1],
-    ['1000', 1000],
+    ['300', 300],
     [' 100 ', 100],
     ['0', null],
-    ['1001', null],
+    ['301', null],
     ['1.5', null],
     ['', null],
     ['abc', null],
-    ['1e3', null],
+    ['1e2', null],
     ['-5', null],
-  ])('雨量 %j は %s', (text, expected) => {
-    expect(parseAmountMm(text)).toBe(expected)
+  ])('時間雨量 %j は %s（spec 08 §6.3）', (text, expected) => {
+    expect(parseIntensityMmPerH(text)).toBe(expected)
   })
 
   it.each([

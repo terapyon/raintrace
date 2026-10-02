@@ -56,17 +56,22 @@ export function flowFeatures(
   return { type: 'FeatureCollection', features }
 }
 
+/** ○ の地物のプロパティ。あふれ出し点だけ窪地の id（Depression.id）を持つ（spec 07 §3.3） */
+export type MarkerProperties = { kind: 'lowest' } | { kind: 'spill'; depressionId: number }
+
 /** 最低点と、表示対象の窪地（R02-3）の spill point */
 export function markerFeatures(
   terrain: Pick<TerrainPayload, 'lowestIndex' | 'depressions' | 'geo'>,
-): PointCollection<{ kind: 'lowest' | 'spill' }> {
-  const features: PointFeature<{ kind: 'lowest' | 'spill' }>[] = []
+): PointCollection<MarkerProperties> {
+  const features: PointFeature<MarkerProperties>[] = []
   if (terrain.lowestIndex !== -1) {
     features.push(point(cellCenter(terrain.geo, terrain.lowestIndex), { kind: 'lowest' }))
   }
   for (const d of terrain.depressions) {
     if (d.significant) {
-      features.push(point(cellCenter(terrain.geo, d.spillIndex), { kind: 'spill' }))
+      features.push(
+        point(cellCenter(terrain.geo, d.spillIndex), { kind: 'spill', depressionId: d.id }),
+      )
     }
   }
   return { type: 'FeatureCollection', features }

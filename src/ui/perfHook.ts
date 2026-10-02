@@ -131,8 +131,7 @@ export async function installPerfHook(
       () => {
         if (!params.water) return
         session.simulation.setSpeed('max')
-        const { amountMm, radiusM } = settings.getState().rainfall
-        session.simulation.start(amountMm, radiusM)
+        session.simulation.start(settings.getState().rainfall)
       },
       () => waitTilesLoaded(map),
     )

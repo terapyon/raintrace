@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildTerrain, engineOn } from '../simulation/testing/fixtures.test-support'
+import { buildTerrain, engineOn, instantRain } from '../simulation/testing/fixtures.test-support'
 import { thinFlowArrows } from './flowArrows'
 
 describe('thinFlowArrows（spec 04 §5.1）', () => {
@@ -36,10 +36,13 @@ describe('thinFlowArrows（spec 04 §5.1）', () => {
     expect(arrows.length).toBe(16)
   })
 
-  it('東へ下る斜面に置いた水の矢印は東（90°）を向く（FlowSolver のベクトルの向きの約束の確かめ）', () => {
+  it('東へ下る斜面に置いた水の 1 step 後の矢印は東（90°）を向く（FlowSolver のベクトルの向きの約束の確かめ）', () => {
     const t = buildTerrain(9, 9, 1, (x) => (8 - x) * 0.2)
     const engine = engineOn(t)
-    engine.addRainfall({ x: 4.5, y: 4.5, radiusM: 0.4, amountMm: 100 })
+    // 中央の 3 × 3 セルに置く（セル 1 つだけだと、局所慣性式では 1 step で水をすべて出して流速が 0 になる）。
+    // 南北は対称なので、中央のセル (4, 4) の南北の流量は 0
+    engine.setRainfall(instantRain({ x: 4.5, y: 4.5 }, 1.5, 100))
+    engine.step()
     const v = engine.flowVectors()
     const arrows = thinFlowArrows(v.x, v.y, 9, 9, 1, 1)
     let bearing = Number.NaN
@@ -47,5 +50,15 @@ describe('thinFlowArrows（spec 04 §5.1）', () => {
       if (arrows[k] === 4 && arrows[k + 1] === 4) bearing = arrows[k + 2] ?? Number.NaN
     }
     expect(bearing).toBeCloseTo(90, 3)
+  })
+
+  it('流速が ARROW_MIN_VELOCITY_M_PER_S（0.005 m/s）未満のセルは出さない（ほとんど止まった水に矢印を出さない。spec 08 §3.10）', () => {
+    // 4 × 1・セル 1 m・間隔 1 m。0.0049 と 0.0049（南）は出さず、0.0051 と 0.01 は出す
+    const vx = Float32Array.of(0.0049, 0.0051, 0.01, 0)
+    const vy = Float32Array.of(0, 0, 0, 0.0049)
+    const arrows = thinFlowArrows(vx, vy, 4, 1, 1, 1)
+    const columns: number[] = []
+    for (let k = 0; k < arrows.length; k += 4) columns.push(arrows[k] ?? -1)
+    expect(columns).toEqual([1, 2])
   })
 })

@@ -74,6 +74,12 @@ export function statsAt(
     settled: false,
     massError: 0,
     events: [],
+    timeS: step,
+    dtS: 1,
+    raining: false,
+    rainDepthMm: 0,
+    outflowRateM3PerS: 0,
+    stopReason: null,
     ...overrides,
   }
 }
@@ -92,6 +98,7 @@ export function frameMessage(
     arrows: null,
     stats: statsAt(step),
     stepsPerSecond: 60,
+    simSecondsPerSecond: 0,
     runId: 1,
     ...overrides,
   }

@@ -1,5 +1,5 @@
 /**
- * 水深の2つのバッファ（W と W'）と走査範囲（spec 03 §3.5）。
+ * 水深の2つのバッファ（h と h'）と走査範囲（spec 03 §3.5、spec 08 §3.8）。
  *
  * 不変条件: step と step の間では、next はすべて 0 で、current は走査範囲の外で 0 である。
  * endStep で入れ替えた後、書き込み先になる古いバッファを今の走査範囲で 0 にして、これを保つ
@@ -7,7 +7,7 @@
 import { FLOODED_DEPTH_M } from './constants.ts'
 
 export interface WaterSummary {
-  /** Σ W（m）。セル面積を掛けると貯留量 */
+  /** Σ h（m）。セル面積を掛けると貯留量 */
   depthSum: number
   /** 最大水深（m） */
   maxDepth: number
@@ -20,9 +20,9 @@ export class WaterGrid {
   readonly height: number
   /** true なら走査範囲を常にグリッド全体にする（scanMode: 'full'） */
   readonly full: boolean
-  /** W（現在の水深） */
+  /** h（現在の水深） */
   current: Float64Array
-  /** W'（次の step の書き込み先） */
+  /** h'（次の step の書き込み先） */
   next: Float64Array
   /** 走査範囲。列 [x0, x1)、行 [y0, y1)。空のときは x0 = x1 */
   x0 = 0
@@ -66,22 +66,14 @@ export class WaterGrid {
     this.y1 = Math.max(this.y1, y1)
   }
 
-  /** W' ← W（走査範囲のみ） */
-  beginStep(): void {
-    const { width, x0, x1, current, next } = this
-    for (let y = this.y0; y < this.y1; y++) {
-      const a = y * width + x0
-      next.set(current.subarray(a, a + (x1 - x0)), a)
-    }
-  }
-
   /**
-   * W と W' を入れ替え、新しい W を走査範囲で集計し、走査範囲を濡れたセルの外接矩形と
+   * h と h' を入れ替え、新しい h を走査範囲で集計し、走査範囲を濡れたセルの外接矩形と
    * その周囲 1 セルに更新する。
    *
    * 新しく濡れたセルは、すべて今の走査範囲の中にある。根拠は次の 2 点:
    * (1) 今の走査範囲は、step の前に濡れていたセルと、その周囲 1 セルを含む
-   * (2) 水の出どころは W > 0 のセルだけで、水は 1 step に 8 近傍（周囲 1 セル）までしか動かない
+   * (2) 水の出どころは h > 0 のセルだけで、水は 1 step に面を 1 つ越えるだけ（上下左右の周囲 1 セル。spec 08 §3.7）
+   * 雨のセルは雨の登録のときに include するので、走査範囲の中にある。
    * したがって、集計と外接矩形の計算は今の走査範囲だけを見ればよい
    */
   endStep(): WaterSummary {

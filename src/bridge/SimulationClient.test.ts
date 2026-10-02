@@ -251,7 +251,14 @@ function loadedSetup() {
 describe('SimulationClient の再生（spec 04 §5）', () => {
   it('再生の命令をそのまま送る。start・reset の runId もそのまま送る（タスクレビューの追加の裁定）', () => {
     const { worker, client } = loadedSetup()
-    const rain = { x: 1, y: 2, radiusM: 10, amountMm: 100 }
+    const rain = {
+      x: 1,
+      y: 2,
+      radiusM: 10,
+      intensityMmPerH: 100,
+      durationS: 3600,
+      wholeRange: false,
+    }
     client.start(rain, 1)
     client.pause()
     client.resume()
@@ -368,7 +375,10 @@ describe('SimulationClient の異常終了の通知と番犬（02 の申し送�
     client.onCrash(crashes)
     nth(workers, 0).crash()
     expect(crashes).toHaveBeenCalledTimes(1)
-    client.start({ x: 0, y: 0, radiusM: 1, amountMm: 1 }, 1)
+    client.start(
+      { x: 0, y: 0, radiusM: 1, intensityMmPerH: 1, durationS: 3600, wholeRange: false },
+      1,
+    )
     client.reset(2)
     expect(workers).toHaveLength(1)
     expect(nth(workers, 0).posted.some((m) => m.type === 'start')).toBe(false)

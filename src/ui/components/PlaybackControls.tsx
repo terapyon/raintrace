@@ -6,7 +6,7 @@ import type { PlaybackSpeed } from '../../shared/protocol'
 import type { PlaybackStatus } from '../../state/simulationStore'
 import { strings } from '../strings'
 
-const SPEEDS: readonly PlaybackSpeed[] = [0.25, 0.5, 1, 2, 4, 'max']
+const SPEEDS: readonly PlaybackSpeed[] = [1, 10, 60, 600, 'max']
 
 interface Props {
   status: PlaybackStatus
@@ -23,7 +23,7 @@ interface Props {
 /**
  * 再生（spec 04 §3、base-spec §34）。主ボタンは 開始 → 一時停止 → 再開 と文言だけが変わる同じ要素なので、
  * キーボードの焦点が外れない（計画で決めたこと 7）。平衡の後は回しても何も変わらないので、
- * 押せるのは「リセット」だけ（主ボタンと「1 step 進める」は disabled）
+ * 押せるのは「リセット」だけ（主ボタンと「1 step 進める」は disabled）。速度は実時間の倍率（spec 08 §6.1）
  */
 export function PlaybackControls(props: Props) {
   const { status, canStart, speed } = props

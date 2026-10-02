@@ -16,6 +16,7 @@ export interface View3dLike {
   setBasemap(basemap: Basemap): void
   setWater(water: Float32Array | null): void
   setPalette(palette: WaterPalette): void
+  setShowOutflow(show: boolean): void
   restore(): void
   dispose(): void
 }
@@ -89,6 +90,9 @@ export class View3dSession {
       if (state.display.waterDepthPalette !== previous.display.waterDepthPalette) {
         this.view?.setPalette(state.display.waterDepthPalette)
       }
+      if (state.display.showOutflowCells !== previous.display.showOutflowCells) {
+        this.view?.setShowOutflow(state.display.showOutflowCells)
+      }
       if (state.map.basemap !== previous.map.basemap) this.view?.setBasemap(state.map.basemap)
     })
     if (this.app.getState().viewMode === '3d') void this.applyMode('3d')
@@ -139,6 +143,7 @@ export class View3dSession {
           basemap: map.basemap,
           exaggeration: display.verticalExaggeration,
           palette: display.waterDepthPalette,
+          showOutflow: display.showOutflowCells,
           onRendering: (rendering) => this.onRendering(rendering),
         })
         view.setTerrain(this.terrain)

@@ -6,7 +6,8 @@
  * 行うので、この視点は 2D に落ちない。fallback=0 は、計測の途中で実測が境界を割って 2D に落ちることが
  * 絶対に起きないようにする保険である
  *
- * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate・water-sites）・
+ * 環境変数: RAINTRACE_FPS_SET（terrain-main・terrain-tiles・water・isolate・isolate-500・water-sites・
+ * outflow-500・outflow-1000）・
  * RAINTRACE_FPS_REPEAT（既定 3）・
  * RAINTRACE_FPS_SITES（既定 shibuya。06 の M2 は ayase,shibuya,minatomirai。RAINTRACE_LOAD=1 のときだけ
  * nemuro〈段 2。ユーザーの裁定 R5〉も選べる）・RAINTRACE_FPS_OUT_DIR
@@ -92,7 +93,7 @@ type Size = (typeof SIZES)[number]
 
 interface SetDef {
   variants: readonly Variant[]
-  /** 水面ありの条件の URL に足す雨（mm・r）。省けば既定の雨（05 と同じ） */
+  /** 水面ありの条件の URL に足す雨（mmh・dur・r）。省けば既定の雨（05 と同じ） */
   waterRain?: Readonly<Record<string, string>>
   /** 05 にあった組か。05 の記録を上書きしないよう、06 で足した組の結果の既定の書き先を分ける */
   from05?: true
@@ -102,12 +103,13 @@ interface SetDef {
 }
 
 /**
- * 3 地点の組の水面ありの条件の雨（平衡に届かない。R-b。05 の shots.perf の水面の撮影と同じ雨）。既定の雨
- * （100 mm・半径 10 m）はみなとみらいで約 3 秒で平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを
+ * 3 地点の組の水面ありの条件の雨（平衡に届かない。R-b。05 の shots.perf の水面の撮影と同じ雨）。spec 08 から、
+ * 総量 500 mm を 250 mm/h × 2 時間で降らせる（N7。05〜07 の記録は一度に置いた 500 mm で測ったので、水の広がり方が
+ * 違う）。既定の雨（100 mm/h × 1 時間・半径 10 m）はみなとみらいで約 3 秒で平衡に届き、計測の窓の間に水深の転送が止まって、地点どうしを
  * 比べられなくなる。05 と比べる組（water・isolate。渋谷）には使わない。渋谷は既定の雨で窓の間に平衡に届かず
  * （04 の実測 47.9 秒）、05 の 51.0 fps はその雨で測ったため
  */
-const WATER_RAIN = { mm: '500', r: '50' } as const
+const WATER_RAIN = { mmh: '250', dur: '120', r: '50' } as const
 
 const WATER_VARIANTS: readonly Variant[] = [
   { label: '既定・地形のみ', water: '0' },
@@ -118,6 +120,16 @@ const WATER_VARIANTS: readonly Variant[] = [
 const TERRAIN_MAIN_ONLY: readonly Variant[] = [
   { label: 'main・hillshade あり・地形のみ', hillshade: 'on', water: '0' },
   { label: 'main・hillshade なし・地形のみ', hillshade: 'off', water: '0' },
+]
+
+/**
+ * 流出の帯（spec 07 §6）の前後の比較。2D（mode=2d・pitch 0。3D に切り替えない）と 3D の水面あり。
+ * 雨は範囲に内接する円（半径は範囲の半分）で、縁まで水が届き、帯の塗り分けが毎フレーム動く。
+ * 2D の行の「視点」の列は URL の z だけが効く（pitch は extra の 0、ex は 2D では使わない）
+ */
+const OUTFLOW_VARIANTS: readonly Variant[] = [
+  { label: '2D・水面あり（縁まで降雨）', water: '1', extra: { mode: '2d', pitch: '0' } },
+  { label: '3D・水面あり（縁まで降雨）', water: '1' },
 ]
 
 /**
@@ -186,6 +198,19 @@ const SETS: Record<string, SetDef> = {
         extra: { arrowsM: '5' },
       },
     ],
+  },
+  // 流出の帯（spec 07 §6）。RAINTRACE_FPS_SITES=shibuya,minatomirai（沿岸を 1 つ含める）と組み合わせる
+  'outflow-500': {
+    sizes: ['500'],
+    views: ['z17 ×5 p60'],
+    waterRain: { mmh: '250', dur: '120', r: '250' },
+    variants: OUTFLOW_VARIANTS,
+  },
+  'outflow-1000': {
+    sizes: ['1000'],
+    views: ['z17 ×5 p60'],
+    waterRain: { mmh: '250', dur: '120', r: '500' },
+    variants: OUTFLOW_VARIANTS,
   },
 }
 
@@ -367,12 +392,14 @@ test(`fps の測り直し（${setName}）`, async ({ browser }, testInfo) => {
               await page.goto(url)
               return readReport<Report>(page, 'data-fps-result', RUN_TIMEOUT_MS)
             })
-            // 3D のまま（(c) で 2D に落ちていない。フックも data-perf-error にする）
-            expect(report.view3d).toBe('3d')
+            // 2D の条件（extra の mode=2d。spec 07 §6）は 3D に切り替えないので off。3D の条件は 3D のまま
+            // （(c) で 2D に落ちていない。フックも data-perf-error にする）
+            const mode2d = variant.extra?.mode === '2d'
+            expect(report.view3d).toBe(mode2d ? 'off' : '3d')
             // 視点は厳密な一致ではなく「幅」で照合する（05 のコントローラーの裁定）。地形があると MapLibre は
             // カメラを地形の上に保つので、pitch は要求より下がる。この照合は「フックが pitch を無視した」ような
-            // 取り違えを捕まえるためのもので、角度そのものの検証ではない
-            const requestedPitch = Number(view.pitch)
+            // 取り違えを捕まえるためのもので、角度そのものの検証ではない。2D の条件は extra の pitch（0）を要求する
+            const requestedPitch = Number(variant.extra?.pitch ?? view.pitch)
             expect(report.mapPitch).toBeLessThanOrEqual(requestedPitch + 0.05)
             expect(report.mapPitch).toBeGreaterThanOrEqual(requestedPitch - 10.0)
             expect(Math.abs(report.mapZoom - Number(view.z))).toBeLessThanOrEqual(0.05)

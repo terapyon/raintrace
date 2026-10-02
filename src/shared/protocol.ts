@@ -4,11 +4,18 @@
  */
 import type { DemId } from '../dem/demSources.ts'
 import type { Corners } from '../dem/gridRange.ts'
+import type { OutflowCells } from '../simulation/outflowCells.ts'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain.ts'
 import type { RainfallInput, StepStats } from '../simulation/types.ts'
 
-/** 再生速度（spec 04 §5.2）。'max' は「最速」（step 数の上限を持たず、時間予算だけで回す） */
-export type PlaybackSpeed = 0.25 | 0.5 | 1 | 2 | 4 | 'max'
+/**
+ * 再生速度（spec 08 §6.1、R08-5）。数は実時間の倍率（1 は実時間、60 は実時間 1 秒でシミュレーションの 1 分）。
+ * 'max' は「最速」（目標を持たず、時間予算だけで回す）
+ */
+export type PlaybackSpeed = 1 | 10 | 60 | 600 | 'max'
+
+/** 既定の再生速度（60 倍。spec 08 §6.1）。Worker のスケジューラと、メインの再生のストアの初期値 */
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 60
 
 /**
  * 再生の命令（spec 04 §5.1）。setArrows は spec の setArrowSpacing の代わり。
@@ -68,6 +75,11 @@ export interface TerrainPayload extends TerrainAnalysis {
   elevation: Float32Array
   validMask: Uint8Array
   geo: TerrainGeo
+  /**
+   * 流出の縁のマスクと帯（spec 07 §5.1）。地形の解析と同じく Worker が読み込みのときに 1 回だけ作って送る
+   * （spec の「メインスレッドで作る」からの逸脱。計画 2026-09-29-07 の冒頭）。メインは読むだけ
+   */
+  outflow: OutflowCells
 }
 
 /** 再生の失敗の理由。no-elevation-at-rain-center は 03 の NoElevationAtRainCenterError（name で判別する） */
@@ -76,10 +88,11 @@ export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
 /**
  * 水深と統計（spec 04 §5.1、tech-spec §5.2）。terrainId はその地形を読み込んだ loadTerrain の requestId。
  * water は Float32 × N² の転送バッファで、メインは次の frame を受けたら returnBuffer で返す。
- * arrows は [列, 行, 方位（度。北が 0、時計回り）, 大きさ（m／step）] の並び。null は前の矢印のまま。
+ * arrows は [列, 行, 方位（度。北が 0、時計回り）, 大きさ（m/s。spec 08 §3.10）] の並び。null は前の矢印のまま。
  * stats.events は前に送った frame からの越流イベントの累計（見送った frame の分を含む）。
  * runId はこの frame を生んだ直前の start・reset の通し番号（SimulationCommand の説明を参照）。
- * loadTerrain の直後は 0（まだ実行が始まっていない）
+ * loadTerrain の直後は 0（まだ実行が始まっていない）。
+ * simSecondsPerSecond は実際の倍率（実時間 1 秒あたりに進んだシミュレーションの秒。spec 08 §6.1）
  */
 export interface FrameMessage {
   type: 'frame'
@@ -89,6 +102,7 @@ export interface FrameMessage {
   arrows: Float32Array | null
   stats: StepStats
   stepsPerSecond: number
+  simSecondsPerSecond: number
   runId: number
 }
 

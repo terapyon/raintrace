@@ -1,5 +1,5 @@
 import { CellQueue } from './CellQueue.ts'
-import { NEIGHBOR_DX, NEIGHBOR_DY } from './neighbors.ts'
+import { NEIGHBOR4_DX, NEIGHBOR4_DY } from './neighbors.ts'
 import type { Depression, DepressionAnalysis, TerrainGrid } from './types.ts'
 
 /** 表示と越流イベントの対象にする窪地の閾値（R02-3） */
@@ -22,7 +22,8 @@ export function isSignificant(
 
 /**
  * Priority-Flood（Barnes ほか, 2014）で満水時の水面 F と窪地を求める（spec 02 §5）。
- * - 起点は、グリッドの端のセルと、無効セルに隣接するセル（03 の境界の扱い R03-2 と揃える）
+ * - 起点は、グリッドの端のセルと、無効セルに上下左右で接するセル（水の計算の仮想セル〈R03-2、spec 08 §3.6〉と揃える）。
+ *   近傍は 4 近傍（spec 08 §3.7、R08-2）
  * - 取り出したセル c の近傍 n が Z_n < F_c なら、n は窪地の中にあり F_c まで引き上げられる。
  *   c がまだ引き上げられていなければ、新しい窪地で、c がその spill point になる
  * - 引き上げ済みのセルどうしが別のラベルで隣り合ったら、同じ水位の 1 つの窪地として併合する
@@ -67,7 +68,7 @@ export function analyzeDepressions(
       const i = y * width + x
       if (validMask[i] === 0) continue
       let seed = x === 0 || y === 0 || x === width - 1 || y === height - 1
-      for (let k = 0; k < 8 && !seed; k++) seed = !isValid(x + NEIGHBOR_DX[k], y + NEIGHBOR_DY[k])
+      for (let k = 0; k < 4 && !seed; k++) seed = !isValid(x + NEIGHBOR4_DX[k], y + NEIGHBOR4_DY[k])
       if (!seed) continue
       fill[i] = elevation[i]
       closed[i] = 1
@@ -80,9 +81,9 @@ export function analyzeDepressions(
     const cx = c % width
     const cy = (c - cx) / width
     const cLabel = rawLabels[c]
-    for (let k = 0; k < 8; k++) {
-      const nx = cx + NEIGHBOR_DX[k]
-      const ny = cy + NEIGHBOR_DY[k]
+    for (let k = 0; k < 4; k++) {
+      const nx = cx + NEIGHBOR4_DX[k]
+      const ny = cy + NEIGHBOR4_DY[k]
       if (!isValid(nx, ny)) continue
       const j = ny * width + nx
       if (closed[j] === 1) {

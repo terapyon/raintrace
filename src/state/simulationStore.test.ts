@@ -1,22 +1,15 @@
 import { describe, expect, it } from 'vitest'
+import { displayStats } from './displayStats.test-support'
 import { createSimulationStore, type DisplayStats } from './simulationStore'
 
-const stats = (step: number): DisplayStats => ({
-  step,
-  totalWater: 31.4,
-  storedWater: 31.4,
-  outflowWater: 0,
-  maxDepth: 0.1,
-  floodedArea: 300,
-  settled: false,
-  massError: 0,
-})
+const stats = (step: number): DisplayStats =>
+  displayStats({ step, totalWater: 31.4, storedWater: 31.4, maxDepth: 0.1, floodedArea: 300 })
 
 describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () => {
-  it('既定は idle・1x・統計なし', () => {
+  it('既定は idle・60 倍・統計なし', () => {
     expect(createSimulationStore().getState()).toMatchObject({
       status: 'idle',
-      speed: 1,
+      speed: 60,
       stats: null,
       stepsPerSecond: 0,
       spills: [],
@@ -39,8 +32,12 @@ describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () =
 
   it('越流イベントを一覧に足す', () => {
     const store = createSimulationStore()
-    store.getState().addSpills([{ type: 'spill', step: 7, depressionId: 2, spillElevation: 12.7 }])
-    expect(store.getState().spills).toEqual([{ depressionId: 2, spillElevation: 12.7, step: 7 }])
+    store
+      .getState()
+      .addSpills([{ type: 'spill', step: 7, timeS: 0, depressionId: 2, spillElevation: 12.7 }])
+    expect(store.getState().spills).toEqual([
+      { depressionId: 2, spillElevation: 12.7, step: 7, timeS: 0 },
+    ])
   })
 
   it('失敗すると idle に戻り、理由を持つ', () => {
@@ -60,18 +57,44 @@ describe('createSimulationStore（UI の一時状態。tech-spec §8.1）', () =
 
   it('reset で統計・越流・エラーを消す。速度は残す', () => {
     const store = createSimulationStore()
-    store.getState().setSpeed(4)
+    store.getState().setSpeed(600)
     store.getState().started()
     store.getState().setStats(stats(5), 58)
-    store.getState().addSpills([{ type: 'spill', step: 3, depressionId: 1, spillElevation: 1 }])
+    store
+      .getState()
+      .addSpills([{ type: 'spill', step: 3, timeS: 0, depressionId: 1, spillElevation: 1 }])
     store.getState().reset()
     expect(store.getState()).toMatchObject({
       status: 'idle',
-      speed: 4,
+      speed: 600,
       stats: null,
       stepsPerSecond: 0,
       spills: [],
       error: null,
     })
+  })
+})
+
+describe('今の実行の雨と実際の倍率（spec 08 §6.1・§6.2）', () => {
+  it('started で今の実行の雨を持ち、reset・失敗で消す', () => {
+    const store = createSimulationStore()
+    store.getState().started({ intensityMmPerH: 100, durationS: 3600 })
+    expect(store.getState().run).toEqual({ intensityMmPerH: 100, durationS: 3600 })
+    store.getState().reset()
+    expect(store.getState().run).toBeNull()
+    store.getState().started({ intensityMmPerH: 50, durationS: 600 })
+    store.getState().failed('internal')
+    expect(store.getState().run).toBeNull()
+  })
+
+  it('setStats・settle で実際の倍率を持ち、reset で 0 に戻す', () => {
+    const store = createSimulationStore()
+    store.getState().setStats(stats(5), 58, 27)
+    expect(store.getState().simSecondsPerSecond).toBe(27)
+    store.getState().settle(stats(6), 0, 0)
+    expect(store.getState().simSecondsPerSecond).toBe(0)
+    store.getState().setStats(stats(7), 58, 30)
+    store.getState().reset()
+    expect(store.getState().simSecondsPerSecond).toBe(0)
   })
 })
