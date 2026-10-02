@@ -280,9 +280,9 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     expect(errors).toEqual([])
   })
 
-  test('3D: ○ のクリックで説明が開く（垂直強調 ×1 は最低点、×5 はあふれ出し点。§3.1、軽微 m1）', async ({
-    page,
-  }) => {
+  test('3D: ○ のクリックで説明が開く（垂直強調 ×1 は最低点、×5 はあふれ出し点。§3.1、軽微 m1）', {
+    tag: '@3d',
+  }, async ({ page }) => {
     test.setTimeout(150_000)
     const errors = collectErrors(page)
     await page.setViewportSize(NARROW)
@@ -354,9 +354,9 @@ test.describe('地図の印の説明と流出の表示（spec 07 §7.2）', () =
     expect(errors).toEqual([])
   })
 
-  test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると帯の色が残らない', async ({
-    page,
-  }) => {
+  test('3D: 流出の帯はカメラを固定したまま再生中に増える（t1 < t2。must-fix M2）。切ると帯の色が残らない', {
+    tag: '@3d',
+  }, async ({ page }) => {
     // 手元では約 1 分。CI（2 並列で 3D の SwiftShader が重なる）は 6 倍以上遅く、360 秒では ×1 の確認の手前で
     // 時間切れになった（PR #15 の 2 回目の CI）。区切りごとの経過を出して、遅い所を CI のログで分かるようにする
     test.setTimeout(600_000)
