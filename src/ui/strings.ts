@@ -131,6 +131,7 @@ export const strings = {
   },
   spill: {
     title: '越流',
+    listAria: '越流の一覧',
     started: (spillElevation: string, elapsed: string) =>
       `窪地（spill 標高 ${spillElevation}）から越流が始まりました（経過 ${elapsed}）`,
   },

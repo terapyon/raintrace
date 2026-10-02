@@ -133,12 +133,12 @@ export function Panel({
             <Divider sx={{ my: 1 }} />
             <Typography variant="subtitle2">{strings.stats.title}</Typography>
             <StatisticsPanel simulation={simulation.store} />
-            <SpillNotices simulation={simulation.store} />
             <Divider sx={{ my: 1 }} />
             <Typography variant="subtitle2">{strings.panel.terrain}</Typography>
             <TerrainInfo store={store} />
             <Divider sx={{ my: 1 }} />
             <DisplaySettings app={store} settings={settings} />
+            <SpillNotices simulation={simulation.store} />
           </Box>
         )}
         <DisclaimerNotice onShowFull={onShowDisclaimer} />
