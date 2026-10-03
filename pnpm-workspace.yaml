@@ -12,3 +12,8 @@ allowBuilds:
   # フックを入れる。ルートのプロジェクト自身のライフサイクルスクリプトは実行されるため（tech-spec §13.3）
   lefthook: false
   workerd: false
+# 依存の版の差し替え。miniflare（wrangler の依存）は undici を 7.29.0 に固定しているが、7.29.0 には
+# pnpm audit の high を含む脆弱性があり、修正版の 7.29.1 を使う miniflare はまだ出ていない（2026-10-03）。
+# パッチ版だけを差し替える。miniflare が 7.29.1 以上を使うようになったら消す
+overrides:
+  miniflare>undici: 7.29.1
