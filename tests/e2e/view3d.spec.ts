@@ -286,6 +286,9 @@ test.describe('3D の表示（spec 05 §5）', { tag: '@3d' }, () => {
   test('3D の表示中にベースマップを切り替えると（onRestyle → View3d.restore）、写真では hillshade が消えて水面は作り直され、淡色に戻すと hillshade も戻る（R4）', async ({
     page,
   }) => {
+    // CI（SwiftShader）では水面の描画・作り直し・描き直しを待つので 52〜53 秒かかり、既定の 60 秒では余裕が無い
+    // （2026-10-03 の main の CI〈PR #18 のマージ〉で 60 秒を超えた。同じコードのブランチの CI では 52.9 秒）
+    test.setTimeout(120_000)
     const errors = collectErrors(page)
     const warnings = collectWarnings(page)
     await page.goto(SHIBUYA)
