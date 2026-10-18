@@ -8,6 +8,7 @@ import { MarkerInfoHost } from './components/MarkerInfoHost'
 import { Panel } from './components/Panel'
 import { TerrainSessionBinder } from './components/TerrainSessionBinder'
 import { ThemeModeBinder } from './components/ThemeModeBinder'
+import { ViewModeToggle } from './components/ViewModeToggle'
 import { type MissingFeature, WebGLUnsupported } from './components/WebGLUnsupported'
 import type { TerrainSession } from './terrainSession'
 import { theme } from './theme'
@@ -34,6 +35,7 @@ export function App({ missingFeatures, session, settings }: Props) {
           </MapView>
           {session !== null && (
             <>
+              <ViewModeToggle app={session.store} />
               <Panel session={session} settings={settings} onShowDisclaimer={disclaimer.reopen} />
               <CellInfoHost session={session} />
               <MarkerInfoHost session={session} />
