@@ -19,17 +19,21 @@ function setup(storage = memoryStorage()) {
 }
 
 describe('View3dSettings（spec 05 §3.2・§3.6）', () => {
-  it('3D を押すと表示の方式が 3D になる。垂直強調は 3D のときだけ選べ、設定に書く', async () => {
+  it('垂直強調は 3D のときだけ選べ、設定に書く', async () => {
     const { app, settings, user } = setup()
     const tenX = (): HTMLButtonElement =>
       screen.getByRole('button', { name: strings.view3d.exaggerationValue(10) })
     expect(tenX().disabled).toBe(true)
-    await user.click(screen.getByRole('button', { name: strings.view3d.view3d }))
-    expect(app.getState().viewMode).toBe('3d')
+    act(() => app.getState().setViewMode('3d'))
     await user.click(tenX())
     expect(settings.getState().display.verticalExaggeration).toBe(10)
-    await user.click(screen.getByRole('button', { name: strings.view3d.view2d }))
-    expect(app.getState().viewMode).toBe('2d')
+    act(() => app.getState().setViewMode('2d'))
+    expect(tenX().disabled).toBe(true)
+  })
+
+  it('2D と 3D の切り替えはパネルに置かない（地図の上の ViewModeToggle に移した）', () => {
+    setup()
+    expect(screen.queryByRole('button', { name: strings.view3d.view3d })).toBeNull()
   })
 
   it('垂直強調は 04 で保存された値から始まる（5 なら 5x が選ばれている）', () => {

@@ -68,7 +68,7 @@ export function collectWarnings(page: Page): string[] {
 
 export const mapElement = (page: Page): Locator => page.locator('[data-map-loaded="true"]')
 
-/** パネルの「3D」を押し、3D の視点へ動き終えるまで待つ（SwiftShader では地形の用意に数秒かかる） */
+/** 地図の上の「3D」を押し、3D の視点へ動き終えるまで待つ（SwiftShader では地形の用意に数秒かかる） */
 export async function switchTo3d(page: Page): Promise<void> {
   await page.getByRole('button', { name: strings.view3d.view3d, exact: true }).click()
   await expect(mapElement(page)).toHaveAttribute('data-view3d', '3d', { timeout: 30_000 })
