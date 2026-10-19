@@ -76,6 +76,21 @@ describe('CollapseOverlay（spec 10 §5.4）', () => {
     expect(fake.layers.filter((id) => id === COLLAPSE_LAYER_IDS.deposit)).toHaveLength(1)
   })
 
+  it('あふれ出し点の印は上位 5 か所だけ（輪郭は全部）', () => {
+    const { fake, overlay } = setup()
+    const many = {
+      ...RESULT,
+      dams: Array.from({ length: 8 }, (_, i) => ({
+        depressionId: i + 1,
+        spill: { lon: i, lat: 0 },
+      })),
+    } as unknown as CollapsePayload
+    overlay.show(many, GEO, 5)
+    const data = (fake.sources.get(COLLAPSE_LAYER_IDS.dams) as { data: { features: unknown[] } })
+      .data
+    expect(data.features).toHaveLength(5)
+  })
+
   it('比べる前は新しい水のレイヤーが無い。clearCompare で消える', () => {
     const { fake, overlay } = setup()
     overlay.show(RESULT, GEO)

@@ -1,4 +1,5 @@
 import type { CollapseOverlay } from '../map/CollapseOverlay'
+import { MAX_SHOWN_DAMS } from '../shared/damDisplay'
 import type { CollapsePayload, CompareSide } from '../shared/protocol'
 import type { CollapseState } from '../state/appStore'
 
@@ -22,7 +23,7 @@ export function syncCollapseOverlay(
     return
   }
   const geo = result.after.geo
-  overlay.show(result, geo)
+  overlay.show(result, geo, MAX_SHOWN_DAMS)
   if (collapse.compare.status === 'done' && compared !== null) {
     overlay.showCompare(compared.before.depth, compared.after.depth, geo)
   } else {

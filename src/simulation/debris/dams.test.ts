@@ -9,12 +9,31 @@ const NEAR = (DEBRIS_PRESETS.find((p) => p.id === 'near') as DebrisPreset).param
 const N = 20
 
 /** 平らな土地（標高 100）に、四角い窪み（深さ 1m）を掘る */
-function flatWithPits(pits: { r: number; c: number; w: number }[]): Float32Array {
+function flatWithPits(
+  pits: { r: number; c: number; w: number; h?: number; depth?: number }[],
+): Float32Array {
   const z = new Float32Array(N * N).fill(100)
   for (const p of pits) {
-    for (let r = p.r; r < p.r + p.w; r++) for (let c = p.c; c < p.c + p.w; c++) z[r * N + c] = 99
+    for (let r = p.r; r < p.r + (p.h ?? p.w); r++) {
+      for (let c = p.c; c < p.c + p.w; c++) z[r * N + c] = 100 - (p.depth ?? 1)
+    }
   }
   return z
+}
+
+/** 平らな土地が、崩れた後に pit の窪地になり、窪地のすぐそばに土が積もった場合に、せき止められた場所が何か所出るか */
+function dammedCount(beforeZ: Float32Array, afterZ: Float32Array, depositAt: number): number {
+  const b = analyze(beforeZ)
+  const a = analyze(afterZ)
+  const deposit = new Float32Array(N * N)
+  deposit[depositAt] = 1
+  return findDammedSites(
+    { fill: b.fill, elevation: beforeZ },
+    { fill: a.fill, elevation: afterZ, labels: a.labels, depressions: a.depressions },
+    deposit,
+    N,
+    CELL,
+  ).length
 }
 
 function analyze(elevation: Float32Array, size = N, cell = CELL) {
@@ -47,7 +66,7 @@ describe('findDammedSites', () => {
     )
     expect(sites.length).toBeGreaterThanOrEqual(1)
     const top = sites[0]
-    expect(top?.addedCapacityM3).toBeGreaterThan(10)
+    expect(top?.addedCapacityM3).toBeGreaterThan(100)
     expect(top?.capacityM3).toBeGreaterThanOrEqual(top?.addedCapacityM3 ?? Infinity)
     // 窪地は谷筋にかかっていて、spill point は窪地の外
     const dep = after.depressions.find((d) => d.id === top?.depressionId)
@@ -131,13 +150,13 @@ describe('findDammedSites', () => {
     const b = analyze(before)
     // 小さい窪地（2x2）を先（行番号が小さい側）に、大きい窪地（4x4）を後ろに置く
     const afterZ = flatWithPits([
-      { r: 2, c: 2, w: 2 },
-      { r: 10, c: 10, w: 4 },
+      { r: 2, c: 2, w: 3 },
+      { r: 10, c: 10, w: 5 },
     ])
     const a = analyze(afterZ)
     const deposit = new Float32Array(N * N)
-    deposit[2 * N + 4] = 1
-    deposit[10 * N + 14] = 1
+    deposit[2 * N + 5] = 1
+    deposit[10 * N + 15] = 1
     const sites = findDammedSites(
       { fill: b.fill, elevation: before },
       { fill: a.fill, elevation: afterZ, labels: a.labels, depressions: a.depressions },
@@ -145,8 +164,35 @@ describe('findDammedSites', () => {
       N,
       CELL,
     )
-    expect(sites.map((s) => s.capacityM3)).toEqual([400, 100])
-    expect(sites[0]?.addedCapacityM3).toBeCloseTo(400, 3)
+    expect(sites.map((s) => s.capacityM3)).toEqual([625, 225])
+    expect(sites[0]?.addedCapacityM3).toBeCloseTo(625, 3)
     expect(sites[0]?.depressionId).not.toBe(sites[1]?.depressionId)
+  })
+
+  describe('R12 の下限（増えた容量 > max(100 m³, 0.1 × 容量) かつ 面積 ≥ 200 m²。セル 25 m²）', () => {
+    const flat = new Float32Array(N * N).fill(100)
+    const at = 5 * N + 9 // 窪地のすぐ東（幅 4 の窪地は c = 5〜8）
+
+    it('面積がちょうど 200 m²（8 セル）なら出る。175 m²（7 セル）なら出ない', () => {
+      // 深さ 1 m: 8 セルは 200 m³ / 200 m²、7 セルは 175 m³ / 175 m²（容量の下限は超えている）
+      expect(dammedCount(flat, flatWithPits([{ r: 5, c: 5, w: 4, h: 2 }]), at)).toBe(1)
+      const seven = flatWithPits([{ r: 5, c: 5, w: 4, h: 2 }])
+      seven[6 * N + 8] = 100
+      expect(dammedCount(flat, seven, at)).toBe(0)
+    })
+
+    it('増えた容量がちょうど 100 m³ なら出ない。超えれば出る（面積 200 m² で固定）', () => {
+      // 8 セル × 25 m² × 深さ 0.5 m = 100 m³
+      expect(dammedCount(flat, flatWithPits([{ r: 5, c: 5, w: 4, h: 2, depth: 0.5 }]), at)).toBe(0)
+      expect(dammedCount(flat, flatWithPits([{ r: 5, c: 5, w: 4, h: 2, depth: 0.52 }]), at)).toBe(1)
+    })
+
+    it('もともと窪地があって増えたのが容量の 10% 以下なら出ない。超えれば出る', () => {
+      // 10×10 セル、深さ 1 m（2500 m³）が、深さ 1.1 m（2750 m³・増分 250 = 9.1%）か 1.2 m（3000 m³・増分 500）になる
+      const before = flatWithPits([{ r: 3, c: 3, w: 10 }])
+      const place = 8 * N + 13
+      expect(dammedCount(before, flatWithPits([{ r: 3, c: 3, w: 10, depth: 1.1 }]), place)).toBe(0)
+      expect(dammedCount(before, flatWithPits([{ r: 3, c: 3, w: 10, depth: 1.2 }]), place)).toBe(1)
+    })
   })
 })

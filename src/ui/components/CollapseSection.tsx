@@ -14,6 +14,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useRef } from 'react'
 import { useStore } from 'zustand'
+import { MAX_SHOWN_DAMS } from '../../shared/damDisplay'
 import { DEBRIS_PRESETS } from '../../shared/debrisPresets'
 import type { CollapseRatio } from '../../shared/protocol'
 import type { CollapseSummary, CompareSummary } from '../../state/appStore'
@@ -35,6 +36,12 @@ const RATIOS: readonly CollapseRatio[] = [1, 0.5, 0.25]
 function formatRemaining(seconds: number): string {
   const minutes = Math.ceil(seconds / 60)
   return seconds < 60 ? t.remainingLessThanMinute : t.remainingMinutes(minutes)
+}
+
+function formatEstimate(minutes: number): string {
+  return minutes >= 90
+    ? t.compareEstimateHours(Math.round(minutes / 60))
+    : t.compareEstimateMinutes(Math.round(minutes))
 }
 
 function ResultLines({ summary }: { summary: CollapseSummary }) {
@@ -62,7 +69,7 @@ function ResultLines({ summary }: { summary: CollapseSummary }) {
             {t.dams(summary.dams.length, formatVolumeApprox(dammedWater))}
           </Typography>
           <Box component="ul" sx={{ m: 0, pl: 2 }}>
-            {summary.dams.map((d, i) => (
+            {summary.dams.slice(0, MAX_SHOWN_DAMS).map((d, i) => (
               <li key={d.depressionId}>
                 <Typography variant="caption">
                   {t.damRow(
@@ -77,6 +84,11 @@ function ResultLines({ summary }: { summary: CollapseSummary }) {
               </li>
             ))}
           </Box>
+          {summary.dams.length > MAX_SHOWN_DAMS && (
+            <Typography variant="caption" component="p">
+              {t.damsMore(summary.dams.length - MAX_SHOWN_DAMS)}
+            </Typography>
+          )}
         </>
       )}
     </Box>
@@ -159,11 +171,11 @@ function CompareTable({ summary }: { summary: CompareSummary }) {
  */
 export function CollapseSection({
   session,
-  heavyRain,
+  compareMinutes,
 }: {
   session: TerrainSession
-  /** 範囲全体の雨、または範囲 1000 m（比べる計算に数分以上かかりうる） */
-  heavyRain: boolean
+  /** 比べる計算の所要時間の目安（分。estimateCompareMinutes）。1 分以上なら押す前に知らせる */
+  compareMinutes: number
 }) {
   const app = session.store
   const collapse = useStore(app, (s) => s.collapse)
@@ -272,9 +284,10 @@ export function CollapseSection({
                 <Typography variant="caption" component="p">
                   {t.compareHint}
                 </Typography>
-                {heavyRain && (
-                  <Typography variant="caption" component="p">
-                    {t.compareSlow}
+                {compareMinutes >= 1 && (
+                  <Typography variant="caption" component="p" data-testid="compare-estimate">
+                    {formatEstimate(compareMinutes)}
+                    {t.compareEstimateNote}
                   </Typography>
                 )}
               </>

@@ -80,7 +80,7 @@ describe('CollapseSection', () => {
     render(
       <>
         <FillHistorySection session={session} />
-        <CollapseSection session={session} heavyRain={false} />
+        <CollapseSection session={session} compareMinutes={0} />
       </>,
     )
     expect(screen.queryByTestId('collapse-section')).toBeNull()
@@ -99,7 +99,7 @@ describe('CollapseSection', () => {
   it('崩れる量・流れやすさの選択肢は DEBRIS_PRESETS の行の数だけ出る', async () => {
     const { session, store } = setup()
     store.getState().openCollapse(3)
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     const group = screen.getByRole('group', { name: strings.collapse.preset })
     expect(within(group).getAllByRole('button')).toHaveLength(DEBRIS_PRESETS.length)
     // ツールチップの説明が名前を上書きしない
@@ -116,7 +116,7 @@ describe('CollapseSection', () => {
   it('計算するボタンは idle で compute、ready では出ない', async () => {
     const { session, store, compute } = setup()
     store.getState().openCollapse(3)
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     await userEvent.click(screen.getByRole('button', { name: strings.collapse.compute }))
     expect(compute).toHaveBeenCalledOnce()
     patch(store, { status: 'computing', progress: 0.4 })
@@ -125,10 +125,29 @@ describe('CollapseSection', () => {
     expect(screen.queryByRole('button', { name: strings.collapse.compute })).toBeNull()
   })
 
+  it('せき止めが 5 か所を超えたら、一覧は上位 5 行と「ほか N か所」。見出しは全部の数と合計', () => {
+    const { session, store } = setup()
+    store.getState().openCollapse(3)
+    render(<CollapseSection session={session} compareMinutes={0} />)
+    const dams = Array.from({ length: 8 }, (_, i) => ({
+      depressionId: i + 1,
+      capacityM3: 1000 * (8 - i),
+      addedCapacityM3: 500,
+      maxDepthM: 1,
+      areaM2: 300,
+      spillElevation: 20,
+      spill: { lon: 0, lat: 0 },
+    }))
+    patch(store, { status: 'ready', summary: summary({ dams }) })
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.getByText(strings.collapse.damsMore(3))).toBeTruthy()
+    expect(screen.getByText(/せき止められた場所: 8 か所/)).toBeTruthy()
+  })
+
   it('ready で崩れた土・積もった土・せき止めの行が出る。outsideM3 > 0 で範囲の外の知らせ', () => {
     const { session, store } = setup()
     store.getState().openCollapse(3)
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     patch(store, {
       status: 'ready',
       summary: summary({
@@ -170,7 +189,7 @@ describe('CollapseSection', () => {
   it('dams が空なら「せき止められた場所はありません」、範囲の外が 0 なら知らせは出ない', () => {
     const { session, store } = setup()
     store.getState().openCollapse(3)
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     patch(store, { status: 'ready', summary: summary() })
     expect(screen.getByText(strings.collapse.noDams)).toBeTruthy()
     expect(screen.queryByText(/範囲の外へ/)).toBeNull()
@@ -180,10 +199,16 @@ describe('CollapseSection', () => {
     const { session, store, compare, cancel } = setup()
     store.getState().openCollapse(3)
     patch(store, { status: 'ready', summary: summary() })
-    const { rerender } = render(<CollapseSection session={session} heavyRain={false} />)
-    expect(screen.queryByText(strings.collapse.compareSlow)).toBeNull()
-    rerender(<CollapseSection session={session} heavyRain={true} />)
-    expect(screen.getByText(strings.collapse.compareSlow)).toBeTruthy()
+    const { rerender } = render(<CollapseSection session={session} compareMinutes={0} />)
+    expect(screen.queryByTestId('compare-estimate')).toBeNull()
+    rerender(<CollapseSection session={session} compareMinutes={0.9} />)
+    expect(screen.queryByTestId('compare-estimate')).toBeNull()
+    rerender(<CollapseSection session={session} compareMinutes={12.4} />)
+    expect(screen.getByTestId('compare-estimate').textContent).toBe(
+      `${strings.collapse.compareEstimateMinutes(12)}${strings.collapse.compareEstimateNote}`,
+    )
+    rerender(<CollapseSection session={session} compareMinutes={150} />)
+    expect(screen.getByTestId('compare-estimate').textContent).toContain('約 3 時間')
     await userEvent.click(screen.getByRole('button', { name: strings.collapse.compare }))
     expect(compare).toHaveBeenCalledOnce()
 
@@ -227,7 +252,7 @@ describe('CollapseSection', () => {
     const { session, store } = setup()
     store.getState().openCollapse(3)
     patch(store, { status: 'ready', summary: summary(), swapping: true })
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     expect(
       (screen.getByRole('button', { name: strings.collapse.compare }) as HTMLButtonElement)
         .disabled,
@@ -238,7 +263,7 @@ describe('CollapseSection', () => {
     const { session, store } = setup()
     store.getState().openCollapse(3)
     patch(store, { status: 'computing', progress: 0.4 })
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     expect(screen.getByRole('progressbar', { name: strings.collapse.computing })).toBeTruthy()
   })
 
@@ -246,7 +271,7 @@ describe('CollapseSection', () => {
     const { session, store } = setup()
     const scroll = vi.fn()
     Element.prototype.scrollIntoView = scroll
-    render(<CollapseSection session={session} heavyRain={false} />)
+    render(<CollapseSection session={session} compareMinutes={0} />)
     expect(scroll).not.toHaveBeenCalled()
     act(() => store.getState().openCollapse(3))
     expect(scroll).toHaveBeenCalledOnce()
@@ -258,7 +283,7 @@ describe('CollapseSection', () => {
     patch(store, { status: 'ready', summary: summary({ outsideM3: 10 }) })
     const { container } = render(
       <>
-        <CollapseSection session={session} heavyRain={true} />
+        <CollapseSection session={session} compareMinutes={150} />
         <ScenarioToggle session={session} />
       </>,
     )

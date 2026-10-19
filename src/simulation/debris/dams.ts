@@ -3,6 +3,7 @@
  * 「積もった土が窪地のそばにあり、かつ、崩れる前より満水の量が目に見えて増えた」窪地を選ぶ
  */
 import type { Depression } from '../terrain/types.ts'
+import { DAM_MIN_ADDED_M3, DAM_MIN_AREA_M2, DAM_MIN_RATIO } from './constants.ts'
 
 export interface DammedSite {
   /** 崩れた後の解析の窪地の id */
@@ -19,9 +20,6 @@ export interface DammedSite {
 
 /** 積もった土があるとみなす厚さ（m） */
 const DEPOSIT_PRESENT_M = 0.01
-/** 増えた容量の下限（m³）と、崩れた後の容量に対する割合 */
-const MIN_ADDED_M3 = 10
-const MIN_ADDED_RATIO = 0.1
 
 export function findDammedSites(
   before: { fill: Float32Array; elevation: Float32Array },
@@ -69,7 +67,8 @@ export function findDammedSites(
   for (const [id, d] of byId) {
     if (!nearDeposit.has(id)) continue
     const addedCapacityM3 = d.capacityM3 - (beforeM3.get(id) ?? 0)
-    if (addedCapacityM3 <= Math.max(MIN_ADDED_M3, MIN_ADDED_RATIO * d.capacityM3)) continue
+    if (addedCapacityM3 <= Math.max(DAM_MIN_ADDED_M3, DAM_MIN_RATIO * d.capacityM3)) continue
+    if (d.areaM2 < DAM_MIN_AREA_M2) continue
     sites.push({
       depressionId: id,
       capacityM3: d.capacityM3,

@@ -30,6 +30,7 @@ export class CollapseOverlay {
   private result: CollapsePayload | null = null
   private compare: CompareDepths | null = null
   private geo: TerrainGeo | null = null
+  private markerCount = Number.POSITIVE_INFINITY
   private generation = 0
 
   constructor(map: MapLibreMap, whenMapLoaded: (run: () => void) => void) {
@@ -37,9 +38,13 @@ export class CollapseOverlay {
     this.whenMapLoaded = whenMapLoaded
   }
 
-  /** 積もった土・崩れた跡・せき止められた場所を描く。比べた結果は残す（showCompare で別に決める） */
-  show(result: CollapsePayload, geo: TerrainGeo): void {
+  /**
+   * 積もった土・崩れた跡・せき止められた場所を描く。比べた結果は残す（showCompare で別に決める）。
+   * あふれ出し点の印は dams の先頭（溜まりうる水の多い順）から markerCount 個だけ。塗りと輪郭は全部（R12）
+   */
+  show(result: CollapsePayload, geo: TerrainGeo, markerCount = Number.POSITIVE_INFINITY): void {
     this.result = result
+    this.markerCount = markerCount
     this.geo = geo
     this.schedule()
   }
@@ -101,7 +106,7 @@ export class CollapseOverlay {
         type: 'geojson',
         data: {
           type: 'FeatureCollection',
-          features: result.dams.map((d) => ({
+          features: result.dams.slice(0, this.markerCount).map((d) => ({
             type: 'Feature' as const,
             geometry: { type: 'Point' as const, coordinates: [d.spill.lon, d.spill.lat] },
             properties: { depressionId: d.depressionId },

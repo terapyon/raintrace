@@ -27,7 +27,7 @@ describe('syncCollapseOverlay', () => {
     }
     const o = fake()
     syncCollapseOverlay(o, { view: 'after', status: 'ready', compare: { status: 'idle' } }, data)
-    expect(o.show).toHaveBeenCalledWith(RESULT, RESULT.after.geo)
+    expect(o.show).toHaveBeenCalledWith(RESULT, RESULT.after.geo, 5)
   })
 
   it('結果が無ければ消す', () => {

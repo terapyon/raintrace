@@ -24,8 +24,9 @@ function worldPixel(z: number): { u: number; v: number } {
 }
 
 /**
- * 南へ流れる谷。中央の列（地点の経度）が低く、両側が 5% の勾配で上がり、南へ緩やかに下る。
- * withPlatform なら、谷の上流（北）側の東の斜面に +15 m の台（z17 で 64 × 64 画素。範囲の 25% 未満）
+ * 南へ流れる谷。中央の列（地点の経度）が低く、両側が約 30°（勾配 0.58）で上がり、南へ 5% で下る。
+ * withPlatform なら、谷の上流（北）側の東の斜面に +15 m の台（z17 で 30 × 40 画素。範囲の 25% 未満）。
+ * 土が谷底に積もってせき止めの下限（100 m³ 超・面積 200 m² 以上。R12）を超えるよう、斜面を急にしている
  * 位置は z17 の画素で決めて、DEM10B（z14）の画素にも同じ地形を当てる
  */
 function valleyElevation(withPlatform: boolean) {
@@ -34,8 +35,8 @@ function valleyElevation(withPlatform: boolean) {
     const scale = 2 ** (17 - z)
     const u = (tileX * 256 + px + 0.5) * scale - origin.u
     const v = (tileY * 256 + py + 0.5) * scale - origin.v
-    const base = 30 + 0.05 * Math.abs(u) - 0.02 * v
-    const onPlatform = u >= 30 && u < 94 && v >= -96 && v < -32
+    const base = 30 + 0.58 * Math.abs(u) - 0.05 * v
+    const onPlatform = u >= 10 && u < 40 && v >= -60 && v < -20
     return withPlatform && onPlatform ? base + 15 : base
   }
 }
