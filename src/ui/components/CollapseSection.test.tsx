@@ -172,12 +172,63 @@ describe('CollapseSection', () => {
     expect(result.textContent).toContain('約 4.5 万 m³')
     expect(result.textContent).toContain(strings.collapse.outside('約 4,000 m³'))
     expect(result.textContent).toContain(strings.collapse.outsideNotice('約 4,000 m³'))
-    expect(result.textContent).toContain('せき止められた場所: 2 か所（溜まりうる水 約 1.5 万 m³）')
-    // 行は溜まりうる水（capacityM3）を、場所の番号は並びの順で出す
-    expect(result.textContent).toContain('場所 1　溜まりうる水 約 1.2 万 m³')
-    expect(result.textContent).toContain('場所 2　溜まりうる水 約 3,000 m³')
-    expect(result.textContent).toContain('あふれ出す標高 31.20 m')
-    expect(result.textContent).toContain('最大の深さ 2.50 m')
+    expect(result.textContent).toContain('せき止められた場所: 2 か所')
+    // 行は場所の番号（並びの順）と面積だけ
+    expect(result.textContent).toContain('場所 1　面積 800')
+    expect(result.textContent).toContain('場所 2　面積 300')
+  })
+
+  const dam = {
+    depressionId: 2,
+    capacityM3: 12000,
+    addedCapacityM3: 5000,
+    maxDepthM: 2.5,
+    areaM2: 800,
+    spillElevation: 31.2,
+    spill: { lon: 0, lat: 0 },
+  }
+  const readyText = (over: Partial<CollapseSummary>) => {
+    const { session, store } = setup()
+    store.getState().openCollapse(3)
+    render(<CollapseSection session={session} />)
+    patch(store, { status: 'ready', summary: summary(over) })
+    return screen.getByTestId('collapse-section').textContent ?? ''
+  }
+
+  it('水路ありの結果で水路の仮定と注意書きが出る。blocked なら「崩れた土で水路がふさがりました」', () => {
+    const text = readyText({ culvert: { blocked: true } })
+    expect(text).toContain(strings.collapse.culvertAssumed)
+    expect(text).toContain(strings.collapse.culvertBlocked)
+    expect(text).toContain(strings.collapse.culvertNotice)
+  })
+
+  it('水路ありで blocked でないと「ふさがりました」は出ない', () => {
+    const text = readyText({ culvert: { blocked: false } })
+    expect(text).toContain(strings.collapse.culvertAssumed)
+    expect(text).not.toContain('ふさがりました')
+  })
+
+  it('水路なしの結果では水路の行と水路の注意書きが出ない', () => {
+    const text = readyText({ culvert: null })
+    expect(text).not.toContain('水路')
+  })
+
+  it('せき止めの行は場所の数と面積だけで、水の量・深さ・標高を含まない', () => {
+    const text = readyText({ dams: [dam] })
+    for (const word of ['溜まりうる水', '最大の深さ', 'あふれ出す標高']) {
+      expect(text).not.toContain(word)
+    }
+  })
+
+  it('ready で見比べの案内が出る。ready でなければ出ない', () => {
+    expect(readyText({})).toContain(strings.collapse.playbackHint)
+    cleanup()
+    const { session, store } = setup()
+    store.getState().openCollapse(3)
+    render(<CollapseSection session={session} />)
+    expect(screen.getByTestId('collapse-section').textContent).not.toContain(
+      strings.collapse.playbackHint,
+    )
   })
 
   it('dams が空なら「せき止められた場所はありません」、範囲の外が 0 なら知らせは出ない', () => {
@@ -231,7 +282,10 @@ describe('CollapseSection', () => {
   it('画面の文字に「崩壊確率」「被害」「危険」を含まない', () => {
     const { session, store } = setup()
     store.getState().openCollapse(3)
-    patch(store, { status: 'ready', summary: summary({ outsideM3: 10 }) })
+    patch(store, {
+      status: 'ready',
+      summary: summary({ outsideM3: 10, culvert: { blocked: true }, dams: [dam] }),
+    })
     const { container } = render(
       <>
         <CollapseSection session={session} />

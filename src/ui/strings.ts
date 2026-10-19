@@ -18,18 +18,15 @@ export const strings = {
     deposited: '積もった土',
     outside: (v: string) => `（範囲の外へ ${v}）`,
     outsideNotice: (v: string) => `土砂の一部（${v}）が範囲の外へ流れ出ました`,
-    dams: (n: number, v: string) => `せき止められた場所: ${n} か所（溜まりうる水 ${v}）`,
+    culvertAssumed: '盛土の下に、昔の谷底に沿って水路があったと仮定しています',
+    culvertBlocked: '崩れた土で水路がふさがりました',
+    playbackHint: '崩れる前と崩れた後で、それぞれ雨を降らせて、水の動きを見比べてください',
+    dams: (n: number) => `せき止められた場所: ${n} か所`,
     damsMore: (n: number) => `ほか ${n} か所`,
     noDams: 'せき止められた場所はありません',
-    damRow: (
-      n: number,
-      sep: string,
-      capacity: string,
-      depth: string,
-      spill: string,
-      area: string,
-    ) =>
-      `場所 ${n}${sep}溜まりうる水 ${capacity}${sep}最大の深さ ${depth}${sep}あふれ出す標高 ${spill}${sep}面積 ${area}`,
+    damRow: (n: number, sep: string, area: string) => `場所 ${n}${sep}面積 ${area}`,
+    culvertNotice:
+      '盛土の下に、昔の谷底に沿って水路があったと仮定しています。実際の排水の設備（位置・太さ）は分かりません。地面への浸み込みや排水を考えていないため、実際より多く溜まって見えることがあります。',
     notice:
       'これは「この盛土が崩れたと仮定した場合」の地形と水の流れを、簡単なモデルで描いたものです。盛土が崩れる可能性や、実際の災害の起こり方を予測するものではありません。土砂の流れ方は、土の水の含み方などで大きく変わります。せき止めが決壊することや、地面への浸透は考えていません。実際の安全性の評価には、地盤の調査や安定の解析が必要です。',
   },

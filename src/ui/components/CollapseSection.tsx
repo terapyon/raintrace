@@ -13,7 +13,7 @@ import { MAX_SHOWN_DAMS } from '../../shared/damDisplay'
 import { DEBRIS_PRESETS } from '../../shared/debrisPresets'
 import type { CollapseRatio } from '../../shared/protocol'
 import type { CollapseSummary } from '../../state/appStore'
-import { formatArea, formatMeters, formatVolumeApprox } from '../format'
+import { formatArea, formatVolumeApprox } from '../format'
 import { strings } from '../strings'
 import type { TerrainSession } from '../terrainSession'
 
@@ -22,7 +22,6 @@ const RATIOS: readonly CollapseRatio[] = [1, 0.5, 0.25]
 
 function ResultLines({ summary }: { summary: CollapseSummary }) {
   const outside = summary.outsideM3 > 0
-  const dammedWater = summary.dams.reduce((sum, d) => sum + d.capacityM3, 0)
   return (
     <Box sx={{ mt: 1 }} data-testid="collapse-result">
       <Typography variant="body2">
@@ -37,25 +36,20 @@ function ResultLines({ summary }: { summary: CollapseSummary }) {
           {t.outsideNotice(formatVolumeApprox(summary.outsideM3))}
         </Alert>
       )}
+      {summary.culvert !== null && <Typography variant="body2">{t.culvertAssumed}</Typography>}
+      {summary.culvert?.blocked === true && (
+        <Typography variant="body2">{t.culvertBlocked}</Typography>
+      )}
       {summary.dams.length === 0 ? (
         <Typography variant="body2">{t.noDams}</Typography>
       ) : (
         <>
-          <Typography variant="body2">
-            {t.dams(summary.dams.length, formatVolumeApprox(dammedWater))}
-          </Typography>
+          <Typography variant="body2">{t.dams(summary.dams.length)}</Typography>
           <Box component="ul" sx={{ m: 0, pl: 2 }}>
             {summary.dams.slice(0, MAX_SHOWN_DAMS).map((d, i) => (
               <li key={d.depressionId}>
                 <Typography variant="caption">
-                  {t.damRow(
-                    i + 1,
-                    strings.fillHistory.rowSeparator,
-                    formatVolumeApprox(d.capacityM3),
-                    formatMeters(d.maxDepthM),
-                    formatMeters(d.spillElevation),
-                    formatArea(d.areaM2),
-                  )}
+                  {t.damRow(i + 1, strings.fillHistory.rowSeparator, formatArea(d.areaM2))}
                 </Typography>
               </li>
             ))}
@@ -67,6 +61,9 @@ function ResultLines({ summary }: { summary: CollapseSummary }) {
           )}
         </>
       )}
+      <Typography variant="body2" sx={{ mt: 0.5 }}>
+        {t.playbackHint}
+      </Typography>
     </Box>
   )
 }
@@ -173,6 +170,7 @@ export function CollapseSection({ session }: { session: TerrainSession }) {
       {status === 'ready' && summary !== null && <ResultLines summary={summary} />}
       <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
         {t.notice}
+        {status === 'ready' && summary?.culvert != null && ` ${t.culvertNotice}`}
       </Typography>
     </Box>
   )
