@@ -305,13 +305,15 @@ export class TerrainSession {
         : null
     const history =
       result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
-    // 水路の溝ありの崩れる前を表示している間、標高は溝のない読み込んだ地形から読む（溝は仮定）
+    // 水路の溝ありの崩れる前を表示している間、標高は溝のない読み込んだ地形から読む（溝は仮定）。
+    // 水位は水を流している溝ありの地形の標高 + 水深
     return cellInfoAt(
-      this.collapse.uncarvedTerrain() ?? terrain,
+      terrain,
       this.client.water,
       lon,
       lat,
       history,
+      this.collapse.uncarvedTerrain()?.elevation,
     )
   }
 
