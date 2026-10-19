@@ -145,6 +145,28 @@ describe('findDammedSites', () => {
     ).toEqual([])
   })
 
+  it('取り去った跡にもともとできる窪地は、もとからの容量に数える（セルごとに深い方）', () => {
+    const before = new Float32Array(N * N).fill(100)
+    const pit = flatWithPits([{ r: 5, c: 5, w: 5 }])
+    const b = analyze(before)
+    const s = analyze(pit)
+    const a = analyze(pit)
+    const deposit = new Float32Array(N * N)
+    deposit[5 * N + 10] = 1
+    const run = (scar?: { fill: Float32Array; elevation: Float32Array }) =>
+      findDammedSites(
+        scar === undefined
+          ? { fill: b.fill, elevation: before }
+          : { fill: b.fill, elevation: before, scar },
+        { fill: a.fill, elevation: pit, labels: a.labels, depressions: a.depressions },
+        deposit,
+        N,
+        CELL,
+      )
+    expect(run()).toHaveLength(1)
+    expect(run({ fill: s.fill, elevation: pit })).toEqual([])
+  })
+
   it('容量の大きい順', () => {
     const before = new Float32Array(N * N).fill(100)
     const b = analyze(before)

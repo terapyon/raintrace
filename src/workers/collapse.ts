@@ -53,10 +53,22 @@ export function computeCollapse(
   const outflow = buildOutflowCells(afterGrid.validMask, size)
   const { payload: after } = packTerrain(afterGrid, analysis, geo, outflow)
 
-  // 崩れる前の満水の量と比べて、せき止められた窪地を選ぶ
-  const before = analyzeDepressions({ elevation, validMask, width: size, height: size, cellSizeM })
+  // 崩れる前と、土を取り去っただけの跡（積もらせる前）の満水の量と比べて、せき止められた窪地を選ぶ
+  const terrainOf = (z: Float32Array) => ({
+    elevation: z,
+    validMask,
+    width: size,
+    height: size,
+    cellSizeM,
+  })
+  const before = analyzeDepressions(terrainOf(elevation))
+  const scarElevation = new Float32Array(elevation.length)
+  for (let i = 0; i < scarElevation.length; i++) {
+    scarElevation[i] = (elevation[i] ?? 0) - (result.removed[i] ?? 0)
+  }
+  const scar = analyzeDepressions(terrainOf(scarElevation))
   const sites = findDammedSites(
-    { fill: before.fill, elevation },
+    { fill: before.fill, elevation, scar: { fill: scar.fill, elevation: scarElevation } },
     {
       fill: analysis.fill,
       elevation: result.after,

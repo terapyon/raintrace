@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { TerrainGeo } from '../shared/protocol'
 import { DEBRIS_BULKING } from '../simulation/debris/constants.ts'
-import { CELL, SIZE, valleyWithFill } from '../simulation/debris/testTerrain.test-support.ts'
+import {
+  CELL,
+  SIZE,
+  terraceWithRim,
+  valleyWithFill,
+} from '../simulation/debris/testTerrain.test-support.ts'
 import { collapseTransferables, computeCollapse } from './collapse'
 
 const geo: TerrainGeo = {
@@ -85,5 +90,21 @@ describe('computeCollapse', () => {
     const { payload } = run()
     const list = collapseTransferables(payload)
     expect(new Set(list).size).toBe(list.length)
+  })
+
+  it('取り去った跡だけの窪み（縁が残る）は、遠くまで流れる場合でもせき止めにしない', () => {
+    const { grid, removed } = terraceWithRim()
+    const payload = computeCollapse({
+      terrainId: 1,
+      geo: { ...geo, size: grid.size, cellSizeM: grid.cellSizeM },
+      elevation: grid.elevation,
+      validMask: grid.validMask,
+      removed,
+      candidateId: 1,
+      ratio: 1,
+      presetId: 'far',
+    })
+    expect(payload.outsideM3).toBeGreaterThan(0)
+    expect(payload.dams).toEqual([])
   })
 })

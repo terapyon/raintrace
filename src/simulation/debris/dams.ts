@@ -9,7 +9,7 @@ export interface DammedSite {
   /** 崩れた後の解析の窪地の id */
   depressionId: number
   capacityM3: number
-  /** 崩れる前の同じセルの満水の量より増えた分（m³） */
+  /** もとからの容量（崩れる前と取り去った跡の、同じセルの満水の量の深い方）より増えた分（m³） */
   addedCapacityM3: number
   maxDepthM: number
   areaM2: number
@@ -22,7 +22,16 @@ export interface DammedSite {
 const DEPOSIT_PRESENT_M = 0.01
 
 export function findDammedSites(
-  before: { fill: Float32Array; elevation: Float32Array },
+  /**
+   * 崩れる前の地形の満水の高さと標高。scar は、土を取り去っただけの地形（elevation − removed、
+   * 土を積もらせる前）の満水の高さと標高。取り去った跡の窪みは土がせき止めたものではないので、
+   * セルごとに、崩れる前と取り去った跡の深い方を「もとからの容量」とする
+   */
+  before: {
+    fill: Float32Array
+    elevation: Float32Array
+    scar?: { fill: Float32Array; elevation: Float32Array }
+  },
   after: {
     fill: Float32Array
     elevation: Float32Array
@@ -39,16 +48,16 @@ export function findDammedSites(
   for (const d of after.depressions) if (d.significant) byId.set(d.id, d)
   if (byId.size === 0) return []
 
-  // 窪地ごとに、(a) 土が窪地のセルかその 4 近傍にあるか、(b) 崩れる前の同じセルの満水の量
+  // 窪地ごとに、(a) 土が窪地のセルかその 4 近傍にあるか、(b) もとからの容量（崩れる前と取り去った跡の、セルごとに深い方）
+  const scar = before.scar
   const nearDeposit = new Set<number>()
   const beforeM3 = new Map<number, number>()
   for (let i = 0; i < n; i++) {
     const id = after.labels[i] ?? 0
     if (id <= 0 || !byId.has(id)) continue
-    beforeM3.set(
-      id,
-      (beforeM3.get(id) ?? 0) + Math.max(0, before.fill[i] - before.elevation[i]) * cellArea,
-    )
+    let baseDepth = Math.max(0, before.fill[i] - before.elevation[i])
+    if (scar) baseDepth = Math.max(baseDepth, scar.fill[i] - scar.elevation[i])
+    beforeM3.set(id, (beforeM3.get(id) ?? 0) + baseDepth * cellArea)
     if (nearDeposit.has(id)) continue
     const r = Math.floor(i / size)
     const c = i % size

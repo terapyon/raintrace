@@ -37,3 +37,30 @@ export function valleyWithFill(thickness: number): { grid: DebrisGrid; removed: 
 export function terrain(elevation: Float32Array, validMask: Uint8Array) {
   return { elevation, validMask, width: SIZE, height: SIZE, cellSizeM: CELL }
 }
+
+/**
+ * 取り去った跡だけが窪む地形（80 × 80、セル 2 m）。南へ 5% で下る緩い斜面に、
+ * 盛土の芯（行 25〜44・列 25〜54、厚さ 8 m）と、そのまわり 3 セルの縁（厚さ 4 m・崩れる候補ではない）を載せる。
+ * 芯だけを崩すと、縁に囲まれた取り去った跡が窪地になる（土がせき止めたものではない）
+ */
+export function terraceWithRim(): { grid: DebrisGrid; removed: Float32Array } {
+  const size = 80
+  const cellSizeM = 2
+  const elevation = new Float32Array(size * size)
+  const removed = new Float32Array(size * size)
+  const validMask = new Uint8Array(size * size).fill(1)
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const i = r * size + c
+      let z = 100 - r * cellSizeM * 0.05
+      if (r >= 25 && r < 45 && c >= 25 && c < 55) {
+        z += 8
+        removed[i] = 8
+      } else if (r >= 22 && r < 48 && c >= 22 && c < 58) {
+        z += 4
+      }
+      elevation[i] = z
+    }
+  }
+  return { grid: { elevation, validMask, size, cellSizeM }, removed }
+}
