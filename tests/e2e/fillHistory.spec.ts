@@ -60,6 +60,32 @@ async function setup(page: Page, scenario: GsiScenario = FILL_SCENARIO): Promise
 }
 
 /**
+ * 経緯度を含む DEM1A のタイル（ズーム 17）の中心（台の中心）が、その経緯度から画面で何 px ずれるか。
+ * MapLibre のズーム z では世界の幅が 512 × 2^z px
+ */
+function platformCenterOffsetPx(
+  lat: number,
+  lon: number,
+  zoom: number,
+): { dx: number; dy: number } {
+  const worldPx = 512 * 2 ** zoom
+  const toWorld = (la: number, lo: number) => {
+    const rad = (la * Math.PI) / 180
+    return {
+      x: ((lo + 180) / 360) * worldPx,
+      y: ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * worldPx,
+    }
+  }
+  const here = toWorld(lat, lon)
+  const tile = 2 ** 17
+  const tileSize = worldPx / tile
+  return {
+    dx: (Math.floor(here.x / tileSize) + 0.5) * tileSize - here.x,
+    dy: (Math.floor(here.y / tileSize) + 0.5) * tileSize - here.y,
+  }
+}
+
+/**
  * URL の経緯度で選んだ地点の地形が出てから、盛土の履歴をオンにする。地図をクリックしない（セル情報の
  * ポップオーバーが開くと、MUI が残りの画面を aria-hidden にして getByRole で見つからなくなる）
  */
@@ -74,8 +100,10 @@ const layersOf = async (element: Locator, name: string): Promise<string[]> =>
 test.describe('盛土の履歴（spec 09 §7.2）', () => {
   test('オンにすると標高差のレイヤーと一覧が出て、行を押すと詳しい欄が開く', async ({ page }) => {
     await setup(page)
-    await enableFillHistory(page)
+    await waitTerrain(page)
     const mapEl = mapElement(page)
+    await expect(mapEl).not.toHaveAttribute('data-overlay-layers', new RegExp(FILL_LAYER_IDS.delta))
+    await enableFillHistory(page)
     await expect(mapEl).toHaveAttribute('data-overlay-layers', new RegExp(FILL_LAYER_IDS.delta))
     const row = page.getByTestId('fill-row-1')
     await expect(row).toBeVisible({ timeout: 30_000 })
@@ -94,20 +122,28 @@ test.describe('盛土の履歴（spec 09 §7.2）', () => {
   test('地図の候補の印を押すと、セル情報ではなく、その候補が選ばれる', async ({ page }) => {
     await setup(page)
     await enableFillHistory(page)
-    const row = page.getByTestId('fill-row-1')
-    await expect(row).toBeVisible({ timeout: 30_000 })
-    // 行を押すと地図がその候補の中心へ動くので、候補の印は地図の中心にある
-    await row.click()
+    await expect(page.getByTestId('fill-row-1')).toBeVisible({ timeout: 30_000 })
+    await expect(mapElement(page)).toHaveAttribute(
+      'data-overlay-layers',
+      new RegExp(FILL_LAYER_IDS.markers),
+    )
+    await expect(page.locator('[aria-pressed="true"][data-testid^="fill-row-"]')).toHaveCount(0)
+    // 範囲に合わせた拡大率は URL の z に書かれる。選んだ地点のピン（先端が地点）から印の画面の位置を計算する
+    await expect(page).toHaveURL(/[?&]z=\d/)
+    const zoom = Number(new URL(page.url()).searchParams.get('z'))
+    const pin = await page.locator('.maplibregl-marker').boundingBox()
+    if (pin === null) throw new Error('地点のピンがありません')
+    // 選んだ地点を含む DEM1A のタイルの台の中心（タイルの中央）に、候補の印がある
+    const marker = platformCenterOffsetPx(SHIBUYA.lat, SHIBUYA.lon, zoom)
+    const cx = pin.x + pin.width / 2
+    const cy = pin.y + pin.height
+    await page.mouse.click(cx + marker.dx, cy + marker.dy)
+    // 印を押した処理が候補を選ぶ。その処理はセル情報を開かずに戻る（開くなら同じ処理の中で開く）
     await expect(page.getByTestId('fill-detail')).toBeVisible()
-    const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
-    if (box === null) throw new Error('地図の canvas がありません')
-    // 地図の動き（easeTo の既定は 500 ms）が終わるのを待ってから、中心を押す
-    await page.waitForTimeout(1500)
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(page.locator('[aria-pressed="true"][data-testid^="fill-row-"]')).toHaveCount(1)
     await expect(page.getByTestId('cell-info')).toHaveCount(0)
-    await expect(row).toHaveAttribute('aria-pressed', 'true')
-    // 印の無い所を押せば、いつものセル情報が開く（上の結果が「印を押した」ことによる証拠）
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 + 150)
+    // 対照: 印の無い所を押せば、セル情報が開く
+    await page.mouse.click(cx + marker.dx, cy + marker.dy + 120)
     await expect(page.getByTestId('cell-info')).toBeVisible()
   })
 
