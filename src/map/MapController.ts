@@ -2,7 +2,7 @@ import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { type Attribution, type Basemap, createGsiStyle } from './basemapStyle'
-import { OVERLAY_LAYER_ORDER } from './layerIds'
+import { FILL_LAYER_IDS, OVERLAY_LAYER_ORDER } from './layerIds'
 import { TERRAIN_LAYER_IDS } from './TerrainOverlay'
 import { VIEW3D_LAYER_IDS } from './view3d/layerIds'
 import { WATER_LAYER_IDS } from './WaterOverlay'
@@ -28,6 +28,7 @@ const OVERLAY_LAYER_IDS = [
   ...Object.values(TERRAIN_LAYER_IDS),
   ...Object.values(WATER_LAYER_IDS),
   ...Object.values(VIEW3D_LAYER_IDS),
+  ...Object.values(FILL_LAYER_IDS),
 ]
 
 /** MapLibre を React の外で生成・破棄する（tech-spec §5.3） */
