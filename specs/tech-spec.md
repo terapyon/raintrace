@@ -373,10 +373,10 @@ Renderer が GPU へ / React が統計を表示
 
 | メインから Worker | 内容 | Worker からの返事 |
 |---|---|---|
-| `collapse`（`requestId`, `terrainId`, `geo`, 標高, マスク, 崩れる厚さ, 候補の id, 割合, プリセットの id） | 土砂の行き先を計算する（`computeCollapse`。粒の計算・形の整え・崩れた後の地形の解析・せき止めの判定） | `collapseProgress`（進み具合）→ `collapseReady`（崩れた後の地形・積もった厚さ・せき止められた場所）または `collapseFailed` |
+| `collapse`（`requestId`, `terrainId`, `geo`, 標高, 昔の標高 `pastElevation`, ずれ `offsetM`, マスク, 崩れる厚さ, 候補の id, 割合, プリセットの id） | 土砂の行き先を計算する（`computeCollapse`。粒の計算・形の整え・盛土の下の水路の判定（spec 10b）・崩れた後の地形の解析・せき止めの判定） | `collapseProgress`（進み具合）→ `collapseReady`（`CollapsePayload`: 崩れた後の地形 `after`・積もった厚さ・せき止められた場所、水路を仮定したときは溝ありの崩れる前の地形 `before` と水路 `culvert`〈`line`・`lengthM`・`blocked`〉。仮定しなければ両方 null）または `collapseFailed` |
 | `swapTerrain`（`requestId`, 標高, マスク, 格子の大きさ, 窪地） | 再生用のエンジンの地形を差し替える（タイルの読み直しをしない）。崩れる前｜崩れた後の切り替えで使う | `terrainSwapped` |
 
-`requestId` は呼び出しごとに増やし、古い返事は main 側で捨てる。`collapse` は Worker の中で同期して計算する（1000 m・DEM1A で約 3 秒）。`terrainId` は地形を差し替えると変わるので、盛土の履歴・崩れた後の突き合わせには、最後にタイルから読んだ地形の id（差し替えで変わらないもの）を使う。
+`requestId` は呼び出しごとに増やし、古い返事は main 側で捨てる。`collapse` は Worker の中で同期して計算する（1000 m・DEM1A で約 3 秒）。`terrainId` は地形を差し替えると変わるので、盛土の履歴・崩れた後の突き合わせには、最後にタイルから読んだ地形の id（差し替えで変わらないもの）を使う。水路は昔の地形（`pastElevation + offsetM`）の上で、崩れる厚さ > 0 のセルを通る最も安い道として自動で探す（`src/simulation/debris/culvert.ts`）。崩れる前と後を比べる計算（`compareCollapse` など）は spec 10b で無くした。崩れる前・後は `swapTerrain` で切り替えて再生する。
 
 DEM の取得とデコードを Worker 内で行うことで、`OffscreenCanvas` の利用が可能になり、メインスレッドを一切ブロックしない。
 
@@ -1523,7 +1523,7 @@ tech-spec §6.3 の条件（500 m・DEM1A）では、1 番目（1 step の中央
 | `waterLayer` | 3.7 KB | — |
 | 総量 | 722.4 KB | 1.2 MB |
 
-- 09 完了時（430.6 KB）から、初期ロードは 6.6 KB、総量は 9.4 KB 増えた。上限に対して初期ロードは 62.8 KB の余裕がある。メモリ（比べる計算の間の Worker 約 140 MiB）は実装 spec 10 の記録 `docs/perf/2026-10-19-fill-collapse.md`
+- 09 完了時（430.6 KB）から、初期ロードは 6.6 KB、総量は 9.4 KB 増えた。上限に対して初期ロードは 62.8 KB の余裕がある。メモリ（spec 10 の時点で、比べる計算の間の Worker 約 140 MiB。この計算は spec 10b で無くした）は実装 spec 10 の記録 `docs/perf/2026-10-19-fill-collapse.md`
 
 - 盛土の履歴のコードが初期ロードを 06 完了時（419.8 KB）から約 10.8 KB、総量を約 17 KB 増やした。上限に対して初期ロードは 69.4 KB の余裕がある
 - A54 の静的ファイル（`public/data/a54/`、約 47 MB・382 個）はバンドルの外で、盛土の履歴をオンにしたときだけ範囲の周りの分を読む
