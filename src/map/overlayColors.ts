@@ -61,3 +61,7 @@ export const COLLAPSE_SCAR_ALPHA = 150
 export const COLLAPSE_DAM_FILL_ALPHA = 70
 /** せき止められた窪地の輪郭と、あふれ出し点 */
 export const COLLAPSE_DAM_COLOR = '#e65100'
+/** 盛土の下の水路の線: 通っている（濃い青の実線） */
+export const COLLAPSE_CULVERT_OPEN_COLOR = '#0d47a1'
+/** 盛土の下の水路の線: 崩れた土でふさがった（赤みの灰の破線） */
+export const COLLAPSE_CULVERT_BLOCKED_COLOR = '#a1887f'

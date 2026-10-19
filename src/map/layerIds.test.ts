@@ -99,4 +99,11 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
     expect(at(COLLAPSE_LAYER_IDS.deposit)).toBe(at(FILL_LAYER_IDS.a54) + 1)
     expect(at(COLLAPSE_LAYER_IDS.dams)).toBe(at(COLLAPSE_LAYER_IDS.deposit) + 1)
   })
+
+  it('OVERLAY_LAYER_ORDER: collapse-culvert は water-outflow の直後（spec 10b §4.1）', () => {
+    const order = OVERLAY_LAYER_ORDER
+    expect(order.indexOf(COLLAPSE_LAYER_IDS.culvert)).toBe(
+      order.indexOf(WATER_LAYER_IDS.outflow) + 1,
+    )
+  })
 })

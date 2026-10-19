@@ -2,9 +2,19 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { CollapsePayload, TerrainGeo } from '../shared/protocol'
 import { collapseDepositRgba, paintDamOutlines } from './collapseColormap'
 import { beforeLayerId, COLLAPSE_LAYER_IDS } from './layerIds'
-import { COLLAPSE_DAM_COLOR } from './overlayColors'
+import {
+  COLLAPSE_CULVERT_BLOCKED_COLOR,
+  COLLAPSE_CULVERT_OPEN_COLOR,
+  COLLAPSE_DAM_COLOR,
+} from './overlayColors'
 
 export { COLLAPSE_LAYER_IDS } from './layerIds'
+
+/** 描く見え方: after は積もった土・せき止め・水路の線、before は水路の線（通っている）だけ */
+export interface CollapseShowOptions {
+  markerCount: number
+  view: 'before' | 'after'
+}
 
 function newCanvas(size: number, rgba: Uint8ClampedArray<ArrayBuffer>): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -25,6 +35,7 @@ export class CollapseOverlay {
   private result: CollapsePayload | null = null
   private geo: TerrainGeo | null = null
   private markerCount = Number.POSITIVE_INFINITY
+  private view: 'before' | 'after' = 'after'
   private generation = 0
 
   constructor(map: MapLibreMap, whenMapLoaded: (run: () => void) => void) {
@@ -34,11 +45,14 @@ export class CollapseOverlay {
 
   /**
    * 積もった土・崩れた跡・せき止められた場所を描く。
-   * あふれ出し点の印は dams の先頭（溜まりうる水の多い順）から markerCount 個だけ。塗りと輪郭は全部（R12）
+   * あふれ出し点の印は dams の先頭（溜まりうる水の多い順）から markerCount 個だけ。塗りと輪郭は全部（R12）。
+   * 水路を仮定した結果なら、水路の線も描く（崩れた後でふさがったら、ふさがった見え方。spec 10b §4.1）。
+   * view が before のときは、水路の線（通っている）だけ描く
    */
-  show(result: CollapsePayload, geo: TerrainGeo, markerCount = Number.POSITIVE_INFINITY): void {
+  show(result: CollapsePayload, geo: TerrainGeo, options: CollapseShowOptions): void {
     this.result = result
-    this.markerCount = markerCount
+    this.markerCount = options.markerCount
+    this.view = options.view
     this.geo = geo
     this.schedule()
   }
@@ -69,7 +83,8 @@ export class CollapseOverlay {
     const geo = this.geo
     if (geo === null) return
     const result = this.result
-    if (result !== null) {
+    if (result === null) return
+    if (this.view === 'after') {
       const { size } = geo
       // 積もった土の canvas には、せき止められた窪地の塗りと輪郭も一緒に描く
       const rgba = collapseDepositRgba(result.deposit, result.removed, size)
@@ -107,6 +122,37 @@ export class CollapseOverlay {
         this.beforeId(COLLAPSE_LAYER_IDS.dams),
       )
     }
+    if (result.culvert !== null) this.addCulvert(result.culvert, this.view === 'after')
+  }
+
+  /** 水路の線。崩れる前は常に「通っている」。崩れた後は blocked ならふさがった見え方（破線） */
+  private addCulvert(culvert: NonNullable<CollapsePayload['culvert']>, afterView: boolean): void {
+    const blocked = afterView && culvert.blocked
+    const id = COLLAPSE_LAYER_IDS.culvert
+    this.map.addSource(id, {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: culvert.line },
+        properties: {},
+      },
+    })
+    this.map.addLayer(
+      {
+        id,
+        type: 'line',
+        source: id,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: blocked
+          ? {
+              'line-color': COLLAPSE_CULVERT_BLOCKED_COLOR,
+              'line-width': 3,
+              'line-dasharray': [2, 2],
+            }
+          : { 'line-color': COLLAPSE_CULVERT_OPEN_COLOR, 'line-width': 3 },
+      },
+      this.beforeId(id),
+    )
   }
 
   private addCanvasLayer(

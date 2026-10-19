@@ -4,18 +4,17 @@ import type { CollapsePayload } from '../shared/protocol'
 import type { CollapseState } from '../state/appStore'
 
 /**
- * 崩れた後の重ね描きを今の状態に合わせる。崩れた後の地形を見せている（view が after）結果ができた状態の間だけ描く
+ * 崩れたと仮定した結果の重ね描きを今の状態に合わせる。結果ができた状態（ready）の間、
+ * 崩れる前・崩れた後のどちらを見せていても描く（見え方は CollapseOverlay.show が view で決める。spec 10b §4.1）
  */
 export function syncCollapseOverlay(
   overlay: Pick<CollapseOverlay, 'show' | 'clear'>,
   collapse: Pick<CollapseState, 'view' | 'status'>,
-  data: { result: CollapsePayload | null },
+  result: CollapsePayload | null,
 ): void {
-  const { result } = data
-  if (collapse.view !== 'after' || collapse.status !== 'ready' || result === null) {
+  if (collapse.status !== 'ready' || result === null) {
     overlay.clear()
     return
   }
-  const geo = result.after.geo
-  overlay.show(result, geo, MAX_SHOWN_DAMS)
+  overlay.show(result, result.after.geo, { markerCount: MAX_SHOWN_DAMS, view: collapse.view })
 }

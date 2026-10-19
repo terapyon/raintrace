@@ -94,12 +94,10 @@ export class TerrainSession {
       else fillOverlay.show(result, geo, this.store.getState().fillHistory.selectedId)
     }
     const offFillResult = this.fillHistory.onResult(showFill)
-    // 崩れた後の積もった土・せき止められた場所は、崩れた後の地形を見せている間だけ描く
+    // 崩れたと仮定した結果（積もった土・せき止め・水路の線）は、結果ができた間、見せている地形に合わせて描く
     const collapseOverlay = new CollapseOverlay(map, (run) => controller.whenLoaded(run))
     const showCollapse = (): void =>
-      syncCollapseOverlay(collapseOverlay, this.store.getState().collapse, {
-        result: this.collapse.result(),
-      })
+      syncCollapseOverlay(collapseOverlay, this.store.getState().collapse, this.collapse.result())
     const offCollapseChange = this.collapse.onChange(showCollapse)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
