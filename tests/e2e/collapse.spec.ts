@@ -23,7 +23,8 @@ function worldPixel(z: number): { u: number; v: number } {
 
 /**
  * 南へ流れる谷。中央の列（地点の経度）が低く、両側が約 30°（勾配 0.58）で上がり、南へ 5% で下る。
- * withPlatform なら、谷の上流（北）側の東の斜面に +15 m の台（z17 で 30 × 40 画素。範囲の 25% 未満）。
+ * withPlatform なら、谷の上流（北）側を谷ごとまたぐ +15 m の盛土（z17 で 80 × 40 画素。今の地形だけ）。
+ * 上流の谷が今の地形で窪地になり、昔の谷底が盛土の下を通る（水路の仮定になる）。
  * 土が谷底に積もってせき止めの下限（100 m³ 超・面積 200 m² 以上。R12）を超えるよう、斜面を急にしている
  * 位置は z17 の画素で決めて、DEM10B（z14）の画素にも同じ地形を当てる
  */
@@ -34,7 +35,7 @@ function valleyElevation(withPlatform: boolean) {
     const u = (tileX * 256 + px + 0.5) * scale - origin.u
     const v = (tileY * 256 + py + 0.5) * scale - origin.v
     const base = 30 + 0.58 * Math.abs(u) - 0.05 * v
-    const onPlatform = u >= 10 && u < 40 && v >= -60 && v < -20
+    const onPlatform = u >= -40 && u < 40 && v >= -60 && v < -20
     return withPlatform && onPlatform ? base + 15 : base
   }
 }
@@ -131,6 +132,58 @@ test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
     await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
     await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.deposit)
+  })
+
+  test('計算の後、data-collapse-culvert が blocked、collapse-culvert のレイヤーがあり、「崩れた土で水路がふさがりました」が出る', async ({
+    page,
+  }) => {
+    await setup(page, SHIBUYA_URL)
+    await openCollapse(page)
+    await computeToReady(page)
+    await expect(mapElement(page)).toHaveAttribute('data-collapse-culvert', 'blocked')
+    await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.culvert)
+    const section = page.getByTestId('collapse-section')
+    await expect(section).toContainText(t.culvertAssumed)
+    await expect(section).toContainText(t.culvertBlocked)
+  })
+
+  test('「崩れる前」に切り替えると data-collapse-culvert が open になり、collapse-culvert は残り、collapse-deposit は消える', async ({
+    page,
+  }) => {
+    await setup(page, SHIBUYA_URL)
+    await openCollapse(page)
+    await computeToReady(page)
+    const mapEl = mapElement(page)
+    await scenarioToggle(page)
+      .getByRole('button', { name: strings.scenario.before, exact: true })
+      .click()
+    await expect(mapEl).toHaveAttribute('data-collapse-view', 'before')
+    await expect(mapEl).toHaveAttribute('data-collapse-culvert', 'open')
+    await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.culvert)
+    await expect.poll(() => overlayLayers(page)).not.toContain(COLLAPSE_LAYER_IDS.deposit)
+  })
+
+  test('「崩れる前と後を比べる」のボタンが無く、見比べの案内が出る', async ({ page }) => {
+    await setup(page, SHIBUYA_URL)
+    await openCollapse(page)
+    await computeToReady(page)
+    await expect(page.getByRole('button', { name: '崩れる前と後を比べる' })).toHaveCount(0)
+    await expect(page.getByTestId('collapse-section')).toContainText(t.playbackHint)
+  })
+
+  test('閉じると data-collapse-culvert が none になり、collapse-culvert が消える', async ({
+    page,
+  }) => {
+    await setup(page, SHIBUYA_URL)
+    await openCollapse(page)
+    await computeToReady(page)
+    await expect(mapElement(page)).toHaveAttribute('data-collapse-culvert', 'blocked')
+    await page
+      .getByTestId('collapse-section')
+      .getByRole('button', { name: t.close, exact: true })
+      .click()
+    await expect(mapElement(page)).toHaveAttribute('data-collapse-culvert', 'none')
+    await expect.poll(() => overlayLayers(page)).not.toContain(COLLAPSE_LAYER_IDS.culvert)
   })
 
   test('崩れた後を表示中に別の地点を選ぶと、閉じて崩れる前の地形に戻る', async ({ page }) => {
