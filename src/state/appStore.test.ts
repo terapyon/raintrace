@@ -128,3 +128,47 @@ describe('createAppStore', () => {
     })
   })
 })
+
+describe('盛土の履歴の状態', () => {
+  it('selectPoint で fillHistory はオンのまま loading に戻り、terrainEpoch は now に戻る', () => {
+    const store = createAppStore()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().setFillHistoryResult('ready', {
+      offsetM: 0.1,
+      candidates: [],
+      a54Available: true,
+      landformAvailable: true,
+    })
+    store.getState().selectFillCandidate(2)
+    store.getState().setTerrainEpoch('past')
+    store.getState().selectPoint(139, 35)
+    expect(store.getState().fillHistory).toEqual({
+      enabled: true,
+      status: 'loading',
+      summary: null,
+      selectedId: null,
+    })
+    expect(store.getState().terrainEpoch).toBe('now')
+  })
+
+  it('オフのまま selectPoint しても off のまま', () => {
+    const store = createAppStore()
+    store.getState().selectPoint(139, 35)
+    expect(store.getState().fillHistory).toMatchObject({ enabled: false, status: 'off' })
+  })
+
+  it('setFillHistoryEnabled(false) で terrainEpoch は now に戻る', () => {
+    const store = createAppStore()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().setTerrainEpoch('past')
+    store.getState().selectFillCandidate(3)
+    store.getState().setFillHistoryEnabled(false)
+    expect(store.getState().terrainEpoch).toBe('now')
+    expect(store.getState().fillHistory).toEqual({
+      enabled: false,
+      status: 'off',
+      summary: null,
+      selectedId: null,
+    })
+  })
+})

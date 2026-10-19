@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { TerrainPayload } from '../shared/protocol'
+import type { FillHistoryPayload, TerrainPayload } from '../shared/protocol'
 import { FakeWorker, frameMessage, simFailedMessage } from './fakeWorker.test-support'
 import { LOAD_STALL_TIMEOUT_MS, SimulationClient } from './SimulationClient'
 
@@ -409,5 +409,83 @@ describe('SimulationClient の異常終了の通知と番犬（02 の申し送�
     worker.loaded(fakeTerrain)
     await load
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('SimulationClient の computeFillHistory', () => {
+  const terrain = {
+    geo: { size: 2 },
+    elevation: new Float32Array([1, 2, 3, 4]),
+    validMask: new Uint8Array([1, 1, 1, 1]),
+  } as unknown as TerrainPayload
+  const result = (terrainId: number) => ({ terrainId }) as unknown as FillHistoryPayload
+
+  function loaded() {
+    const { worker, client } = setup()
+    void client.loadTerrain(0, 0, 500)
+    const terrainId = worker.loaded(terrain)
+    return { worker, client, terrainId }
+  }
+  const lastFill = (worker: FakeWorker) => {
+    const last = worker.posted.at(-1)
+    if (last?.type !== 'fillHistory') throw new Error('fillHistory ではありません')
+    return last
+  }
+
+  it('標高とマスクの写しを送り、メインの地形は残る。応答で解決する', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.computeFillHistory(terrainId, terrain)
+    const sent = lastFill(worker)
+    expect(sent.terrainId).toBe(terrainId)
+    expect(sent.elevation).not.toBe(terrain.elevation)
+    expect(Array.from(sent.elevation)).toEqual([1, 2, 3, 4])
+    expect(worker.transferred).toContain(sent.elevation.buffer)
+    expect(terrain.elevation.buffer.byteLength).toBe(16)
+    worker.reply({ type: 'fillHistoryReady', requestId: sent.requestId, result: result(terrainId) })
+    await expect(done).resolves.toEqual(result(terrainId))
+  })
+
+  it('新しい依頼は前の依頼を superseded で失敗させる', async () => {
+    const { worker, client, terrainId } = loaded()
+    const first = client.computeFillHistory(terrainId, terrain)
+    const firstId = lastFill(worker).requestId
+    const second = client.computeFillHistory(terrainId, terrain)
+    await expect(first).rejects.toMatchObject({ reason: 'superseded' })
+    worker.reply({ type: 'fillHistoryReady', requestId: firstId, result: result(terrainId) })
+    worker.reply({
+      type: 'fillHistoryReady',
+      requestId: lastFill(worker).requestId,
+      result: result(terrainId),
+    })
+    await expect(second).resolves.toEqual(result(terrainId))
+  })
+
+  it('古い応答を捨てる: 依頼の後に地形が変わったら、旧 terrainId の応答では解決しない', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.computeFillHistory(terrainId, terrain)
+    const requestId = lastFill(worker).requestId
+    void client.loadTerrain(1, 1, 500)
+    worker.loaded(terrain)
+    worker.reply({ type: 'fillHistoryReady', requestId, result: result(terrainId) })
+    await expect(done).rejects.toMatchObject({ reason: 'superseded' })
+  })
+
+  it('失敗の理由をそのまま伝える', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.computeFillHistory(terrainId, terrain)
+    worker.reply({
+      type: 'fillHistoryFailed',
+      requestId: lastFill(worker).requestId,
+      reason: 'no-overlap',
+      message: '',
+    })
+    await expect(done).rejects.toMatchObject({ reason: 'no-overlap' })
+  })
+
+  it('Worker の異常終了で worker で失敗する', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.computeFillHistory(terrainId, terrain)
+    worker.crash()
+    await expect(done).rejects.toMatchObject({ reason: 'worker' })
   })
 })

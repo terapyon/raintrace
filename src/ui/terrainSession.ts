@@ -10,6 +10,7 @@ import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
+import { FillHistorySession } from './fillHistorySession'
 import {
   type MarkerInfoRow,
   markerHitBox,
@@ -30,6 +31,8 @@ export class TerrainSession {
   private readonly settings: SettingsStore
   /** 2D と 3D の切り替えと 3D の表示（spec 05 §3.6） */
   readonly view3d: View3dSession
+  /** 盛土の履歴の計算と結果（spec 09 §4.6） */
+  readonly fillHistory: FillHistorySession
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
   // URL の書き込みは、変更（地点の選択・地図の移動・雨量や範囲の変更）から 300ms 置いてまとめて行う（spec 04 §7）
@@ -48,6 +51,7 @@ export class TerrainSession {
     this.simulation = simulation
     this.settings = settings
     this.view3d = new View3dSession(simulation, store, settings)
+    this.fillHistory = new FillHistorySession(client, store, simulation)
   }
 
   /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通）を範囲に比例させた値（spec 05 §3.3） */
