@@ -7,6 +7,7 @@ import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../sh
 import { buildOutflowCells } from '../simulation/outflowCells'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
 import { collapseTransferables, computeCollapse } from './collapse'
+import { runToRainEnd } from './compareRun'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
 import { computeFillHistory, createJsonFetcher, FillHistoryError } from './fillHistory'
 import type { RunnerPorts } from './simulationRunner'
@@ -50,6 +51,8 @@ let current: AbortController | null = null
 let currentFill: AbortController | null = null
 // 盛土が崩れた後の計算（spec 10）。新しい collapse や loadTerrain が来たら取り消す
 let currentCollapse: AbortController | null = null
+// 崩れる前と後の比較（spec 10 §5.3）。分割して走るので、cancelCompare・新しい compare・loadTerrain で取り消せる
+let currentCompare: { requestId: number; controller: AbortController } | null = null
 // 読み込み中（タイルの取得から terrainLoaded を送るまで）の loadTerrain。あるあいだは地形の差し替えを受けない
 let loading: AbortController | null = null
 
@@ -65,6 +68,8 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       current?.abort()
       currentFill?.abort()
       currentCollapse?.abort()
+      currentCompare?.controller.abort()
+      currentCompare = null
       const controller = new AbortController()
       current = controller
       loading = controller
@@ -98,6 +103,19 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       runCollapse(message, controller)
       break
     }
+    case 'compareCollapse': {
+      currentCompare?.controller.abort()
+      const controller = new AbortController()
+      currentCompare = { requestId: message.requestId, controller }
+      void runCompare(message, controller)
+      break
+    }
+    case 'cancelCompare':
+      if (currentCompare?.requestId === message.requestId) {
+        currentCompare.controller.abort()
+        currentCompare = null
+      }
+      break
     default:
       runner.handle(message)
   }
@@ -224,5 +242,44 @@ function runCollapse(
   } catch (error) {
     if (signal.aborted) return
     post({ type: 'collapseFailed', requestId, message: String(error) })
+  }
+}
+
+// 取り消されたら何も送らない（結果も進み具合も）。再生用の runner には触らない
+async function runCompare(
+  message: Extract<MainToWorkerMessage, { type: 'compareCollapse' }>,
+  controller: AbortController,
+): Promise<void> {
+  const { requestId, rain } = message
+  const { signal } = controller
+  const progress = (side: 'before' | 'after') => (fraction: number, remainingS: number | null) => {
+    if (!signal.aborted)
+      post({
+        type: 'compareProgress',
+        requestId,
+        side,
+        fraction,
+        remainingS,
+      })
+  }
+  try {
+    // 1 つずつ（エンジンを同時に 2 つ持たない。spec 10 §5.3）
+    const before = await runToRainEnd(message.before, rain, signal, progress('before'))
+    const after = await runToRainEnd(message.after, rain, signal, progress('after'))
+    if (signal.aborted) return
+    post({ type: 'compareReady', requestId, before, after }, [
+      before.depth.buffer as ArrayBuffer,
+      after.depth.buffer as ArrayBuffer,
+    ])
+  } catch (error) {
+    if (signal.aborted) return
+    post({
+      type: 'compareFailed',
+      requestId,
+      reason: 'internal',
+      message: String(error),
+    })
+  } finally {
+    if (currentCompare?.controller === controller) currentCompare = null
   }
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FillHistoryPayload, TerrainPayload } from '../shared/protocol'
+import type { CompareSide, FillHistoryPayload, TerrainPayload } from '../shared/protocol'
 import { FakeWorker, frameMessage, simFailedMessage } from './fakeWorker.test-support'
 import { LOAD_STALL_TIMEOUT_MS, SimulationClient } from './SimulationClient'
 
@@ -573,5 +573,114 @@ describe('SimulationClient の swapTerrain（spec 10 §5.2）', () => {
     const res = { terrainId } as unknown as FillHistoryPayload
     worker.reply({ type: 'fillHistoryReady', requestId: fill.requestId, result: res })
     await expect(done).resolves.toBe(res)
+  })
+})
+
+describe('SimulationClient の compareCollapse', () => {
+  const terrain = {
+    geo: { size: 2, cellSizeM: 5 },
+    elevation: new Float32Array([1, 2, 3, 4]),
+    validMask: new Uint8Array([1, 1, 1, 1]),
+    depressions: [],
+  } as unknown as TerrainPayload
+  const rain = {
+    x: 0,
+    y: 0,
+    radiusM: 0,
+    intensityMmPerH: 50,
+    durationS: 60,
+    wholeRange: true,
+  }
+  const side = { depth: new Float32Array(4), stats: {} } as unknown as CompareSide
+
+  function loaded() {
+    const { worker, client } = setup()
+    void client.loadTerrain(0, 0, 500)
+    worker.loaded(terrain)
+    return { worker, client }
+  }
+  const lastCompare = (worker: FakeWorker) => {
+    const last = worker.posted.at(-1)
+    if (last?.type !== 'compareCollapse') throw new Error('compareCollapse ではありません')
+    return last
+  }
+
+  it('写しを送り、進み具合を流し、応答で解決する', async () => {
+    const { worker, client } = loaded()
+    const seen: number[] = []
+    const done = client.compareCollapse(terrain, terrain, rain, (p) => seen.push(p.fraction))
+    const sent = lastCompare(worker)
+    expect(sent.before.elevation).not.toBe(terrain.elevation)
+    expect(sent.before.size).toBe(2)
+    expect(worker.transferred).toContain(sent.after.elevation.buffer)
+    worker.reply({
+      type: 'compareProgress',
+      requestId: sent.requestId,
+      side: 'before',
+      fraction: 0.5,
+      remainingS: 3,
+    })
+    worker.reply({ type: 'compareReady', requestId: sent.requestId, before: side, after: side })
+    await expect(done).resolves.toEqual({ before: side, after: side })
+    expect(seen).toEqual([0.5])
+  })
+
+  it('古い requestId の compareProgress・compareReady を捨てる', async () => {
+    const { worker, client } = loaded()
+    const firstProgress = vi.fn()
+    const first = client.compareCollapse(terrain, terrain, rain, firstProgress)
+    const firstId = lastCompare(worker).requestId
+    const seen: number[] = []
+    const second = client.compareCollapse(terrain, terrain, rain, (p) => seen.push(p.fraction))
+    await expect(first).rejects.toMatchObject({ reason: 'superseded' })
+    const secondId = lastCompare(worker).requestId
+    worker.reply({
+      type: 'compareProgress',
+      requestId: firstId,
+      side: 'before',
+      fraction: 0.9,
+      remainingS: null,
+    })
+    worker.reply({ type: 'compareReady', requestId: firstId, before: side, after: side })
+    worker.reply({
+      type: 'compareProgress',
+      requestId: secondId,
+      side: 'after',
+      fraction: 0.1,
+      remainingS: null,
+    })
+    expect(firstProgress).not.toHaveBeenCalled()
+    expect(seen).toEqual([0.1])
+    worker.reply({ type: 'compareReady', requestId: secondId, before: side, after: side })
+    await expect(second).resolves.toBeDefined()
+  })
+
+  it('cancelCompare は cancelled で失敗させ、Worker に取り消しを送る。取り消し後の応答は捨てる', async () => {
+    const { worker, client } = loaded()
+    const progress = vi.fn()
+    const done = client.compareCollapse(terrain, terrain, rain, progress)
+    const { requestId } = lastCompare(worker)
+    client.cancelCompare()
+    await expect(done).rejects.toMatchObject({ reason: 'cancelled' })
+    expect(worker.posted.at(-1)).toEqual({ type: 'cancelCompare', requestId })
+    worker.reply({ type: 'compareReady', requestId, before: side, after: side })
+    expect(progress).not.toHaveBeenCalled()
+  })
+
+  it('依頼の後に地形を読み込み直したら、旧地形の結果は superseded で捨てる', async () => {
+    const { worker, client } = loaded()
+    const done = client.compareCollapse(terrain, terrain, rain, () => {})
+    const { requestId } = lastCompare(worker)
+    void client.loadTerrain(1, 1, 500)
+    await expect(done).rejects.toMatchObject({ reason: 'superseded' })
+    worker.loaded(terrain)
+    worker.reply({ type: 'compareReady', requestId, before: side, after: side })
+  })
+
+  it('Worker が異常終了したら worker で失敗する', async () => {
+    const { worker, client } = loaded()
+    const done = client.compareCollapse(terrain, terrain, rain, () => {})
+    worker.crash()
+    await expect(done).rejects.toMatchObject({ reason: 'worker' })
   })
 })
