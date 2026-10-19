@@ -305,7 +305,14 @@ export class TerrainSession {
         : null
     const history =
       result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
-    return cellInfoAt(terrain, this.client.water, lon, lat, history)
+    // 水路の溝ありの崩れる前を表示している間、標高は溝のない読み込んだ地形から読む（溝は仮定）
+    return cellInfoAt(
+      this.collapse.uncarvedTerrain() ?? terrain,
+      this.client.water,
+      lon,
+      lat,
+      history,
+    )
   }
 
   /** 一覧で選んだ範囲の中心へ地図を動かす（拡大率は変えない。spec 09 §6.3） */

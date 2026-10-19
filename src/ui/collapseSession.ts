@@ -84,6 +84,14 @@ export class CollapseSession {
     return this.payload
   }
 
+  /**
+   * 水路の溝ありの崩れる前を表示している間だけ、読み込んだ地形（溝なし）を返す。それ以外は null。
+   * 溝は仮定でDEMではないので、セルの情報の「今の標高」はこの地形から読む（09 の昔・差と揃える）
+   */
+  uncarvedTerrain(): TerrainPayload | null {
+    return this.shown === 'before' ? this.base : null
+  }
+
   /** 結果ができた・消えたことを知らせる（地図の重ね描きと 3D）。戻り値で外す */
   onChange(listener: () => void): () => void {
     this.listeners.add(listener)

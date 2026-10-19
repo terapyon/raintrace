@@ -186,6 +186,8 @@ describe('computeCollapse の水路（spec 10b）', () => {
     expect(a.culvert).toBeTruthy()
     expect(b.culvert?.line).toEqual(a.culvert?.line)
     expect(b.culvert?.lengthM).toBe(a.culvert?.lengthM)
+    // 溝の底（bed）も同じ。offsetM が無視されると昔の地形が 3 m ずれて底が変わる
+    expect(b.before?.elevation).toEqual(a.before?.elevation)
   })
 
   it('valleyWithFill（斜面の盛土）では before と culvert が null で、水路なしの結果', () => {

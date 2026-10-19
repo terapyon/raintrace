@@ -517,6 +517,20 @@ describe('CollapseSession', () => {
       expect(container.dataset.collapseCulvert).toBe('none')
     })
 
+    it('溝ありの崩れる前を表示中に別の地点を選ぶと、差し替えずに結果を捨て、data-collapse-culvert は none', async () => {
+      const { client, session, swaps, container, load } = await readyWithCulvert()
+      const toBefore = session.setView('before')
+      swaps.at(-1)?.resolve()
+      await toBefore
+      expect(container.dataset.collapseCulvert).toBe('open')
+      const swapCalls = client.swapTerrain.mock.calls.length
+      load(8)
+      // 地点の変更では base へ戻す差し替えを頼まない（新しい地形の読み込みが勝つ）
+      expect(client.swapTerrain.mock.calls.length).toBe(swapCalls)
+      expect(session.result()).toBeNull()
+      expect(container.dataset.collapseCulvert).toBe('none')
+    })
+
     it('溝ありの崩れる前を表示中に setCollapseRatio → 結果を捨てて base に戻る', async () => {
       const { client, app, swaps, session } = await readyWithCulvert()
       const toBefore = session.setView('before')
