@@ -1,14 +1,16 @@
 /**
- * 盛土が崩れたと仮定した場合を、実際の地理院タイルで確かめる（spec 10 §7.3・§8 の P2〜P4）。Node 24 で直接実行する:
+ * 盛土が崩れたと仮定した場合を、実際の地理院タイルで確かめる（spec 10 §7.3・§8、spec 10b §7 の P1・P2）。Node 24 で直接実行する:
  *
  *   node scripts/collapse-check.ts <lat> <lon> <sizeM> <candidateRank> <presetId> [ratio]
- *     [--compare <mm/h> <分>] [--compare-limit <秒>] [--png <path>] [--params <JSON>]
+ *     [--rain <mm/h> <分> --at <時,時,…>] [--png <path>] [--params <JSON>]
  *
  * candidateRank は画面の一覧の何番目か（1 から。scripts/fill-history-check.ts の表と同じ並び）。ratio は 1・0.5・0.25（既定 1）。
- * 盛土の履歴は scripts/lib/fillHistoryLoad.ts、崩れた後の計算は Worker と同じ computeCollapse（src/workers/collapse.ts）、
- * 比べる計算は Worker と同じ runToRainEnd（src/workers/compareRun.ts）を、範囲全体の雨で崩れる前・後の順に回す。
- * --compare-limit は片側の計算の実時間の上限（秒）。超えたら打ち切り、そこまでの速さから残りを見積もって出す。
- * --png は陰影の上に崩れた跡（赤）・積もった土（橙〜茶）・せき止めの満水（水色）・新しく溜まった水（紫）を描いた画像。
+ * 盛土の履歴は scripts/lib/fillHistoryLoad.ts、崩れた後の計算と盛土の下の水路は Worker と同じ computeCollapse（src/workers/collapse.ts）。
+ * 水路の有無・長さ・ふさがったか・線の始点と終点・候補の下を通るセルの数を出す（セルの数と上流の窪地は、同じ入力で findCulvert を呼び直して数える）。
+ * --rain は範囲全体の雨を、崩れる前（水路があれば溝あり）と崩れた後の地形で TsSimulationEngine で順に回し、--at の時刻（時間）ごとに、
+ * 上流の窪地（今の地形の解析で水路の depressionId のセル。溝のセルは除く）の最大の水深・1 cm 以上の面積と、窪地の最低点の水面を出す。
+ * 中止・分割はしない。
+ * --png は陰影の上に崩れた跡（赤）・積もった土（橙〜茶）・せき止めの満水（水色）・水路の線（紺）を描いた画像。
  * --params はプリセットの値の一部を、この実行の中だけ置き換える（値を見直すときの試し。例: '{"mu":0.3}'）。
  * メモリは process.memoryUsage() の値（Node の目安。ブラウザの Worker の値ではない）。合否は判定しない
  */
@@ -20,7 +22,9 @@ import { removedThickness } from '../src/dem/fillHistory/removedThickness.ts'
 import { pixelToLonLat } from '../src/dem/tileMath.ts'
 import { debrisPreset } from '../src/shared/debrisPresets.ts'
 import { FLOODED_DEPTH_M } from '../src/simulation/constants.ts'
-import { analyzeTerrain } from '../src/simulation/terrain/analyzeTerrain.ts'
+import { findCulvert } from '../src/simulation/debris/culvert.ts'
+import { TsSimulationEngine } from '../src/simulation/TsSimulationEngine.ts'
+import { analyzeDepressions } from '../src/simulation/terrain/analyzeDepressions.ts'
 import { inAppOrder, loadFillHistory } from './lib/fillHistoryLoad.ts'
 
 // src/workers・src/shared は拡張子なしの相対 import（Vite 用）。Node で読めるよう、見つからないときだけ '.ts' を足す
@@ -35,10 +39,7 @@ registerHooks({
   },
 })
 const { computeCollapse } = await import('../src/workers/collapse.ts')
-const { CompareCancelledError, runToRainEnd } = await import('../src/workers/compareRun.ts')
 const { rangeCorners } = await import('../src/dem/gridRange.ts')
-
-type CompareSide = Awaited<ReturnType<typeof runToRainEnd>>
 
 function takeOption(args: string[], name: string, count: number): string[] | null {
   const i = args.indexOf(name)
@@ -47,24 +48,28 @@ function takeOption(args: string[], name: string, count: number): string[] | nul
 }
 
 const args = process.argv.slice(2)
-const compareOpt = takeOption(args, '--compare', 2)
-const limitOpt = takeOption(args, '--compare-limit', 1)
+const rainOpt = takeOption(args, '--rain', 2)
+const atOpt = takeOption(args, '--at', 1)
 const pngOpt = takeOption(args, '--png', 1)
 const paramsOpt = takeOption(args, '--params', 1)
 const [lat, lon, sizeM, rank] = args.slice(0, 4).map(Number) as [number, number, number, number]
 const presetId = args[4] ?? ''
 const ratio = args[5] === undefined ? 1 : Number(args[5])
-const rainMmH = compareOpt ? Number(compareOpt[0]) : 0
-const rainMin = compareOpt ? Number(compareOpt[1]) : 0
-const limitS = limitOpt ? Number(limitOpt[0]) : Number.POSITIVE_INFINITY
+const rainMmH = rainOpt ? Number(rainOpt[0]) : 0
+const rainMin = rainOpt ? Number(rainOpt[1]) : 0
+// 水深を見る時刻（時間、昇順）。--rain だけで --at が無いときは雨の終わり
+const atHours = (atOpt?.[0]?.split(',') ?? (rainOpt ? [String(rainMin / 60)] : []))
+  .map(Number)
+  .sort((a, b) => a - b)
 if (
-  ![lat, lon, sizeM, rank, ratio, rainMmH, rainMin, limitS].every((v) => !Number.isNaN(v)) ||
+  ![lat, lon, sizeM, rank, ratio, rainMmH, rainMin, ...atHours].every((v) => !Number.isNaN(v)) ||
   !(rank >= 1) ||
   ![1, 0.5, 0.25].includes(ratio) ||
-  !presetId
+  !presetId ||
+  (atOpt !== null && rainOpt === null)
 ) {
   console.error(
-    '使い方: node scripts/collapse-check.ts <lat> <lon> <sizeM> <candidateRank> <presetId> [ratio] [--compare <mm/h> <分>] [--compare-limit <秒>] [--png <path>] [--params <JSON>]',
+    '使い方: node scripts/collapse-check.ts <lat> <lon> <sizeM> <candidateRank> <presetId> [ratio] [--rain <mm/h> <分> --at <時,時,…>] [--png <path>] [--params <JSON>]',
   )
   process.exit(1)
 }
@@ -113,8 +118,6 @@ console.log(
 )
 console.log(`- プリセット ${preset.id}（${preset.label}）: ${JSON.stringify(preset.params)}`)
 
-// 読み込みのときと同じ解析（崩れる前の窪地。比べる計算に使う）
-const beforeAnalysis = analyzeTerrain(current)
 const geo = {
   level: tier.level,
   z: range.z,
@@ -216,9 +219,58 @@ if (result.dams.length > 0) {
   }
 }
 
-// 比べる計算（崩れる前 → 後。Worker の runCompare と同じ順）
-let compared: { before: CompareSide; after: CompareSide } | null = null
-if (compareOpt) {
+// 盛土の下の水路（spec 10b §2）。computeCollapse の結果に加え、同じ入力で findCulvert を呼び直して、
+// 候補の下を通るセルの数と上流の窪地（今の地形の解析）を数える
+const currentDepressions = analyzeDepressions({
+  elevation: current.elevation,
+  validMask: current.validMask,
+  width: size,
+  height: size,
+  cellSizeM,
+})
+const past = new Float32Array(fill.pastElevation.length)
+for (let i = 0; i < past.length; i++) past[i] = (fill.pastElevation[i] ?? 0) + fill.offsetM
+const candidateMask = new Uint8Array(size * size)
+for (let i = 0; i < candidateMask.length; i++)
+  candidateMask[i] = (result.removed[i] ?? 0) > 0 ? 1 : 0
+const found = findCulvert({
+  elevation: current.elevation,
+  past,
+  validMask: current.validMask,
+  candidate: candidateMask,
+  labels: currentDepressions.labels,
+  depressions: currentDepressions.depressions,
+  size,
+  cellSizeM,
+})
+console.log('')
+console.log('### 盛土の下の水路')
+console.log('')
+if (result.culvert === null || found === null) {
+  console.log(
+    `- 水路を仮定しない${(result.culvert === null) !== (found === null) ? '（computeCollapse と呼び直しの結果が食い違う）' : ''}`,
+  )
+} else {
+  const line = result.culvert.line
+  const first = line[0] ?? [0, 0]
+  const last = line.at(-1) ?? [0, 0]
+  const dep = currentDepressions.depressions.find((d) => d.id === found.depressionId)
+  let underCandidate = 0
+  for (const i of found.path) if (candidateMask[i] === 1) underCandidate++
+  const pitZ = dep ? (current.elevation[dep.pitIndex] ?? 0) : Number.NaN
+  console.log(
+    `- 水路を仮定する: 長さ ${fmtInt(result.culvert.lengthM)} m（${found.path.length} セル）、候補の下を通るセル ${underCandidate}、${result.culvert.blocked ? '崩れた後はふさがる' : '崩れた後もふさがらない'}`,
+  )
+  console.log(
+    `- 線の始点（上流の窪地の最低点） ${first[1].toFixed(5)}, ${first[0].toFixed(5)}、終点 ${last[1].toFixed(5)}, ${last[0].toFixed(5)}`,
+  )
+  console.log(
+    `- 上流の窪地 ${found.depressionId}: 最低点 ${pitZ.toFixed(2)} m、あふれ出す高さ ${dep ? dep.spillElevation.toFixed(2) : '-'} m、容量 ${dep ? fmtInt(dep.capacityM3) : '-'} m³。溝の底 ${(found.bed[0] ?? 0).toFixed(2)} → ${(found.bed.at(-1) ?? 0).toFixed(2)} m、端のセル ${found.ends.length}`,
+  )
+}
+
+// 雨の計算（崩れる前 → 後）。上流の窪地の水深を、指定の時刻ごとに見る
+if (rainOpt) {
   const rain = {
     x: (size * cellSizeM) / 2,
     y: (size * cellSizeM) / 2,
@@ -227,83 +279,90 @@ if (compareOpt) {
     durationS: rainMin * 60,
     wholeRange: true,
   }
-  const run = async (
-    label: string,
-    grid: Parameters<typeof runToRainEnd>[0],
-  ): Promise<CompareSide | null> => {
-    const controller = new AbortController()
-    const timer = Number.isFinite(limitS)
-      ? setTimeout(() => controller.abort(), limitS * 1000)
-      : null
-    let last = { fraction: 0, remainingS: null as number | null }
+  const upstreamId = found?.depressionId ?? null
+  // 溝のセルは除く（溝は今の地形より最大で数 m 低く掘るので、流れる水でも深く見える）
+  const groove = new Set(found?.path ?? [])
+  const flooded = FLOODED_DEPTH_M
+  const pit = found?.path[0] ?? -1
+  type Snapshot = {
+    hour: number
+    maxDepth: number
+    areaM2: number
+    /** 上流の窪地の最低点（pit。溝はここを掘り下げない）の水面（標高 + 水深） */
+    pitLevel: number
+    overallMax: number
+  }
+  const run = (label: string, elevation: Float32Array, validMask: Uint8Array): Snapshot[] => {
+    const engine = new TsSimulationEngine()
+    engine.loadTerrain(elevation, validMask, { width: size, height: size, cellSizeM })
+    engine.setRainfall(rain)
+    const snaps: Snapshot[] = []
     const t0 = performance.now()
-    try {
-      const side = await runToRainEnd(grid, rain, controller.signal, (fraction, remainingS) => {
-        last = { fraction, remainingS }
-        sampleMemory()
-      })
-      const s = (performance.now() - t0) / 1000
-      console.log(
-        `- ${label}: ${s.toFixed(1)} s（${side.stats.step} step、終わりの時刻 ${(side.stats.timeS / 60).toFixed(0)} 分${side.stats.stopReason ? `、停止 ${side.stats.stopReason}` : ''}）`,
-      )
-      return side
-    } catch (error) {
-      if (!(error instanceof CompareCancelledError)) throw error
-      const s = (performance.now() - t0) / 1000
-      const estimate = last.fraction > 0 ? s / last.fraction : null
-      console.log(
-        `- ${label}: ${s.toFixed(0)} s で打ち切り（雨の ${(100 * last.fraction).toFixed(1)}% まで）。同じ速さなら全体で約 ${estimate ? `${(estimate / 60).toFixed(0)} 分` : '不明'}（Worker の残りの目安 ${last.remainingS !== null ? `${(last.remainingS / 60).toFixed(0)} 分` : '不明'}）`,
-      )
-      return null
-    } finally {
-      if (timer) clearTimeout(timer)
+    let k = 0
+    let steps = 0
+    let stop: string | null = null
+    while (k < atHours.length) {
+      const stats = engine.step()
+      steps++
+      while (k < atHours.length && stats.timeS >= (atHours[k] ?? 0) * 3600 - 1e-6) {
+        const depth = engine.waterDepth()
+        let maxDepth = 0
+        let cells = 0
+        if (upstreamId !== null) {
+          for (let i = 0; i < size * size; i++) {
+            if (currentDepressions.labels[i] !== upstreamId || groove.has(i)) continue
+            const h = depth[i] ?? 0
+            if (h > maxDepth) maxDepth = h
+            if (h >= flooded) cells++
+          }
+        }
+        snaps.push({
+          hour: atHours[k] ?? 0,
+          maxDepth,
+          areaM2: cells * cellArea,
+          pitLevel: pit < 0 ? Number.NaN : (elevation[pit] ?? 0) + (depth[pit] ?? 0),
+          overallMax: stats.maxDepth,
+        })
+        k++
+      }
+      if (stats.stopReason !== null) {
+        stop = stats.stopReason
+        break
+      }
     }
+    sampleMemory()
+    console.log(
+      `- ${label}: ${((performance.now() - t0) / 1000).toFixed(1)} s（${steps} step${stop ? `、停止 ${stop}` : ''}）`,
+    )
+    return snaps
   }
   console.log('')
-  console.log(`### 比べる計算（${rainMmH} mm/h × ${rainMin} 分、範囲全体）`)
+  console.log(`### 雨の計算（${rainMmH} mm/h × ${rainMin} 分、範囲全体）`)
   console.log('')
-  const before = await run('崩れる前', {
-    elevation: current.elevation.slice(),
-    validMask: current.validMask.slice(),
-    size,
-    cellSizeM,
-    depressions: beforeAnalysis.depressions,
-  })
-  const after = await run('崩れた後', {
-    elevation: result.after.elevation.slice(),
-    validMask: result.after.validMask.slice(),
-    size,
-    cellSizeM,
-    depressions: result.after.depressions,
-  })
-  if (before && after) {
-    compared = { before, after }
-    // src/ui/collapseSession.ts の compareSummary と同じ数え方
-    const ids = new Set(result.dams.map((d) => d.depressionId))
-    const flooded = Math.fround(FLOODED_DEPTH_M)
-    let newCells = 0
-    let damMax: number | null = null
-    for (let i = 0; i < size * size; i++) {
-      const depth = after.depth[i] ?? 0
-      if (depth >= flooded && (before.depth[i] ?? 0) < flooded) newCells++
-      if (ids.has(result.after.labels[i] ?? 0) && (damMax === null || depth > damMax))
-        damMax = depth
-    }
-    console.log('')
-    console.log('| | 最大の水深 m | 浸水の面積 m² | 溜まった水 m³ | 範囲の外へ出た水 m³ |')
-    console.log('| --- | ---: | ---: | ---: | ---: |')
-    for (const [label, side] of [
-      ['崩れる前', before],
-      ['崩れた後', after],
-    ] as const) {
-      const s = side.stats
-      console.log(
-        `| ${label} | ${s.maxDepth.toFixed(2)} | ${fmtInt(s.floodedArea)} | ${fmtInt(s.storedWater)} | ${fmtInt(s.outflowWater)} |`,
-      )
-    }
-    console.log('')
+  const before = result.before ?? current
+  const beforeSnaps = run(
+    result.before ? '崩れる前（溝あり）' : '崩れる前',
+    before.elevation.slice(),
+    before.validMask.slice(),
+  )
+  const afterSnaps = run('崩れた後', result.after.elevation.slice(), result.after.validMask.slice())
+  console.log('')
+  console.log(
+    `上流の窪地${upstreamId === null ? '（水路が無いので数えない）' : ` ${upstreamId}（溝のセルを除く）`}の最大の水深・1 cm 以上の面積・最低点の水面と、範囲全体の最大の水深`,
+  )
+  console.log('')
+  console.log(
+    '| 時刻 | 崩れる前 最大 m | 面積 m² | 最低点の水面 m | 崩れた後 最大 m | 面積 m² | 最低点の水面 m | 範囲の最大 前 / 後 m |',
+  )
+  console.log('| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
+  for (let k = 0; k < atHours.length; k++) {
+    const b = beforeSnaps[k]
+    const a = afterSnaps[k]
+    const cell = (s: Snapshot | undefined, f: (s: Snapshot) => string) => (s ? f(s) : '-')
+    const side = (s: Snapshot | undefined) =>
+      `${cell(s, (v) => v.maxDepth.toFixed(2))} | ${cell(s, (v) => fmtInt(v.areaM2))} | ${cell(s, (v) => (Number.isNaN(v.pitLevel) ? '-' : v.pitLevel.toFixed(2)))}`
     console.log(
-      `- せき止められた場所の水深の最大（崩れた後） ${damMax === null ? '-' : `${damMax.toFixed(2)} m`}、新しく溜まった範囲 ${fmtInt(newCells * cellArea)} m²`,
+      `| ${atHours[k]} 時間 | ${side(b)} | ${side(a)} | ${cell(b, (s) => s.overallMax.toFixed(2))} / ${cell(a, (s) => s.overallMax.toFixed(2))} |`,
     )
   }
 }
@@ -316,11 +375,12 @@ console.log(
 
 if (pngOpt?.[0]) writeMap(pngOpt[0])
 
-/** 陰影（北西の光）の上に、崩れた跡・積もった土・せき止めの満水・新しく溜まった水を重ねた PNG */
+/** 陰影（北西の光）の上に、崩れた跡・積もった土・せき止めの満水・水路の線を重ねた PNG */
 function writeMap(path: string): void {
   const z = result.after.elevation
   const fillAfter = result.after.fill
   const damIds = new Set(result.dams.map((d) => d.depressionId))
+  const culvertCells = new Set(found?.path ?? [])
   const raw = Buffer.alloc(size * (size * 3 + 1))
   for (let r = 0; r < size; r++) {
     raw[r * (size * 3 + 1)] = 0
@@ -343,11 +403,7 @@ function writeMap(path: string): void {
       }
       if (damIds.has(result.after.labels[i] ?? 0) && (fillAfter[i] ?? 0) - (z[i] ?? 0) > 0.01)
         rgb = [90, 190, 240]
-      if (compared) {
-        const a = compared.after.depth[i] ?? 0
-        if (a >= FLOODED_DEPTH_M && (compared.before.depth[i] ?? 0) < FLOODED_DEPTH_M)
-          rgb = [120, 40, 200]
-      }
+      if (culvertCells.has(i)) rgb = [20, 30, 110]
       const o = r * (size * 3 + 1) + 1 + c * 3
       raw[o] = rgb[0] ?? 0
       raw[o + 1] = rgb[1] ?? 0
