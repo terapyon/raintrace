@@ -208,6 +208,7 @@ describe('collapse（spec 10）', () => {
     depositedM3: 1,
     outsideM3: 0,
     dams: [],
+    culvert: null,
   }
   /** 候補 4 を開いて結果まで進め、崩れた後を表示している */
   function opened() {

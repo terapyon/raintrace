@@ -37,6 +37,7 @@ const summary = (over: Partial<CollapseSummary> = {}): CollapseSummary => ({
   depositedM3: 41000,
   outsideM3: 0,
   dams: [],
+  culvert: null,
   ...over,
 })
 

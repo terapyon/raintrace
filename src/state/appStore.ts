@@ -83,6 +83,8 @@ export interface CollapseSummary {
   depositedM3: number
   outsideM3: number
   dams: DammedSiteSummary[]
+  /** 盛土の下の水路を仮定したときだけ。ふさがったか */
+  culvert: { blocked: boolean } | null
 }
 
 /** 崩れたと仮定した場合（spec 10）。保存しない画面の一時状態 */

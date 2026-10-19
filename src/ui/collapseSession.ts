@@ -12,6 +12,8 @@ export interface CollapseMapHooks {
 }
 
 type View = 'before' | 'after'
+/** エンジンが持つ地形: 読み込んだ地形（base）・水路の溝ありの崩れる前（before）・崩れた後（after） */
+type EngineTerrain = 'base' | 'before' | 'after'
 
 /**
  * 盛土が崩れたと仮定した場合の計算・崩れる前後の切り替えをつなぐ（spec 10）。React の外に置く。
@@ -27,7 +29,9 @@ export class CollapseSession {
   private center: { lon: number; lat: number } | null = null
   private payload: CollapsePayload | null = null
   /** エンジンが持つ（または差し替えを頼んだ）地形。ストアの view は差し替えが済んでから変わる */
-  private engine: View = 'before'
+  private engine: EngineTerrain = 'base'
+  /** 地図とエンジンに差し替えが済んだ地形（異常終了で地図を戻すか・差し替えの失敗でエンジンを戻すかの判断に使う） */
+  private shown: EngineTerrain = 'base'
   private computeGeneration = 0
   private viewGeneration = 0
   private map: CollapseMapHooks | null = null
@@ -51,7 +55,8 @@ export class CollapseSession {
       this.base = terrain
       this.center = terrain === null ? null : this.app.getState().selected
       this.viewGeneration += 1
-      this.engine = 'before'
+      this.engine = 'base'
+      this.shown = 'base'
       this.app.getState().setCollapseSwapping(false)
       this.writeView('before')
       this.discard(false)
@@ -139,6 +144,7 @@ export class CollapseSession {
       depositedM3: result.depositedM3,
       outsideM3: result.outsideM3,
       dams: result.dams,
+      culvert: result.culvert === null ? null : { blocked: result.culvert.blocked },
     })
     // 計算した土砂を地図・3D に出す（spec 10 §1.3 手順 3）。「崩れる前」へはいつでも戻せる
     await this.setView('after')
@@ -150,7 +156,7 @@ export class CollapseSession {
    */
   async setView(view: View): Promise<void> {
     if (view === 'after' && this.payload === null) return
-    if (view === this.engine && view === this.app.getState().collapse.view) return
+    if (this.terrainKind(view) === this.engine && view === this.app.getState().collapse.view) return
     await this.show(view)
   }
 
@@ -164,7 +170,9 @@ export class CollapseSession {
       this.payload = null
       this.notify()
     }
-    if (swapBack && this.engine === 'after') void this.show('before')
+    // 結果が無いので、崩れる前は読み込んだ地形（base）。水路の溝ありの地形もここで戻す
+    this.writeCulvert(this.app.getState().collapse.view)
+    if (swapBack && this.engine !== 'base') void this.show('before')
   }
 
   /**
@@ -172,31 +180,33 @@ export class CollapseSession {
    * 待っていた依頼（計算・差し替え）は SimulationClient が失敗させ、世代が進んでいるので捨てる
    */
   private onCrash(): void {
-    const showingAfter = this.app.getState().collapse.view === 'after'
+    const showingBase = this.shown === 'base'
     this.viewGeneration += 1
-    this.engine = 'before'
+    this.engine = 'base'
+    this.shown = 'base'
     const actions = this.app.getState()
     actions.setCollapseSwapping(false)
     // 閉じると、購読の discard が結果を捨てる（エンジンは before なので差し替えない）
     actions.closeCollapse()
-    if (showingAfter && this.base !== null) this.map?.showTerrain(this.base)
+    if (!showingBase && this.base !== null) this.map?.showTerrain(this.base)
     this.writeView('before')
   }
 
   private async show(view: View): Promise<void> {
-    const terrain = view === 'after' ? this.payload?.after : this.base
+    const kind = this.terrainKind(view)
+    const terrain = this.terrainOf(kind)
     const center = this.center
-    if (terrain === undefined || terrain === null || center === null) return
+    if (terrain === null || center === null) return
     const generation = ++this.viewGeneration
     // 差し替えを頼んだ時点で、Worker のエンジンはこの地形になりうる（取り消しで基に戻すかの判断に使う）
-    this.engine = view
+    this.engine = kind
     const actions = this.app.getState()
     actions.setCollapseSwapping(true)
     try {
       await this.client.swapTerrain(terrain)
     } catch (error) {
       if (generation !== this.viewGeneration) return
-      this.engine = this.app.getState().collapse.view
+      this.engine = this.shown
       actions.setCollapseSwapping(false)
       // 地点の読み込みに置き換わった。新しい地形が来れば崩れる前に戻る
       if (!(error instanceof TerrainLoadError && error.reason === 'superseded')) {
@@ -210,14 +220,37 @@ export class CollapseSession {
     actions.setTerrainEpoch('now')
     this.simulation.terrainReady(terrain, center, { variant: true })
     this.map?.showTerrain(terrain)
+    this.shown = kind
     actions.setCollapseView(view)
     actions.setCollapseSwapping(false)
     this.writeView(view)
   }
 
+  /** 表示 view の地形の種類。結果があれば崩れる前は水路の溝あり（無ければ読み込んだ地形）、結果が無ければ base */
+  private terrainKind(view: View): EngineTerrain {
+    if (this.payload === null) return 'base'
+    if (view === 'after') return 'after'
+    return this.payload.before === null ? 'base' : 'before'
+  }
+
+  private terrainOf(kind: EngineTerrain): TerrainPayload | null {
+    if (kind === 'base') return this.base
+    if (this.payload === null) return null
+    return kind === 'after' ? this.payload.after : this.payload.before
+  }
+
   /** 地図の要素に今の表示を書く（E2E が読む） */
   private writeView(view: View): void {
     if (this.map !== null) this.map.container.dataset.collapseView = view
+    this.writeCulvert(view)
+  }
+
+  /** 水路の状態: 結果・水路が無ければ none、崩れた後でふさがったら blocked、それ以外は open */
+  private writeCulvert(view: View): void {
+    if (this.map === null) return
+    const culvert = this.payload?.culvert ?? null
+    this.map.container.dataset.collapseCulvert =
+      culvert === null ? 'none' : view === 'after' && culvert.blocked ? 'blocked' : 'open'
   }
 
   private notify(): void {

@@ -43,6 +43,22 @@ const after = {
   validMask: Uint8Array.of(1, 1, 1, 1),
   labels: Int32Array.of(0, 0, 7, 7),
 } as unknown as TerrainPayload
+/** 水路を仮定したときの、溝ありの崩れる前の地形 */
+const carved = {
+  id: 'carved',
+  geo,
+  elevation: Float32Array.of(10, 9, 10, 10),
+  validMask: Uint8Array.of(1, 1, 1, 1),
+  labels: new Int32Array(4),
+} as unknown as TerrainPayload
+const culvertOf = (blocked: boolean): CollapsePayload['culvert'] => ({
+  line: [
+    [139.7, 35.6],
+    [139.71, 35.6],
+  ],
+  lengthM: 100,
+  blocked,
+})
 const dam: DammedSiteSummary = {
   depressionId: 7,
   capacityM3: 12,
@@ -138,18 +154,18 @@ function setup() {
     })
   }
   /** 候補 4 を開いて計算し、結果まで進める。ready の直後に崩れた後への差し替えが始まる（返事は呼び出し側が返す） */
-  const computeOnly = () => {
+  const computeOnly = (result: CollapsePayload = payload()) => {
     load()
     app.getState().selectFillCandidate(4)
     app.getState().openCollapse(4)
     const done = session.compute()
-    collapses.at(-1)?.resolve(payload())
+    collapses.at(-1)?.resolve(result)
     return done
   }
   /** 計算して、自動の差し替え（崩れた後）が済むまで進める */
-  const ready = async () => {
+  const ready = async (result: CollapsePayload = payload()) => {
     const before = swaps.length
-    const done = computeOnly()
+    const done = computeOnly(result)
     await vi.waitFor(() => expect(swaps.length).toBe(before + 1))
     swaps.at(-1)?.resolve()
     await done
@@ -450,5 +466,101 @@ describe('CollapseSession', () => {
     app.getState().closeCollapse()
     expect(seen).toHaveBeenCalledTimes(2)
     expect(session.result()).toBeNull()
+  })
+
+  describe('水路を仮定したとき（spec 10b §3）', () => {
+    const withCulvert = (blocked = false): CollapsePayload => ({
+      ...payload(),
+      before: carved,
+      culvert: culvertOf(blocked),
+    })
+    /** 水路ありの結果を出し、崩れた後を表示している */
+    const readyWithCulvert = async (blocked = false) => {
+      const s = setup()
+      await s.ready(withCulvert(blocked))
+      return s
+    }
+
+    it('setView("before") は swapTerrain(payload.before) と terrainReady(payload.before, …, { variant: true })', async () => {
+      const { client, simulation, showTerrain, swaps, session, app } = await readyWithCulvert()
+      const done = session.setView('before')
+      expect(client.swapTerrain).toHaveBeenLastCalledWith(carved)
+      swaps.at(-1)?.resolve()
+      await done
+      expect(simulation.terrainReady).toHaveBeenLastCalledWith(carved, CENTER, { variant: true })
+      expect(showTerrain).toHaveBeenLastCalledWith(carved)
+      expect(app.getState().collapse.view).toBe('before')
+    })
+
+    it('水路なしの結果で setView("before") は 10 のまま base', async () => {
+      const { client, swaps, session, ready } = setup()
+      await ready()
+      const done = session.setView('before')
+      expect(client.swapTerrain).toHaveBeenLastCalledWith(base)
+      swaps.at(-1)?.resolve()
+      await done
+    })
+
+    it('溝ありの崩れる前を表示中に closeCollapse → swapTerrain(base)、data-collapse-culvert は none', async () => {
+      const { client, simulation, app, swaps, container, session } = await readyWithCulvert()
+      const toBefore = session.setView('before')
+      swaps.at(-1)?.resolve()
+      await toBefore
+      expect(container.dataset.collapseCulvert).toBe('open')
+      app.getState().closeCollapse()
+      expect(client.swapTerrain).toHaveBeenLastCalledWith(base)
+      expect(container.dataset.collapseCulvert).toBe('none')
+      swaps.at(-1)?.resolve()
+      await tick()
+      expect(simulation.terrainReady).toHaveBeenLastCalledWith(base, CENTER, { variant: true })
+      expect(container.dataset.collapseView).toBe('before')
+      expect(container.dataset.collapseCulvert).toBe('none')
+    })
+
+    it('溝ありの崩れる前を表示中に setCollapseRatio → 結果を捨てて base に戻る', async () => {
+      const { client, app, swaps, session } = await readyWithCulvert()
+      const toBefore = session.setView('before')
+      swaps.at(-1)?.resolve()
+      await toBefore
+      app.getState().setCollapseRatio(0.25)
+      expect(session.result()).toBeNull()
+      expect(client.swapTerrain).toHaveBeenLastCalledWith(base)
+      expect(app.getState().collapse).toMatchObject({ status: 'idle', view: 'before' })
+    })
+
+    it('溝ありの崩れる前を表示中に Worker が異常終了 → showTerrain(base)', async () => {
+      const { showTerrain, swaps, session, crash } = await readyWithCulvert()
+      const toBefore = session.setView('before')
+      swaps.at(-1)?.resolve()
+      await toBefore
+      showTerrain.mockClear()
+      crash()
+      expect(showTerrain).toHaveBeenLastCalledWith(base)
+    })
+
+    it('data-collapse-culvert: 崩れた後で blocked なら blocked、崩れる前なら open、ふさがらない結果の崩れた後も open', async () => {
+      const blockedCase = await readyWithCulvert(true)
+      expect(blockedCase.container.dataset.collapseCulvert).toBe('blocked')
+      const toBefore = blockedCase.session.setView('before')
+      blockedCase.swaps.at(-1)?.resolve()
+      await toBefore
+      expect(blockedCase.container.dataset.collapseCulvert).toBe('open')
+
+      const openCase = await readyWithCulvert(false)
+      expect(openCase.container.dataset.collapseView).toBe('after')
+      expect(openCase.container.dataset.collapseCulvert).toBe('open')
+
+      const none = setup()
+      await none.ready()
+      expect(none.container.dataset.collapseCulvert).toBe('none')
+    })
+
+    it('setCollapseResult の summary に culvert（blocked）が入る。水路なしは null', async () => {
+      const a = await readyWithCulvert(true)
+      expect(a.app.getState().collapse.summary?.culvert).toEqual({ blocked: true })
+      const b = setup()
+      await b.ready()
+      expect(b.app.getState().collapse.summary?.culvert).toBeNull()
+    })
   })
 })
