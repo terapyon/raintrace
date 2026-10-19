@@ -92,8 +92,8 @@ async function computeToReady(page: Page): Promise<void> {
 const scenarioToggle = (page: Page): Locator =>
   page.getByRole('group', { name: strings.scenario.label })
 
-const overlayLayers = async (page: Page): Promise<string[]> =>
-  (await mapElement(page).getAttribute('data-overlay-layers'))?.split(',') ?? []
+const overlayLayers = async (page: Page, name = 'data-overlay-layers'): Promise<string[]> =>
+  (await mapElement(page).getAttribute(name))?.split(',') ?? []
 
 test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
   test('候補を選び「崩れたと仮定する」→ 計算 → 崩れた土・積もった土・せき止めの行が出る', async ({
@@ -105,8 +105,13 @@ test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
     const result = page.getByTestId('collapse-result')
     await expect(result).toContainText(t.collapsed)
     await expect(result).toContainText(t.deposited)
-    // せき止めは「N か所」または「ありません」のどちらかの行が出る
-    await expect(result).toContainText(/せき止められた場所/)
+    // 積もった土は 0 でない
+    const text = await result.innerText()
+    const deposited = /積もった土: 約 ([\d,.]+)/.exec(text)
+    expect(Number((deposited?.[1] ?? '0').replace(/,/g, ''))).toBeGreaterThan(0)
+    // 谷をふさぐ台なので、せき止められた場所が 1 か所以上ある（「ありません」ではない）
+    expect(text).toMatch(/せき止められた場所: [1-9]\d* か所/)
+    expect(text).not.toContain(t.noDams)
     await expect(scenarioToggle(page)).toBeVisible()
   })
 
@@ -142,21 +147,57 @@ test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
     await expect(table).toContainText(t.table.maxDepth)
     await expect(table).toContainText(t.table.storedWater)
     await expect(page.getByTestId('compare-progress')).toHaveCount(0)
+    // 表の数値の確かめ: 最大の水深は有限で 0 以上
+    const depthRow = table.getByRole('row', { name: new RegExp(t.table.maxDepth) })
+    const depth = Number(
+      (await depthRow.getByRole('cell').nth(1).innerText()).replace(/[^\d.]/g, ''),
+    )
+    expect(Number.isFinite(depth)).toBe(true)
+    expect(depth).toBeGreaterThanOrEqual(0)
+    // 切り替えで地図の水が変わる: 新しい水は崩れた後にだけある（spec 10 §7.2）
+    const mapEl = mapElement(page)
+    const toggle = scenarioToggle(page)
+    await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
+    await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
+    await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.newWater)
+    await toggle.getByRole('button', { name: strings.scenario.before, exact: true }).click()
+    await expect(mapEl).toHaveAttribute('data-collapse-view', 'before')
+    await expect.poll(() => overlayLayers(page)).not.toContain(COLLAPSE_LAYER_IDS.newWater)
   })
 
-  test('比べる計算を途中で中止できる', async ({ page }) => {
-    test.setTimeout(120_000)
+  test('比べる計算を途中で中止できる。中止の後に結果は届かない', async ({ page }) => {
+    test.setTimeout(150_000)
     await setup(page, FAST_RAIN_URL)
     await openCollapse(page)
     await computeToReady(page)
+    // 結果の表が現れたら記録する（中止の後に届く結果を捕まえる）
+    await page.evaluate(() => {
+      const seen: { result: number } = { result: 0 }
+      ;(window as unknown as { __compareSeen: typeof seen }).__compareSeen = seen
+      new MutationObserver(() => {
+        if (document.querySelector('[data-testid="compare-result"]')) seen.result++
+      }).observe(document.body, { childList: true, subtree: true })
+    })
+    const resultsSeen = (): Promise<number> =>
+      page.evaluate(
+        () => (window as unknown as { __compareSeen: { result: number } }).__compareSeen.result,
+      )
     await page.getByRole('button', { name: t.compare }).click()
     const progress = page.getByTestId('compare-progress')
     await expect(progress).toBeVisible()
     await progress.getByRole('button', { name: t.cancel, exact: true }).click()
     await expect(progress).toHaveCount(0)
-    await expect(page.getByRole('button', { name: t.compare })).toBeVisible()
+    const compareButton = page.getByRole('button', { name: t.compare })
+    await expect(compareButton).toBeVisible()
     await expect(page.getByTestId('compare-result')).toHaveCount(0)
     await expect(page.getByText(t.compareFailed)).toHaveCount(0)
+    // 中止から次の比べるまでの間に結果は現れていない
+    expect(await resultsSeen()).toBe(0)
+    // もう一度比べると、最後まで進んで結果がちょうど 1 つ出る
+    await compareButton.click()
+    await expect(page.getByTestId('compare-result')).toHaveCount(1, { timeout: 90_000 })
+    await expect(page.getByTestId('compare-progress')).toHaveCount(0)
+    expect(await resultsSeen()).toBeGreaterThan(0)
   })
 
   test('崩れた後を表示中に別の地点を選ぶと、閉じて崩れる前の地形に戻る', async ({ page }) => {
@@ -187,15 +228,18 @@ test.describe('盛土が崩れたらの 3D（spec 10 §7.2）', { tag: '@3d' }, 
     const generation = async (): Promise<number> =>
       Number((await mapEl.getAttribute('data-view3d-range-generation')) ?? '0')
     const toggle = scenarioToggle(page)
-    // 崩れた後を表示中に 3D にした。崩れる前へ切り替えて落ち着いてから基準を取り、崩れた後へ戻して
-    // 3D の地形が作り直されることを見る
+    // 崩れた後を表示中に 3D にした。崩れる前へ切り替えて落ち着いてから基準を取り、崩れた後へ戻す
     await toggle.getByRole('button', { name: strings.scenario.before, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'before')
     await expect(toggle.getByRole('button', { pressed: true })).toHaveText(strings.scenario.before)
-    await expect.poll(generation, { timeout: 60_000 }).toBeGreaterThan(0)
     const base = await generation()
     await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
+    // 3D の地形が作り直され、崩れた後の積もった土が出る
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
+    await expect(mapEl).toHaveAttribute('data-view3d', '3d')
     await expect.poll(generation, { timeout: 60_000 }).toBeGreaterThan(base)
+    await expect
+      .poll(() => overlayLayers(page, 'data-visible-overlay-layers'), { timeout: 60_000 })
+      .toContain(COLLAPSE_LAYER_IDS.deposit)
   })
 })
