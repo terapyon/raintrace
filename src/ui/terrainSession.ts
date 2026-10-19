@@ -59,7 +59,7 @@ export class TerrainSession {
     this.simulation = simulation
     this.settings = settings
     this.fillHistory = new FillHistorySession(client, store, simulation)
-    this.collapse = new CollapseSession(client, store, simulation, this.fillHistory, settings)
+    this.collapse = new CollapseSession(client, store, simulation, this.fillHistory)
     this.view3d = new View3dSession(simulation, store, settings, this.fillHistory)
   }
 
@@ -94,12 +94,11 @@ export class TerrainSession {
       else fillOverlay.show(result, geo, this.store.getState().fillHistory.selectedId)
     }
     const offFillResult = this.fillHistory.onResult(showFill)
-    // 崩れた後の積もった土・せき止められた場所・新しい水は、崩れた後の地形を見せている間だけ描く
+    // 崩れた後の積もった土・せき止められた場所は、崩れた後の地形を見せている間だけ描く
     const collapseOverlay = new CollapseOverlay(map, (run) => controller.whenLoaded(run))
     const showCollapse = (): void =>
       syncCollapseOverlay(collapseOverlay, this.store.getState().collapse, {
         result: this.collapse.result(),
-        compared: this.collapse.compareResult(),
       })
     const offCollapseChange = this.collapse.onChange(showCollapse)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
@@ -190,11 +189,7 @@ export class TerrainSession {
       if (state.display !== previous.display) this.overlay?.setDisplay(this.overlayDisplay())
       const { collapse } = state
       const before = previous.collapse
-      if (
-        collapse.view !== before.view ||
-        collapse.status !== before.status ||
-        collapse.compare.status !== before.compare.status
-      ) {
+      if (collapse.view !== before.view || collapse.status !== before.status) {
         showCollapse()
       }
       if (state.fillHistory.selectedId !== previous.fillHistory.selectedId) {

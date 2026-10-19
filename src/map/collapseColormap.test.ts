@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collapseDepositRgba, newWaterRgba, paintDamOutlines } from './collapseColormap'
+import { collapseDepositRgba, paintDamOutlines } from './collapseColormap'
 
 describe('collapseDepositRgba（spec 10 §5.4）', () => {
   it('0.009 m は透明、0.01 m は茶、崩れた跡は灰', () => {
@@ -38,17 +38,5 @@ describe('paintDamOutlines', () => {
     const other = new Uint8ClampedArray(9 * 4)
     paintDamOutlines(other, labels, new Set([1]), size)
     expect(other.every((v) => v === 0)).toBe(true)
-  })
-})
-
-describe('newWaterRgba', () => {
-  it('前 0.009・後 0.01 は色、前 0.01・後 0.02 は透明', () => {
-    const two = newWaterRgba(
-      Float32Array.of(0.009, 0.01, 0, 0),
-      Float32Array.of(0.01, 0.02, 0, 0),
-      2,
-    )
-    expect(two[3]).toBeGreaterThan(0)
-    expect(two[7]).toBe(0)
   })
 })

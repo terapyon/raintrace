@@ -3,11 +3,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import LinearProgress from '@mui/material/LinearProgress'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
@@ -17,36 +12,13 @@ import { useStore } from 'zustand'
 import { MAX_SHOWN_DAMS } from '../../shared/damDisplay'
 import { DEBRIS_PRESETS } from '../../shared/debrisPresets'
 import type { CollapseRatio } from '../../shared/protocol'
-import {
-  type CollapseSummary,
-  type CompareSummary,
-  compareSettingsChanged,
-} from '../../state/appStore'
-import {
-  formatArea,
-  formatMeters,
-  formatSignedArea,
-  formatSignedMeters,
-  formatSignedVolume,
-  formatVolume,
-  formatVolumeApprox,
-} from '../format'
+import type { CollapseSummary } from '../../state/appStore'
+import { formatArea, formatMeters, formatVolumeApprox } from '../format'
 import { strings } from '../strings'
 import type { TerrainSession } from '../terrainSession'
 
 const t = strings.collapse
 const RATIOS: readonly CollapseRatio[] = [1, 0.5, 0.25]
-
-function formatRemaining(seconds: number): string {
-  const minutes = Math.ceil(seconds / 60)
-  return seconds < 60 ? t.remainingLessThanMinute : t.remainingMinutes(minutes)
-}
-
-function formatEstimate(minutes: number): string {
-  return minutes >= 90
-    ? t.compareEstimateHours(Math.round(minutes / 60))
-    : t.compareEstimateMinutes(Math.round(minutes))
-}
 
 function ResultLines({ summary }: { summary: CollapseSummary }) {
   const outside = summary.outsideM3 > 0
@@ -99,100 +71,16 @@ function ResultLines({ summary }: { summary: CollapseSummary }) {
   )
 }
 
-function CompareTable({ summary, stale }: { summary: CompareSummary; stale: boolean }) {
-  const { before, after } = summary
-  const rows: { label: string; before: string; after: string; diff: string }[] = [
-    {
-      label: t.table.maxDepth,
-      before: formatMeters(before.maxDepth),
-      after: formatMeters(after.maxDepth),
-      diff: formatSignedMeters(after.maxDepth - before.maxDepth),
-    },
-    {
-      label: t.table.floodedArea,
-      before: formatArea(before.floodedArea),
-      after: formatArea(after.floodedArea),
-      diff: formatSignedArea(after.floodedArea - before.floodedArea),
-    },
-    {
-      label: t.table.storedWater,
-      before: formatVolume(before.storedWater),
-      after: formatVolume(after.storedWater),
-      diff: formatSignedVolume(after.storedWater - before.storedWater),
-    },
-    {
-      label: t.table.outflowWater,
-      before: formatVolume(before.outflowWater),
-      after: formatVolume(after.outflowWater),
-      diff: formatSignedVolume(after.outflowWater - before.outflowWater),
-    },
-  ]
-  return (
-    <Box sx={{ mt: 1 }} data-testid="compare-result">
-      {stale && (
-        <Alert severity="warning" sx={{ my: 0.5 }} data-testid="compare-stale">
-          {t.compareStale}
-        </Alert>
-      )}
-      <Typography variant="caption" component="p">
-        {t.compareAt}
-      </Typography>
-      <Table size="small" sx={{ '& td, & th': { px: 0.5, py: 0.25, fontSize: 12 } }}>
-        <TableHead>
-          <TableRow>
-            <TableCell />
-            <TableCell align="right">{t.table.before}</TableCell>
-            <TableCell align="right">{t.table.after}</TableCell>
-            <TableCell align="right">{t.table.diff}</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.label}>
-              <TableCell component="th" scope="row">
-                {r.label}
-              </TableCell>
-              <TableCell align="right">{r.before}</TableCell>
-              <TableCell align="right">{r.after}</TableCell>
-              <TableCell align="right">{r.diff}</TableCell>
-            </TableRow>
-          ))}
-          {summary.damMaxDepthM !== null && (
-            <TableRow>
-              <TableCell component="th" scope="row">
-                {t.table.damMaxDepth}
-              </TableCell>
-              <TableCell align="right">—</TableCell>
-              <TableCell align="right">{formatMeters(summary.damMaxDepthM)}</TableCell>
-              <TableCell align="right">—</TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-      <Typography variant="body2">{t.newWater(formatArea(summary.newWaterAreaM2))}</Typography>
-    </Box>
-  )
-}
-
 /**
  * 崩れたと仮定した場合（spec 10 §6.1）。盛土の履歴の区切りの直後に出す。
  * 候補の詳しい欄の「崩れたと仮定する」で開き（openCollapse）、候補の選択を外すと閉じる
  */
-export function CollapseSection({
-  session,
-  compareMinutes,
-}: {
-  session: TerrainSession
-  /** 比べる計算の所要時間の目安（分。estimateCompareMinutes）。1 分以上なら押す前に知らせる */
-  compareMinutes: number
-}) {
+export function CollapseSection({ session }: { session: TerrainSession }) {
   const app = session.store
   const collapse = useStore(app, (s) => s.collapse)
   const candidate = useStore(app, (s) =>
     s.fillHistory.summary?.candidates.find((c) => c.id === s.collapse.candidateId),
   )
-  const rainfall = useStore(session.settings, (s) => s.rainfall)
-  const sizeM = useStore(session.settings, (s) => s.area.sizeM)
   const rootRef = useRef<HTMLDivElement>(null)
   const openId = collapse.candidateId
   // 開いたとき（候補が替わったときも）、狭い画面で見えない位置にあるパネルの中でも見えるようにする
@@ -200,14 +88,10 @@ export function CollapseSection({
     if (openId !== null) rootRef.current?.scrollIntoView?.({ block: 'start' })
   }, [openId])
   if (collapse.candidateId === null) return null
-  const { status, summary, compare, swapping } = collapse
+  const { status, summary, swapping } = collapse
   const actions = app.getState()
-  const locked = status === 'computing' || compare.status === 'running' || swapping
+  const locked = status === 'computing' || swapping
   const canCompute = status === 'idle' || status === 'failed'
-  const side = compare.side
-  // 比べた後に雨の設定や範囲の大きさを変えたら、表は残して比べ直しを促す
-  const stale =
-    compare.settings !== null && compareSettingsChanged(compare.settings, { ...rainfall, sizeM })
   return (
     <Box ref={rootRef} data-testid="collapse-section" sx={{ mt: 1 }}>
       <Divider sx={{ mb: 1 }} />
@@ -286,72 +170,7 @@ export function CollapseSection({
           {t.failed}
         </Alert>
       )}
-      {status === 'ready' && summary !== null && (
-        <>
-          <ResultLines summary={summary} />
-          <Box sx={{ mt: 1 }}>
-            {compare.status !== 'running' && (
-              <>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  disabled={swapping}
-                  onClick={() => void session.collapse.compare()}
-                >
-                  {t.compare}
-                </Button>
-                <Typography variant="caption" component="p">
-                  {t.compareHint}
-                </Typography>
-                {compareMinutes >= 1 && (
-                  <Typography variant="caption" component="p" data-testid="compare-estimate">
-                    {formatEstimate(compareMinutes)}
-                    {t.compareEstimateNote}
-                  </Typography>
-                )}
-              </>
-            )}
-            {compare.status === 'running' && (
-              <Box data-testid="compare-progress">
-                <Typography variant="body2">
-                  {t.compareRunning(
-                    side === null ? '' : t.sides[side],
-                    compare.remainingS === null ? null : formatRemaining(compare.remainingS),
-                  )}
-                </Typography>
-                {(['before', 'after'] as const).map((s) => (
-                  <Box key={s}>
-                    <Typography variant="caption">{t.sides[s]}</Typography>
-                    <LinearProgress
-                      aria-label={t.sides[s]}
-                      variant="determinate"
-                      sx={{ my: 0.5 }}
-                      value={
-                        side === s
-                          ? compare.progress * 100
-                          : side === 'after' && s === 'before'
-                            ? 100
-                            : 0
-                      }
-                    />
-                  </Box>
-                ))}
-                <Button size="small" onClick={() => session.collapse.cancelCompare()}>
-                  {t.cancel}
-                </Button>
-              </Box>
-            )}
-            {compare.status === 'failed' && (
-              <Alert severity="error" sx={{ my: 1 }}>
-                {t.compareFailed}
-              </Alert>
-            )}
-            {compare.status === 'done' && compare.summary !== null && (
-              <CompareTable summary={compare.summary} stale={stale} />
-            )}
-          </Box>
-        </>
-      )}
+      {status === 'ready' && summary !== null && <ResultLines summary={summary} />}
       <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
         {t.notice}
       </Typography>

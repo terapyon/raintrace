@@ -30,33 +30,6 @@ export const strings = {
       area: string,
     ) =>
       `場所 ${n}${sep}溜まりうる水 ${capacity}${sep}最大の深さ ${depth}${sep}あふれ出す標高 ${spill}${sep}面積 ${area}`,
-    compare: '崩れる前と後を比べる',
-    compareHint: '今の雨の設定で、雨が降り終わる時点まで両方を計算します',
-    compareEstimateMinutes: (n: number) => `目安 約 ${n} 分`,
-    compareEstimateHours: (n: number) => `目安 約 ${n} 時間`,
-    compareEstimateNote: '（範囲や雨の設定、端末によって大きく変わります）',
-    sides: { before: '崩れる前', after: '崩れた後' },
-    compareRunning: (side: string, remaining: string | null) =>
-      remaining === null
-        ? `${side}を計算しています`
-        : `${side}を計算しています（残り約 ${remaining}）`,
-    remainingMinutes: (n: number) => `${n} 分`,
-    remainingLessThanMinute: '1 分未満',
-    cancel: '中止',
-    compareFailed: '比べる計算ができませんでした',
-    compareAt: '雨が降り終わった時点で比べています',
-    compareStale: '雨の設定が変わりました。比べ直してください',
-    table: {
-      before: '崩れる前',
-      after: '崩れた後',
-      diff: '差',
-      maxDepth: '最大の水深',
-      floodedArea: '湛水面積（1 cm 以上）',
-      storedWater: '範囲の中に溜まった水の量',
-      outflowWater: '範囲の外へ流れ出た水の量',
-      damMaxDepth: 'せき止められた場所の水深の最大',
-    },
-    newWater: (a: string) => `新しく水が溜まった範囲 +${a}`,
     notice:
       'これは「この盛土が崩れたと仮定した場合」の地形と水の流れを、簡単なモデルで描いたものです。盛土が崩れる可能性や、実際の災害の起こり方を予測するものではありません。土砂の流れ方は、土の水の含み方などで大きく変わります。せき止めが決壊することや、地面への浸透は考えていません。実際の安全性の評価には、地盤の調査や安定の解析が必要です。',
   },

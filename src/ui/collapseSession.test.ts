@@ -2,21 +2,16 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CollapseError,
   type CollapseRequest,
-  CompareError,
-  type CompareProgress,
   type SimulationClient,
 } from '../bridge/SimulationClient'
 import type {
   CollapsePayload,
-  CompareSide,
   DammedSiteSummary,
   FillHistoryPayload,
   TerrainPayload,
 } from '../shared/protocol'
 import { createAppStore } from '../state/appStore'
-import { memoryStorage } from '../state/memoryStorage.test-support'
-import { createSettingsStore } from '../state/settingsStore'
-import { CollapseSession, compareSummary } from './collapseSession'
+import { CollapseSession } from './collapseSession'
 import type { FillHistorySession } from './fillHistorySession'
 import type { SimulationSession } from './simulationSession'
 
@@ -79,18 +74,9 @@ const payload = (terrainId = 5): CollapsePayload => ({
   culvert: null,
 })
 
-const side = (depth: number[], maxDepth: number): CompareSide =>
-  ({
-    depth: Float32Array.from(depth),
-    stats: { maxDepth, floodedArea: 4, storedWater: 3, outflowWater: 2, step: 9 },
-  }) as unknown as CompareSide
-
 function setup() {
   const collapses: Array<ReturnType<typeof deferred<CollapsePayload>>> = []
   const collapseProgress: Array<(f: number) => void> = []
-  const compares: Array<ReturnType<typeof deferred<{ before: CompareSide; after: CompareSide }>>> =
-    []
-  const compareProgress: Array<(p: CompareProgress) => void> = []
   const swaps: Array<ReturnType<typeof deferred<void>>> = []
   const client = {
     baseTerrainId: null as number | null,
@@ -107,22 +93,6 @@ function setup() {
       return d.promise.then(() => {
         client.terrain = terrain
       })
-    }),
-    compareCollapse: vi.fn(
-      (
-        _b: TerrainPayload,
-        _a: TerrainPayload,
-        _rain: unknown,
-        onProgress: (p: CompareProgress) => void,
-      ) => {
-        const d = deferred<{ before: CompareSide; after: CompareSide }>()
-        compares.push(d)
-        compareProgress.push(onProgress)
-        return d.promise
-      },
-    ),
-    cancelCompare: vi.fn(() => {
-      compares.at(-1)?.reject(new CompareError('cancelled', 'x'))
     }),
     onCrash: (l: () => void) => {
       crashListeners.push(l)
@@ -142,13 +112,11 @@ function setup() {
   let fillResult: FillHistoryPayload | null = fill
   const fillHistory = { result: () => fillResult }
   const app = createAppStore()
-  const settings = createSettingsStore(memoryStorage())
   const session = new CollapseSession(
     client as unknown as SimulationClient,
     app,
     simulation as unknown as SimulationSession,
     fillHistory as unknown as FillHistorySession,
-    settings,
   )
   const container = { dataset: {} as DOMStringMap }
   const showTerrain = vi.fn()
@@ -200,12 +168,9 @@ function setup() {
     },
     simulation,
     app,
-    settings,
     session,
     collapses,
     collapseProgress,
-    compares,
-    compareProgress,
     swaps,
     container,
     showTerrain,
@@ -441,74 +406,6 @@ describe('CollapseSession', () => {
     expect(app.getState().collapse).toMatchObject({ presetId: 'far', status: 'idle' })
   })
 
-  it('compare は基の地形・崩れた後・今の雨の設定で比べ、done と summary を入れる', async () => {
-    const { client, app, session, compares, compareProgress, settings, ready } = setup()
-    await ready()
-    settings.getState().setRainfall({
-      intensityMmPerH: 50,
-      durationMin: 60,
-      radiusM: 100,
-      wholeRange: true,
-    })
-    const done = session.compare()
-    const call = client.compareCollapse.mock.calls[0]
-    expect(call?.[0]).toBe(base)
-    expect(call?.[1]).toBe(after)
-    expect(call?.[2]).toMatchObject({ intensityMmPerH: 50, durationS: 3600, wholeRange: true })
-    expect(app.getState().collapse.compare).toMatchObject({ status: 'running', side: 'before' })
-    // 崩れる前の残り 10 秒で 半分 → 崩れる前の全体は 20 秒。崩れた後も同じだけと見て足す
-    compareProgress[0]?.({ side: 'before', fraction: 0.5, remainingS: 10 })
-    expect(app.getState().collapse.compare).toMatchObject({
-      side: 'before',
-      progress: 0.5,
-      remainingS: 30,
-    })
-    compareProgress[0]?.({ side: 'after', fraction: 0.25, remainingS: 15 })
-    expect(app.getState().collapse.compare).toMatchObject({
-      side: 'after',
-      progress: 0.25,
-      remainingS: 15,
-    })
-    const result = { before: side([0, 0, 0, 0.5], 0.5), after: side([0, 0, 0.3, 0.8], 0.8) }
-    compares[0]?.resolve(result)
-    await done
-    expect(session.compareResult()).toBe(result)
-    expect(app.getState().collapse.compare).toMatchObject({
-      status: 'done',
-      side: null,
-      summary: { damMaxDepthM: expect.closeTo(0.8), newWaterAreaM2: 4 },
-      // 比べたときの雨の設定と範囲の大きさ（比べ直しの知らせに使う）
-      settings: {
-        intensityMmPerH: 50,
-        durationMin: 60,
-        radiusM: 100,
-        wholeRange: true,
-        sizeM: settings.getState().area.sizeM,
-      },
-    })
-  })
-
-  it('compare の途中で cancelCompare → compare.status は idle、summary は null', async () => {
-    const { client, app, session, ready } = setup()
-    await ready()
-    const done = session.compare()
-    session.cancelCompare()
-    await done
-    expect(client.cancelCompare).toHaveBeenCalled()
-    expect(app.getState().collapse.compare).toMatchObject({ status: 'idle', summary: null })
-    expect(session.compareResult()).toBeNull()
-  })
-
-  it('比べる計算の途中で閉じると、取り消す', async () => {
-    const { client, app, session, ready } = setup()
-    await ready()
-    const done = session.compare()
-    app.getState().closeCollapse()
-    await done
-    expect(client.cancelCompare).toHaveBeenCalled()
-    expect(app.getState().collapse.compare.status).toBe('idle')
-  })
-
   it('崩れた後を表示中に Worker が異常終了したら、差し替えずに閉じ、before に戻す', async () => {
     const { client, app, session, swaps, container, showTerrain, ready, crash } = setup()
     await ready()
@@ -544,53 +441,14 @@ describe('CollapseSession', () => {
     expect(container.dataset.collapseView).toBe('before')
   })
 
-  it('比べる計算の失敗は failed', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { app, session, compares, ready } = setup()
-    await ready()
-    const done = session.compare()
-    compares[0]?.reject(new CompareError('internal', 'x'))
-    await done
-    expect(app.getState().collapse.compare.status).toBe('failed')
-    error.mockRestore()
-  })
-
-  it('onChange は結果ができた・消えたこと、比べた結果ができたことを知らせる', async () => {
-    const { app, session, compares, ready } = setup()
+  it('onChange は結果ができた・消えたことを知らせる', async () => {
+    const { app, session, ready } = setup()
     const seen = vi.fn()
     session.onChange(seen)
     await ready()
     expect(seen).toHaveBeenCalledTimes(1)
-    const done = session.compare()
-    compares[0]?.resolve({ before: side([0, 0, 0, 0], 0), after: side([0, 0, 0, 0], 0) })
-    await done
-    expect(seen).toHaveBeenCalledTimes(2)
     app.getState().closeCollapse()
-    expect(seen).toHaveBeenCalledTimes(3)
+    expect(seen).toHaveBeenCalledTimes(2)
     expect(session.result()).toBeNull()
-  })
-})
-
-describe('compareSummary', () => {
-  it('CompareSummary: newWaterAreaM2 と damMaxDepthM を深さの配列から正しく出す', () => {
-    // セルの面積は 2 m × 2 m = 4 m²。新しく 1 cm 以上になったのはセル 1 と 2（セル 3 は前から 1 cm 以上）
-    const before = side([0, 0.005, 0, 0.02], 0.02)
-    const afterSide = side([0, 0.01, 0.4, 0.9], 0.9)
-    const summary = compareSummary({ before, after: afterSide }, after, [dam])
-    expect(summary.newWaterAreaM2).toBe(8)
-    // せき止められた場所（labels が 7 のセル 2・3）の崩れた後の水深の最大
-    expect(summary.damMaxDepthM).toBeCloseTo(0.9)
-    expect(summary.before).toEqual({
-      maxDepth: 0.02,
-      floodedArea: 4,
-      storedWater: 3,
-      outflowWater: 2,
-    })
-    expect(summary.after.maxDepth).toBe(0.9)
-  })
-
-  it('せき止められた場所が無ければ damMaxDepthM は null', () => {
-    const s = side([0, 0, 0, 0], 0)
-    expect(compareSummary({ before: s, after: s }, after, []).damMaxDepthM).toBeNull()
   })
 })

@@ -93,11 +93,10 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
     expect(at(FILL_LAYER_IDS.markers)).toBe(at(TERRAIN_LAYER_IDS.markers) + 1)
   })
 
-  it('崩れた後の重ね描き: 積もった土は A54 の直後、点はその後、新しい水は流出の帯の直後（spec 10 §5.4）', () => {
+  it('崩れた後の重ね描き: 積もった土は A54 の直後、点はその後（spec 10 §5.4）', () => {
     const order = OVERLAY_LAYER_ORDER
     const at = (id: string): number => order.indexOf(id)
     expect(at(COLLAPSE_LAYER_IDS.deposit)).toBe(at(FILL_LAYER_IDS.a54) + 1)
     expect(at(COLLAPSE_LAYER_IDS.dams)).toBe(at(COLLAPSE_LAYER_IDS.deposit) + 1)
-    expect(at(COLLAPSE_LAYER_IDS.newWater)).toBe(at(WATER_LAYER_IDS.outflow) + 1)
   })
 })

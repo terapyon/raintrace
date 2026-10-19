@@ -1,7 +1,6 @@
 import type {
   CollapsePayload,
   CollapseRatio,
-  CompareSide,
   FillHistoryFailureReason,
   FillHistoryPayload,
   FrameMessage,
@@ -9,7 +8,6 @@ import type {
   PlaybackSpeed,
   SimFailureReason,
   SimulationCommand,
-  SwapGrid,
   TerrainErrorReason,
   TerrainPayload,
   WorkerToMainMessage,
@@ -137,32 +135,6 @@ interface PendingCollapse {
   reject: (error: CollapseError) => void
 }
 
-/** 比較の失敗の理由。cancelled: 取り消した。superseded: 新しい依頼か地形の読み込みに置き換わった。worker: Worker が異常終了した */
-export type CompareErrorReason = 'cancelled' | 'internal' | 'superseded' | 'worker'
-
-export class CompareError extends Error {
-  readonly reason: CompareErrorReason
-  constructor(reason: CompareErrorReason, message: string) {
-    super(message)
-    this.reason = reason
-  }
-}
-
-export interface CompareProgress {
-  side: 'before' | 'after'
-  fraction: number
-  remainingS: number | null
-}
-
-interface PendingCompare {
-  requestId: number
-  /** 依頼した時点の読み込んだ地形の id。応答のときの今の地形と比べる（ruling R7） */
-  baseTerrainId: number | null
-  onProgress: (progress: CompareProgress) => void
-  resolve: (result: { before: CompareSide; after: CompareSide }) => void
-  reject: (error: CompareError) => void
-}
-
 /**
  * メインスレッドで Worker を所有する（tech-spec §5.1）。アプリで 1 つだけ作る（01 の申し送り H2）。
  * 読み込んだ地形と最新の水深の配列はここに持ち、React やストアには載せない
@@ -188,7 +160,6 @@ export class SimulationClient {
   private pendingTerrain: PendingTerrain | null = null
   private pendingSwap: PendingSwap | null = null
   private pendingFillHistory: PendingFillHistory | null = null
-  private pendingCompare: PendingCompare | null = null
   private pendingCollapse: PendingCollapse | null = null
   private readonly frameListeners = new Set<(frame: FrameView) => void>()
   private readonly simFailedListeners = new Set<(reason: SimFailureReason, runId: number) => void>()
@@ -302,37 +273,6 @@ export class SimulationClient {
         )
         break
       }
-      case 'compareProgress': {
-        const pending = this.pendingCompare
-        if (pending === null || pending.requestId !== message.requestId) break
-        if (pending.baseTerrainId !== this.baseTerrainId) break
-        pending.onProgress({
-          side: message.side,
-          fraction: message.fraction,
-          remainingS: message.remainingS,
-        })
-        break
-      }
-      case 'compareReady': {
-        const pending = this.takeCompare(message.requestId)
-        if (pending === null) break
-        if (pending.baseTerrainId === this.baseTerrainId) {
-          pending.resolve({ before: message.before, after: message.after })
-        } else {
-          pending.reject(new CompareError('superseded', '地形が変わったため結果を捨てました'))
-        }
-        break
-      }
-      case 'compareFailed': {
-        const pending = this.takeCompare(message.requestId)
-        if (pending === null) break
-        pending.reject(
-          pending.baseTerrainId === this.baseTerrainId
-            ? new CompareError(message.reason, message.message)
-            : new CompareError('superseded', '地形が変わったため結果を捨てました'),
-        )
-        break
-      }
       case 'frame':
         this.receiveFrame(message)
         break
@@ -398,11 +338,6 @@ export class SimulationClient {
       new TerrainLoadError('superseded', '新しい地点の読み込みに置き換わりました'),
     )
     this.pendingSwap = null
-    // Worker も loadTerrain で比較を取り消す。前の地形の比較は捨てる
-    this.pendingCompare?.reject(
-      new CompareError('superseded', '新しい地点の読み込みに置き換わりました'),
-    )
-    this.pendingCompare = null
     // Worker も loadTerrain で崩れた後の計算を取り消す
     this.pendingCollapse?.reject(
       new CollapseError('superseded', '新しい地点の読み込みに置き換わりました'),
@@ -537,74 +472,6 @@ export class SimulationClient {
         [elevation.buffer, validMask.buffer, removed.buffer, pastElevation.buffer],
       )
     })
-  }
-
-  /**
-   * 崩れる前と後を、雨が降り終わるまで別々のエンジンで計算して比べる（spec 10 §5.3）。再生とは別のエンジンで、
-   * 地形の差し替えは起こさない。Worker へは標高とマスクの写しを送る（メインの地形はそのまま残す）。
-   * 前の比較は superseded で失敗させる。依頼の後に地点が変わったら、結果は superseded で捨てる
-   */
-  compareCollapse(
-    before: TerrainPayload,
-    after: TerrainPayload,
-    rain: RainfallInput,
-    onProgress: (progress: CompareProgress) => void,
-  ): Promise<{ before: CompareSide; after: CompareSide }> {
-    this.pendingCompare?.reject(new CompareError('superseded', '新しい比較に置き換わりました'))
-    this.pendingCompare = null
-    const requestId = this.nextId++
-    return new Promise((resolve, reject) => {
-      let worker: WorkerPort
-      try {
-        worker = this.port()
-      } catch (error) {
-        throw new CompareError('worker', error instanceof Error ? error.message : String(error))
-      }
-      this.pendingCompare = {
-        requestId,
-        baseTerrainId: this.baseTerrainId,
-        onProgress,
-        resolve,
-        reject,
-      }
-      const grid = (terrain: TerrainPayload, transfer: Transferable[]): SwapGrid => {
-        const elevation = terrain.elevation.slice()
-        const validMask = terrain.validMask.slice()
-        transfer.push(elevation.buffer, validMask.buffer)
-        return {
-          elevation,
-          validMask,
-          size: terrain.geo.size,
-          cellSizeM: terrain.geo.cellSizeM,
-          depressions: terrain.depressions,
-        }
-      }
-      const transfer: Transferable[] = []
-      worker.postMessage(
-        {
-          type: 'compareCollapse',
-          requestId,
-          before: grid(before, transfer),
-          after: grid(after, transfer),
-          rain,
-        },
-        transfer,
-      )
-    })
-  }
-
-  /** 比較を取り消す。待っている比較は cancelled で失敗し、Worker は結果も進み具合も送らない */
-  cancelCompare(): void {
-    const pending = this.pendingCompare
-    if (pending === null) return
-    this.pendingCompare = null
-    pending.reject(new CompareError('cancelled', '比較を取り消しました'))
-    if (!this.crashed && !this.disposed) {
-      this.worker.postMessage({
-        type: 'cancelCompare',
-        requestId: pending.requestId,
-      })
-    }
   }
 
   /** runId は SimulationSession が振る通し番号。そのまま Worker へ渡す（タスクレビューの追加の裁定） */
@@ -784,18 +651,9 @@ export class SimulationClient {
     return pending
   }
 
-  private takeCompare(requestId: number): PendingCompare | null {
-    const pending = this.pendingCompare
-    if (pending === null || pending.requestId !== requestId) return null
-    this.pendingCompare = null
-    return pending
-  }
-
   private failAll(error: TerrainLoadError): void {
     this.pendingCollapse?.reject(new CollapseError('worker', error.message))
     this.pendingCollapse = null
-    this.pendingCompare?.reject(new CompareError('worker', error.message))
-    this.pendingCompare = null
     this.pendingFillHistory?.reject(new FillHistoryLoadError('worker', error.message))
     this.pendingFillHistory = null
     this.pendingSwap?.reject(error)

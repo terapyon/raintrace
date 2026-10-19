@@ -24,7 +24,6 @@ export const FILL_LAYER_IDS = {
 export const COLLAPSE_LAYER_IDS = {
   deposit: 'collapse-deposit',
   dams: 'collapse-dams',
-  newWater: 'collapse-new-water',
 } as const
 
 export const WATER_LAYER_IDS = {
@@ -50,7 +49,6 @@ export const OVERLAY_LAYER_ORDER: readonly string[] = [
   COLLAPSE_LAYER_IDS.dams,
   WATER_LAYER_IDS.water,
   WATER_LAYER_IDS.outflow,
-  COLLAPSE_LAYER_IDS.newWater,
   VIEW3D_LAYER_IDS.water,
   TERRAIN_LAYER_IDS.outline,
   TERRAIN_LAYER_IDS.flow,

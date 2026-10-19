@@ -375,8 +375,6 @@ Renderer が GPU へ / React が統計を表示
 |---|---|---|
 | `collapse`（`requestId`, `terrainId`, `geo`, 標高, マスク, 崩れる厚さ, 候補の id, 割合, プリセットの id） | 土砂の行き先を計算する（`computeCollapse`。粒の計算・形の整え・崩れた後の地形の解析・せき止めの判定） | `collapseProgress`（進み具合）→ `collapseReady`（崩れた後の地形・積もった厚さ・せき止められた場所）または `collapseFailed` |
 | `swapTerrain`（`requestId`, 標高, マスク, 格子の大きさ, 窪地） | 再生用のエンジンの地形を差し替える（タイルの読み直しをしない）。崩れる前｜崩れた後の切り替えで使う | `terrainSwapped` |
-| `compareCollapse`（`requestId`, 崩れる前・後の格子, 雨） | 再生用とは別のエンジンで、片側ずつ雨が降り終わるまで最速で計算する（`runToRainEnd`） | `compareProgress`（どちら側か・進み具合・残り秒の見込み）→ `compareReady`（両側の水深の写しと統計）または `compareFailed`（`cancelled` / `internal`） |
-| `cancelCompare`（`requestId`） | 比べる計算を中止する | `compareFailed`（`cancelled`） |
 
 `requestId` は呼び出しごとに増やし、古い返事は main 側で捨てる。`collapse` は Worker の中で同期して計算する（1000 m・DEM1A で約 3 秒）。`terrainId` は地形を差し替えると変わるので、盛土の履歴・崩れた後の突き合わせには、最後にタイルから読んだ地形の id（差し替えで変わらないもの）を使う。
 

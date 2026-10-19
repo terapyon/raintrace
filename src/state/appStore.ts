@@ -8,9 +8,7 @@ import type {
   TerrainErrorReason,
   TerrainPayload,
 } from '../shared/protocol'
-import type { StepStats } from '../simulation/types'
 import { CLOSED, type Popover } from './clickState'
-import type { RainfallSettings, RangeSizeM } from './persistedSettings'
 
 /** 読み込みの失敗の理由。superseded（新しい地点に置き換わった）は失敗として置かない */
 export type LoadFailureReason = Exclude<TerrainErrorReason, 'superseded'>
@@ -87,50 +85,6 @@ export interface CollapseSummary {
   dams: DammedSiteSummary[]
 }
 
-export type CompareStats = Pick<
-  StepStats,
-  'maxDepth' | 'floodedArea' | 'storedWater' | 'outflowWater'
->
-
-/** 崩れる前と後の比較の要約（spec 10 §5.3）。どちらも雨が降り終わった時点 */
-export interface CompareSummary {
-  before: CompareStats
-  after: CompareStats
-  /** せき止められた場所のセルの、崩れた後の水深の最大。せき止められた場所が無ければ null */
-  damMaxDepthM: number | null
-  /** 崩れた後は 1 cm 以上・前は 1 cm 未満の面積（m²） */
-  newWaterAreaM2: number
-}
-
-/**
- * 比べる計算の状態。progress は今の側（side）の進み具合（0〜1）。
- * remainingS は両側の合計の残りの目安（秒）。崩れる前を計算している間は、崩れた後も同じだけかかると見て足す
- * （CollapseSession）。目安が無ければ null
- */
-export interface CompareState {
-  status: 'idle' | 'running' | 'done' | 'failed'
-  side: 'before' | 'after' | null
-  progress: number
-  remainingS: number | null
-  summary: CompareSummary | null
-  /** 比べたときの雨の設定と範囲の大きさ。比べていなければ null */
-  settings: CompareSettings | null
-}
-
-/** 比べる計算に効く設定（雨の設定と範囲の大きさ）。比べた後に変わったかを見る */
-export type CompareSettings = RainfallSettings & { sizeM: RangeSizeM }
-
-/** 比べた後に設定が変わったか。範囲全体に降らせている間は、半径の違いは結果に効かないので見ない */
-export function compareSettingsChanged(used: CompareSettings, now: CompareSettings): boolean {
-  return (
-    used.intensityMmPerH !== now.intensityMmPerH ||
-    used.durationMin !== now.durationMin ||
-    used.wholeRange !== now.wholeRange ||
-    used.sizeM !== now.sizeM ||
-    (!now.wholeRange && used.radiusM !== now.radiusM)
-  )
-}
-
 /** 崩れたと仮定した場合（spec 10）。保存しない画面の一時状態 */
 export interface CollapseState {
   /** 「崩れたと仮定する」を押した候補。null は閉じている */
@@ -142,18 +96,8 @@ export interface CollapseState {
   summary: CollapseSummary | null
   /** エンジンと地図が表している地形。切り替えが済んでから変わる */
   view: 'before' | 'after'
-  /** 崩れる前後の地形の切り替えの途中。この間は再生と比べる操作を受けない（Task 10 が使う） */
+  /** 崩れる前後の地形の切り替えの途中。この間は再生の操作を受けない */
   swapping: boolean
-  compare: CompareState
-}
-
-export const IDLE_COMPARE: CompareState = {
-  status: 'idle',
-  side: null,
-  progress: 0,
-  remainingS: null,
-  summary: null,
-  settings: null,
 }
 
 export const CLOSED_COLLAPSE: CollapseState = {
@@ -165,7 +109,6 @@ export const CLOSED_COLLAPSE: CollapseState = {
   summary: null,
   view: 'before',
   swapping: false,
-  compare: IDLE_COMPARE,
 }
 
 export interface AppState {
@@ -198,7 +141,7 @@ export interface AppActions {
   setFillHistoryResult(status: FillHistoryStatus, summary: FillHistorySummary | null): void
   selectFillCandidate(id: number | null): void
   setTerrainEpoch(epoch: 'now' | 'past'): void
-  /** ratio 1、presetId 既定、status idle、view before、compare idle で開く */
+  /** ratio 1、presetId 既定、status idle、view before で開く */
   openCollapse(candidateId: number): void
   closeCollapse(): void
   /** 結果があれば捨てる（idle・view before に戻る） */
@@ -211,7 +154,6 @@ export interface AppActions {
   setCollapseResult(status: 'ready' | 'failed', summary: CollapseSummary | null): void
   setCollapseView(view: 'before' | 'after'): void
   setCollapseSwapping(swapping: boolean): void
-  setCompare(compare: CompareState): void
 }
 
 export type AppStore = StoreApi<AppState & AppActions>
@@ -321,7 +263,6 @@ export function createAppStore(): AppStore {
           status: 'computing',
           progress: 0,
           summary: null,
-          compare: IDLE_COMPARE,
         },
       })),
     setCollapseProgress: (progress) =>
@@ -342,7 +283,6 @@ export function createAppStore(): AppStore {
           ? state
           : { collapse: { ...state.collapse, swapping } },
       ),
-    setCompare: (compare) => set((state) => ({ collapse: { ...state.collapse, compare } })),
   }))
 }
 

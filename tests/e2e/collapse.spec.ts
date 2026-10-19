@@ -7,8 +7,6 @@ import { encodeDemPng, type GsiScenario, routeGsi } from './support/gsi'
 
 const SHIBUYA = { lat: 35.658, lon: 139.7016 }
 const SHIBUYA_URL = `/?lat=${SHIBUYA.lat.toFixed(6)}&lon=${SHIBUYA.lon.toFixed(6)}`
-/** 雨は短く（最短の 10 分）・範囲は 250 m・半径は小さく。比べる計算を速くする */
-const FAST_RAIN_URL = `${SHIBUYA_URL}&size=250&mmh=30&dur=10&all=0&r=40`
 const t = strings.collapse
 
 const a54Fixture = readFileSync(new URL('../fixtures/fill/a54.json', import.meta.url), 'utf8')
@@ -133,72 +131,6 @@ test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
     await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
     await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.deposit)
-  })
-
-  test('「崩れる前と後を比べる」→ 比べた表が出る（雨は短く・半径を小さく）', async ({ page }) => {
-    test.setTimeout(120_000)
-    await setup(page, FAST_RAIN_URL)
-    await openCollapse(page)
-    await computeToReady(page)
-    await page.getByRole('button', { name: t.compare }).click()
-    const table = page.getByTestId('compare-result')
-    await expect(table).toBeVisible({ timeout: 90_000 })
-    await expect(table.getByRole('columnheader', { name: t.table.before })).toBeVisible()
-    await expect(table.getByRole('columnheader', { name: t.table.after })).toBeVisible()
-    await expect(table).toContainText(t.table.maxDepth)
-    await expect(table).toContainText(t.table.storedWater)
-    await expect(page.getByTestId('compare-progress')).toHaveCount(0)
-    // 表の数値の確かめ: 最大の水深は有限で 0 以上
-    const depthRow = table.getByRole('row', { name: new RegExp(t.table.maxDepth) })
-    const depth = Number(
-      (await depthRow.getByRole('cell').nth(1).innerText()).replace(/[^\d.]/g, ''),
-    )
-    expect(Number.isFinite(depth)).toBe(true)
-    expect(depth).toBeGreaterThanOrEqual(0)
-    // 切り替えで地図の水が変わる: 新しい水は崩れた後にだけある（spec 10 §7.2）
-    const mapEl = mapElement(page)
-    const toggle = scenarioToggle(page)
-    await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
-    await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
-    await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.newWater)
-    await toggle.getByRole('button', { name: strings.scenario.before, exact: true }).click()
-    await expect(mapEl).toHaveAttribute('data-collapse-view', 'before')
-    await expect.poll(() => overlayLayers(page)).not.toContain(COLLAPSE_LAYER_IDS.newWater)
-  })
-
-  test('比べる計算を途中で中止できる。中止の後に結果は届かない', async ({ page }) => {
-    test.setTimeout(150_000)
-    await setup(page, FAST_RAIN_URL)
-    await openCollapse(page)
-    await computeToReady(page)
-    // 結果の表が現れたら記録する（中止の後に届く結果を捕まえる）
-    await page.evaluate(() => {
-      const seen: { result: number } = { result: 0 }
-      ;(window as unknown as { __compareSeen: typeof seen }).__compareSeen = seen
-      new MutationObserver(() => {
-        if (document.querySelector('[data-testid="compare-result"]')) seen.result++
-      }).observe(document.body, { childList: true, subtree: true })
-    })
-    const resultsSeen = (): Promise<number> =>
-      page.evaluate(
-        () => (window as unknown as { __compareSeen: { result: number } }).__compareSeen.result,
-      )
-    await page.getByRole('button', { name: t.compare }).click()
-    const progress = page.getByTestId('compare-progress')
-    await expect(progress).toBeVisible()
-    await progress.getByRole('button', { name: t.cancel, exact: true }).click()
-    await expect(progress).toHaveCount(0)
-    const compareButton = page.getByRole('button', { name: t.compare })
-    await expect(compareButton).toBeVisible()
-    await expect(page.getByTestId('compare-result')).toHaveCount(0)
-    await expect(page.getByText(t.compareFailed)).toHaveCount(0)
-    // 中止から次の比べるまでの間に結果は現れていない
-    expect(await resultsSeen()).toBe(0)
-    // もう一度比べると、最後まで進んで結果がちょうど 1 つ出る
-    await compareButton.click()
-    await expect(page.getByTestId('compare-result')).toHaveCount(1, { timeout: 90_000 })
-    await expect(page.getByTestId('compare-progress')).toHaveCount(0)
-    expect(await resultsSeen()).toBeGreaterThan(0)
   })
 
   test('崩れた後を表示中に別の地点を選ぶと、閉じて崩れる前の地形に戻る', async ({ page }) => {

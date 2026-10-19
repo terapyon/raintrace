@@ -3,13 +3,7 @@ import { DEFAULT_DEBRIS_PRESET_ID } from '../shared/debrisPresets'
 import type { TerrainPayload } from '../shared/protocol'
 // state は simulation の型だけを import する（依存規則。makeDepression は値なので使えない）
 import type { Depression } from '../simulation/terrain/types'
-import {
-  CLOSED_COLLAPSE,
-  type CursorElevation,
-  createAppStore,
-  IDLE_COMPARE,
-  summarizeTerrain,
-} from './appStore'
+import { CLOSED_COLLAPSE, type CursorElevation, createAppStore, summarizeTerrain } from './appStore'
 
 const depression = (id: number, capacityM3: number, significant: boolean): Depression => ({
   id,
@@ -238,7 +232,7 @@ describe('collapse（spec 10）', () => {
     expect(store.getState().collapse).toEqual({ ...CLOSED_COLLAPSE, candidateId: 5 })
   })
 
-  it('openCollapse は ratio 1・既定のプリセット・idle・before・compare idle で開く', () => {
+  it('openCollapse は ratio 1・既定のプリセット・idle・before で開く', () => {
     const store = createAppStore()
     store.getState().openCollapse(4)
     expect(store.getState().collapse).toEqual({
@@ -248,7 +242,6 @@ describe('collapse（spec 10）', () => {
       presetId: DEFAULT_DEBRIS_PRESET_ID,
       status: 'idle',
       view: 'before',
-      compare: IDLE_COMPARE,
     })
   })
 
@@ -300,15 +293,13 @@ describe('collapse（spec 10）', () => {
     expect(store.getState().collapse).toEqual(CLOSED_COLLAPSE)
   })
 
-  it('setCompare・setCollapseSwapping は compare と swapping だけを変える', () => {
+  it('setCollapseSwapping は swapping だけを変える', () => {
     const store = opened()
     store.getState().setCollapseSwapping(true)
-    store.getState().setCompare({ ...IDLE_COMPARE, status: 'running', side: 'before' })
     expect(store.getState().collapse).toMatchObject({
       status: 'ready',
       view: 'after',
       swapping: true,
-      compare: { status: 'running', side: 'before' },
     })
   })
 

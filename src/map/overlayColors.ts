@@ -61,6 +61,3 @@ export const COLLAPSE_SCAR_ALPHA = 150
 export const COLLAPSE_DAM_FILL_ALPHA = 70
 /** せき止められた窪地の輪郭と、あふれ出し点 */
 export const COLLAPSE_DAM_COLOR = '#e65100'
-/** 崩れたせいで新しく溜まった水（濃い青紫） */
-export const COLLAPSE_NEW_WATER_COLOR = '#4527a0'
-export const COLLAPSE_NEW_WATER_ALPHA = 220

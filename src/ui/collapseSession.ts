@@ -1,28 +1,9 @@
-import {
-  CollapseError,
-  CompareError,
-  type CompareProgress,
-  type SimulationClient,
-  TerrainLoadError,
-} from '../bridge/SimulationClient'
+import { CollapseError, type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { removedThickness } from '../dem/fillHistory/removedThickness'
-import type {
-  CollapsePayload,
-  CompareSide,
-  DammedSiteSummary,
-  TerrainPayload,
-} from '../shared/protocol'
-import { FLOODED_DEPTH_M } from '../simulation/constants'
-import {
-  type AppStore,
-  type CollapseState,
-  type CompareStats,
-  type CompareSummary,
-  IDLE_COMPARE,
-} from '../state/appStore'
-import type { SettingsStore } from '../state/settingsStore'
+import type { CollapsePayload, TerrainPayload } from '../shared/protocol'
+import type { AppStore, CollapseState } from '../state/appStore'
 import type { FillHistorySession } from './fillHistorySession'
-import { rainfallInput, type SimulationSession } from './simulationSession'
+import type { SimulationSession } from './simulationSession'
 
 /** 地図とのつなぎ（TerrainSession が渡す）。showTerrain は地図を動かさずに地形の重ね描きを描き直す（ruling R1） */
 export interface CollapseMapHooks {
@@ -32,57 +13,9 @@ export interface CollapseMapHooks {
 
 type View = 'before' | 'after'
 
-function pickStats(side: CompareSide): CompareStats {
-  const { maxDepth, floodedArea, storedWater, outflowWater } = side.stats
-  return { maxDepth, floodedArea, storedWater, outflowWater }
-}
-
 /**
- * 比べた結果の要約（spec 10 §5.3）。damMaxDepthM はせき止められた場所（崩れた後の地形の labels が dams の
- * id のセル）の、崩れた後の水深の最大。newWaterAreaM2 は崩れた後は 1 cm 以上・前は 1 cm 未満のセルの面積
- */
-export function compareSummary(
-  result: { before: CompareSide; after: CompareSide },
-  afterTerrain: TerrainPayload,
-  dams: readonly DammedSiteSummary[],
-): CompareSummary {
-  const ids = new Set(dams.map((d) => d.depressionId))
-  const before = result.before.depth
-  const after = result.after.depth
-  const { labels } = afterTerrain
-  // 水深は Float32 の写し。エンジンの判定（Float64 で 1 cm 以上）と合うよう、閾値も Float32 に丸めて比べる
-  const flooded = Math.fround(FLOODED_DEPTH_M)
-  let newCells = 0
-  let damMax: number | null = null
-  for (let i = 0; i < after.length; i++) {
-    const depth = after[i] ?? 0
-    if (depth >= flooded && (before[i] ?? 0) < flooded) newCells += 1
-    if (ids.has(labels[i] ?? 0) && (damMax === null || depth > damMax)) damMax = depth
-  }
-  const cellSizeM = afterTerrain.geo.cellSizeM
-  return {
-    before: pickStats(result.before),
-    after: pickStats(result.after),
-    damMaxDepthM: damMax,
-    newWaterAreaM2: newCells * cellSizeM * cellSizeM,
-  }
-}
-
-/**
- * 両側の合計の残りの目安（秒）。Worker の残りは今の側の分だけなので、崩れる前を計算している間は、
- * 崩れた後も今の速さで同じだけかかると見て、崩れる前の全体（残り ÷ (1 − 進み具合)）を足す（目安。
- * 崩れた後の地形の方が水の動きが多く遅くなることもある）
- */
-function totalRemainingS(progress: CompareProgress): number | null {
-  const { side, fraction, remainingS } = progress
-  if (remainingS === null) return null
-  if (side === 'after') return remainingS
-  return fraction < 1 ? remainingS + remainingS / (1 - fraction) : null
-}
-
-/**
- * 盛土が崩れたと仮定した場合の計算・崩れる前後の切り替え・比べる計算をつなぐ（spec 10）。React の外に置く。
- * 大きな配列（崩れた後の地形・比べた水深）はここに持ち、ストアには小さな要約だけを入れる。
+ * 盛土が崩れたと仮定した場合の計算・崩れる前後の切り替えをつなぐ（spec 10）。React の外に置く。
+ * 大きな配列（崩れた後の地形）はここに持ち、ストアには小さな要約だけを入れる。
  * 基の地形（崩れる前。最後に読み込んだ地形）はここで持ち、client.terrain（差し替えで変わる）は使わない（ruling R8）
  */
 export class CollapseSession {
@@ -90,17 +23,13 @@ export class CollapseSession {
   private readonly app: AppStore
   private readonly simulation: SimulationSession
   private readonly fillHistory: FillHistorySession
-  private readonly settings: SettingsStore
   private base: TerrainPayload | null = null
   private center: { lon: number; lat: number } | null = null
   private payload: CollapsePayload | null = null
-  private compared: { before: CompareSide; after: CompareSide } | null = null
   /** エンジンが持つ（または差し替えを頼んだ）地形。ストアの view は差し替えが済んでから変わる */
   private engine: View = 'before'
   private computeGeneration = 0
-  private compareGeneration = 0
   private viewGeneration = 0
-  private comparing = false
   private map: CollapseMapHooks | null = null
   private readonly listeners = new Set<() => void>()
 
@@ -109,13 +38,11 @@ export class CollapseSession {
     app: AppStore,
     simulation: SimulationSession,
     fillHistory: FillHistorySession,
-    settings: SettingsStore,
   ) {
     this.client = client
     this.app = app
     this.simulation = simulation
     this.fillHistory = fillHistory
-    this.settings = settings
     simulation.onTerrain((terrain, info) => {
       // 崩れる前後の切り替えは自分で起こしたもの。基の地形は変わらない
       if (info.variant) return
@@ -152,12 +79,7 @@ export class CollapseSession {
     return this.payload
   }
 
-  /** 比べた水深と統計。無ければ null */
-  compareResult(): { before: CompareSide; after: CompareSide } | null {
-    return this.compared
-  }
-
-  /** 結果・比べた結果ができた・消えたことを知らせる（地図の重ね描きと 3D）。戻り値で外す */
+  /** 結果ができた・消えたことを知らせる（地図の重ね描きと 3D）。戻り値で外す */
   onChange(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => {
@@ -232,112 +154,27 @@ export class CollapseSession {
     await this.show(view)
   }
 
-  /** 今の雨の設定で、崩れる前と後を雨が降り終わるまで計算して比べる（spec 10 §5.3） */
-  async compare(): Promise<void> {
-    const payload = this.payload
-    const base = this.base
-    const center = this.center
-    if (payload === null || base === null || center === null) return
-    this.stopCompare()
-    const generation = ++this.compareGeneration
-    this.comparing = true
-    const actions = this.app.getState()
-    const { rainfall, area } = this.settings.getState()
-    const running = {
-      ...IDLE_COMPARE,
-      status: 'running' as const,
-      side: 'before' as const,
-      settings: { ...rainfall, sizeM: area.sizeM },
-    }
-    actions.setCompare(running)
-    const rain = rainfallInput(rainfall, base.geo, center)
-    let result: { before: CompareSide; after: CompareSide }
-    try {
-      result = await this.client.compareCollapse(base, payload.after, rain, (progress) => {
-        if (generation !== this.compareGeneration) return
-        actions.setCompare({
-          ...running,
-          side: progress.side,
-          progress: progress.fraction,
-          remainingS: totalRemainingS(progress),
-        })
-      })
-    } catch (error) {
-      if (generation !== this.compareGeneration) return
-      this.comparing = false
-      const reason = error instanceof CompareError ? error.reason : 'internal'
-      // 置き換わった比較は、置き換えた側（新しい比較・地点の変更）が状態を入れる
-      if (reason === 'superseded') return
-      if (reason === 'cancelled') {
-        actions.setCompare(IDLE_COMPARE)
-        return
-      }
-      actions.setCompare({ ...IDLE_COMPARE, status: 'failed' })
-      console.error(error)
-      return
-    }
-    if (generation !== this.compareGeneration) return
-    this.comparing = false
-    this.compared = result
-    this.notify()
-    actions.setCompare({
-      status: 'done',
-      side: null,
-      progress: 1,
-      remainingS: null,
-      summary: compareSummary(result, payload.after, payload.dams),
-      settings: running.settings,
-    })
-  }
-
-  /** 比べる計算を取り消す（compare.status は idle、summary は null） */
-  cancelCompare(): void {
-    this.stopCompare()
-    this.app.getState().setCompare(IDLE_COMPARE)
-  }
-
-  /** 走っている比較を取り消し、比べた結果を捨てる（ストアは変えない）。捨てたら知らせる */
-  private stopCompare(): void {
-    if (this.dropCompare()) this.notify()
-  }
-
-  /** stopCompare の知らせない版。比べた結果を捨てたら true */
-  private dropCompare(): boolean {
-    this.compareGeneration += 1
-    if (this.comparing) {
-      this.comparing = false
-      this.client.cancelCompare()
-    }
-    if (this.compared === null) return false
-    this.compared = null
-    return true
-  }
-
   /**
-   * 結果・比べる計算・進行中の依頼を捨てる（閉じる・割合やプリセットの変更・候補の変更・盛土の履歴を切る・
+   * 結果・進行中の依頼を捨てる（閉じる・割合やプリセットの変更・候補の変更・盛土の履歴を切る・
    * 地点の変更。Review Focus 1）。swapBack なら、崩れた後のエンジンを基の地形に戻す
    */
   private discard(swapBack: boolean): void {
     this.computeGeneration += 1
-    let changed = this.dropCompare()
     if (this.payload !== null) {
       this.payload = null
-      changed = true
+      this.notify()
     }
-    if (changed) this.notify()
     if (swapBack && this.engine === 'after') void this.show('before')
   }
 
   /**
    * Worker の異常終了。新しい Worker には地形が無いので差し替えは頼まず、エンジン・表示を崩れる前にして閉じる。
-   * 待っていた依頼（計算・比較・差し替え）は SimulationClient が失敗させ、世代が進んでいるので捨てる
+   * 待っていた依頼（計算・差し替え）は SimulationClient が失敗させ、世代が進んでいるので捨てる
    */
   private onCrash(): void {
     const showingAfter = this.app.getState().collapse.view === 'after'
     this.viewGeneration += 1
     this.engine = 'before'
-    // 比べる計算は SimulationClient が既に失敗させている（取り消しを送る相手もいない）
-    this.comparing = false
     const actions = this.app.getState()
     actions.setCollapseSwapping(false)
     // 閉じると、購読の discard が結果を捨てる（エンジンは before なので差し替えない）

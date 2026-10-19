@@ -1,5 +1,5 @@
 /**
- * 開発機のスクリプト（scripts/fill-history-check.ts・scripts/collapse-check.ts）が共有する、盛土の履歴の取得と計算。
+ * 開発機のスクリプト（scripts/fill-history-check.ts）が使う、盛土の履歴の取得と計算。
  * 今の DEM は src/dem の段の選び方（selectDem）で取り、昔の標高（dem_png z14）を今の格子に補間して、
  * ずれの補正・候補の抽出・根拠（A54・人工地形）まで求める。
  * 注意: タイルの取得の層（DEM・A54・人工地形の取得と読み取り）は src/workers/fillHistory.ts から複製したもので、

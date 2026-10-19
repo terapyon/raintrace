@@ -71,22 +71,7 @@ export type MainToWorkerMessage =
       presetId: string
     }
   | ({ type: 'swapTerrain'; requestId: number } & SwapGrid)
-  | {
-      // 崩れる前と後を雨が降り終わるまで別々のエンジンで計算して比べる（spec 10 §5.3）。
-      type: 'compareCollapse'
-      requestId: number
-      before: SwapGrid
-      after: SwapGrid
-      rain: RainfallInput
-    }
-  | { type: 'cancelCompare'; requestId: number }
   | SimulationCommand
-
-/** 雨が降り終わった時点の水深（Float32 の写し）と統計 */
-export interface CompareSide {
-  depth: Float32Array
-  stats: StepStats
-}
 
 /**
  * 地形の差し替え（spec 10 §5.2）。タイルを読まずに、エンジンの地形だけを入れ替える。
@@ -274,24 +259,5 @@ export type WorkerToMainMessage =
   | { type: 'collapseProgress'; requestId: number; fraction: number }
   | { type: 'collapseReady'; requestId: number; result: CollapsePayload }
   | { type: 'collapseFailed'; requestId: number; message: string }
-  | {
-      type: 'compareProgress'
-      requestId: number
-      side: 'before' | 'after'
-      fraction: number
-      remainingS: number | null
-    }
-  | {
-      type: 'compareReady'
-      requestId: number
-      before: CompareSide
-      after: CompareSide
-    }
-  | {
-      type: 'compareFailed'
-      requestId: number
-      reason: 'cancelled' | 'internal'
-      message: string
-    }
   | FrameMessage
   | SimFailedMessage

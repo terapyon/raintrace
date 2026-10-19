@@ -11,7 +11,6 @@ import { useState } from 'react'
 import { useStore } from 'zustand'
 import type { LoadFailureReason } from '../../state/appStore'
 import type { SettingsStore } from '../../state/settingsStore'
-import { estimateCompareMinutes } from '../compareEstimate'
 import { formatCoordinate } from '../format'
 import { strings } from '../strings'
 import type { TerrainSession } from '../terrainSession'
@@ -58,10 +57,6 @@ export function Panel({
   const selected = useStore(store, (s) => s.selected)
   const load = useStore(store, (s) => s.load)
   const sizeM = useStore(settings, (s) => s.area.sizeM)
-  const wholeRange = useStore(settings, (s) => s.rainfall.wholeRange)
-  const radiusM = useStore(settings, (s) => s.rainfall.radiusM)
-  const durationMin = useStore(settings, (s) => s.rainfall.durationMin)
-  const cellSizeM = useStore(store, (s) => s.summary?.cellSizeM ?? null)
   const swapping = useStore(store, (s) => s.collapse.swapping)
   const hidden = collapsed && !wide
   return (
@@ -149,14 +144,7 @@ export function Panel({
             <DisplaySettings app={store} settings={settings} />
             <Divider sx={{ my: 1 }} />
             <FillHistorySection session={session} />
-            <CollapseSection
-              session={session}
-              compareMinutes={
-                cellSizeM === null
-                  ? 0
-                  : estimateCompareMinutes({ sizeM, cellSizeM, wholeRange, radiusM, durationMin })
-              }
-            />
+            <CollapseSection session={session} />
             <SpillNotices simulation={simulation.store} />
           </Box>
         )}

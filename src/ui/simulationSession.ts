@@ -16,7 +16,7 @@ export type TerrainListener = (terrain: TerrainPayload | null, info: { variant: 
 
 /**
  * 画面の雨の設定を、エンジンに渡す雨にする（降雨中心は格子の北西端からの距離、継続時間は分から秒）。
- * 再生（SimulationSession.start）と崩れる前後の比較（CollapseSession.compare）で共有する（ruling R4）
+ * 再生（SimulationSession.start）が使う
  */
 export function rainfallInput(
   rain: RainfallSettings,

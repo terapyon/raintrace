@@ -1,15 +1,10 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { CollapsePayload, TerrainGeo } from '../shared/protocol'
-import { collapseDepositRgba, newWaterRgba, paintDamOutlines } from './collapseColormap'
+import { collapseDepositRgba, paintDamOutlines } from './collapseColormap'
 import { beforeLayerId, COLLAPSE_LAYER_IDS } from './layerIds'
 import { COLLAPSE_DAM_COLOR } from './overlayColors'
 
 export { COLLAPSE_LAYER_IDS } from './layerIds'
-
-interface CompareDepths {
-  before: Float32Array
-  after: Float32Array
-}
 
 function newCanvas(size: number, rgba: Uint8ClampedArray<ArrayBuffer>): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -20,15 +15,14 @@ function newCanvas(size: number, rgba: Uint8ClampedArray<ArrayBuffer>): HTMLCanv
 }
 
 /**
- * 盛土が崩れた後の、積もった土・崩れた跡・せき止められた場所（輪郭とあふれ出し点）・新しく溜まった水を
+ * 盛土が崩れた後の、積もった土・崩れた跡・せき止められた場所（輪郭とあふれ出し点）を
  * 地図に重ねる（spec 10 §5.4）。FillHistoryOverlay と同じく MapLibre を命令的に操作する。
- * 結果は show・showCompare で覚え、restore で足し直す
+ * 結果は show で覚え、restore で足し直す
  */
 export class CollapseOverlay {
   private readonly map: MapLibreMap
   private readonly whenMapLoaded: (run: () => void) => void
   private result: CollapsePayload | null = null
-  private compare: CompareDepths | null = null
   private geo: TerrainGeo | null = null
   private markerCount = Number.POSITIVE_INFINITY
   private generation = 0
@@ -39,7 +33,7 @@ export class CollapseOverlay {
   }
 
   /**
-   * 積もった土・崩れた跡・せき止められた場所を描く。比べた結果は残す（showCompare で別に決める）。
+   * 積もった土・崩れた跡・せき止められた場所を描く。
    * あふれ出し点の印は dams の先頭（溜まりうる水の多い順）から markerCount 個だけ。塗りと輪郭は全部（R12）
    */
   show(result: CollapsePayload, geo: TerrainGeo, markerCount = Number.POSITIVE_INFINITY): void {
@@ -49,25 +43,11 @@ export class CollapseOverlay {
     this.schedule()
   }
 
-  /** 新しく溜まった水を描く */
-  showCompare(before: Float32Array, after: Float32Array, geo: TerrainGeo): void {
-    this.compare = { before, after }
-    this.geo = geo
-    this.schedule()
-  }
-
-  /** 新しく溜まった水だけを消す（結果は残す） */
-  clearCompare(): void {
-    this.compare = null
-    this.schedule()
-  }
-
   /** すべて消し、結果も忘れる。読み込みを待っている描画も取り消す */
   clear(): void {
     this.generation++
     this.removeMapObjects()
     this.result = null
-    this.compare = null
     this.geo = null
   }
 
@@ -89,7 +69,6 @@ export class CollapseOverlay {
     const geo = this.geo
     if (geo === null) return
     const result = this.result
-    const compare = this.compare
     if (result !== null) {
       const { size } = geo
       // 積もった土の canvas には、せき止められた窪地の塗りと輪郭も一緒に描く
@@ -127,10 +106,6 @@ export class CollapseOverlay {
         },
         this.beforeId(COLLAPSE_LAYER_IDS.dams),
       )
-    }
-    if (compare !== null) {
-      const rgba = newWaterRgba(compare.before, compare.after, geo.size)
-      this.addCanvasLayer(COLLAPSE_LAYER_IDS.newWater, newCanvas(geo.size, rgba), geo, 0.9)
     }
   }
 

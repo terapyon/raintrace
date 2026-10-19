@@ -60,10 +60,9 @@ describe('CollapseOverlay（spec 10 §5.4）', () => {
     return { fake, overlay: new CollapseOverlay(fake.map, (run) => run()) }
   }
 
-  it('restore で 3 つのレイヤーを足し直す（ベースマップの切り替え）', () => {
+  it('restore で 2 つのレイヤーを足し直す（ベースマップの切り替え）', () => {
     const { fake, overlay } = setup()
     overlay.show(RESULT, GEO)
-    overlay.showCompare(Float32Array.of(0, 0, 0, 0), Float32Array.of(1, 0, 0, 0), GEO)
     for (const id of IDS) expect(fake.layers).toContain(id)
     expect(fake.sources.get(COLLAPSE_LAYER_IDS.dams)).toMatchObject({
       data: { features: [{ geometry: { coordinates: [0.5, 0.5] } }] },
@@ -89,16 +88,6 @@ describe('CollapseOverlay（spec 10 §5.4）', () => {
     const data = (fake.sources.get(COLLAPSE_LAYER_IDS.dams) as { data: { features: unknown[] } })
       .data
     expect(data.features).toHaveLength(5)
-  })
-
-  it('比べる前は新しい水のレイヤーが無い。clearCompare で消える', () => {
-    const { fake, overlay } = setup()
-    overlay.show(RESULT, GEO)
-    expect(fake.layers).not.toContain(COLLAPSE_LAYER_IDS.newWater)
-    overlay.showCompare(Float32Array.of(0, 0, 0, 0), Float32Array.of(1, 0, 0, 0), GEO)
-    overlay.clearCompare()
-    expect(fake.layers).not.toContain(COLLAPSE_LAYER_IDS.newWater)
-    expect(fake.layers).toContain(COLLAPSE_LAYER_IDS.dams)
   })
 
   it('clear で全部外し、restore しても戻らない', () => {
