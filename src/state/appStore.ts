@@ -42,9 +42,10 @@ export type ViewMode = '2d' | '3d'
  */
 export type View3dStatus = 'off' | 'loading' | '3d' | 'fallback-2d' | 'error'
 
-/** 盛土の履歴（spec 09）。保存しない画面の一時状態。off: 切っている。loading: 計算中 */
+/** 盛土の履歴（spec 09）。保存しない画面の一時状態。off: 切っている。waiting: オンだが計算する地形がまだ無い。loading: 計算中 */
 export type FillHistoryStatus =
   | 'off'
+  | 'waiting'
   | 'loading'
   | 'ready'
   | 'unavailable'
@@ -123,7 +124,7 @@ export function createAppStore(): AppStore {
       set((state) => ({
         fillHistory: {
           enabled: state.fillHistory.enabled,
-          status: state.fillHistory.enabled ? 'loading' : 'off',
+          status: state.fillHistory.enabled ? 'waiting' : 'off',
           summary: null,
           selectedId: null,
         },
@@ -146,7 +147,9 @@ export function createAppStore(): AppStore {
     setFillHistoryEnabled: (enabled) =>
       set((state) =>
         enabled
-          ? { fillHistory: { ...state.fillHistory, enabled, status: 'loading' } }
+          ? state.fillHistory.enabled
+            ? state
+            : { fillHistory: { ...state.fillHistory, enabled, status: 'waiting' } }
           : {
               fillHistory: { enabled, status: 'off', summary: null, selectedId: null },
               terrainEpoch: 'now',

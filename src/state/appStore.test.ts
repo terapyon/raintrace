@@ -130,7 +130,7 @@ describe('createAppStore', () => {
 })
 
 describe('盛土の履歴の状態', () => {
-  it('selectPoint で fillHistory はオンのまま loading に戻り、terrainEpoch は now に戻る', () => {
+  it('selectPoint で fillHistory はオンのまま waiting に戻り、terrainEpoch は now に戻る', () => {
     const store = createAppStore()
     store.getState().setFillHistoryEnabled(true)
     store.getState().setFillHistoryResult('ready', {
@@ -144,7 +144,7 @@ describe('盛土の履歴の状態', () => {
     store.getState().selectPoint(139, 35)
     expect(store.getState().fillHistory).toEqual({
       enabled: true,
-      status: 'loading',
+      status: 'waiting',
       summary: null,
       selectedId: null,
     })
@@ -170,5 +170,20 @@ describe('盛土の履歴の状態', () => {
       summary: null,
       selectedId: null,
     })
+  })
+
+  it('オンにすると waiting。すでにオンなら何も変えない', () => {
+    const store = createAppStore()
+    store.getState().setFillHistoryEnabled(true)
+    expect(store.getState().fillHistory.status).toBe('waiting')
+    store.getState().setFillHistoryResult('ready', {
+      offsetM: 0.1,
+      candidates: [],
+      a54Available: true,
+      landformAvailable: true,
+    })
+    const before = store.getState()
+    store.getState().setFillHistoryEnabled(true)
+    expect(store.getState()).toBe(before)
   })
 })

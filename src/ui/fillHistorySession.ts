@@ -62,6 +62,7 @@ export class FillHistorySession {
     const terrainId = this.client.terrainId
     if (!this.app.getState().fillHistory.enabled || terrain === null || terrainId === null) return
     const generation = this.generation
+    this.app.getState().setFillHistoryResult('loading', null)
     this.client.computeFillHistory(terrainId, terrain).then(
       (result) => {
         // 古い依頼、オフにした後、今の地形と違う地形の応答は描かない
