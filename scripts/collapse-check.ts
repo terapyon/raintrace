@@ -136,6 +136,8 @@ const result = computeCollapse({
   elevation: current.elevation,
   validMask: current.validMask,
   removed,
+  pastElevation: fill.pastElevation,
+  offsetM: fill.offsetM,
   candidateId: cand.id,
   ratio: ratio as 1 | 0.5 | 0.25,
   presetId,

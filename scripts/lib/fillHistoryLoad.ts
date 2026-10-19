@@ -104,6 +104,8 @@ export type FillHistoryLoad =
   | (Loaded & {
       status: 'ok'
       offsetM: number
+      /** 昔の標高（offsetM を足す前。NaN は無効） */
+      pastElevation: Float32Array
       /** 補正後の標高差（今 − 昔 − 補正値） */
       delta: Float32Array
       labels: Int32Array
@@ -212,6 +214,7 @@ export async function loadFillHistory(
     current,
     frame,
     offsetM: corrected.offsetM,
+    pastElevation: pastElev,
     delta: corrected.delta,
     labels,
     candidates,

@@ -120,6 +120,9 @@ export interface CollapseRequest {
   terrainId: number
   terrain: TerrainPayload
   removed: Float32Array
+  /** 09 の結果の pastElevation（offsetM を足す前）と offsetM */
+  pastElevation: Float32Array
+  offsetM: number
   candidateId: number
   ratio: CollapseRatio
   presetId: string
@@ -515,6 +518,7 @@ export class SimulationClient {
       const elevation = terrain.elevation.slice()
       const validMask = terrain.validMask.slice()
       const removed = request.removed.slice()
+      const pastElevation = request.pastElevation.slice()
       worker.postMessage(
         {
           type: 'collapse',
@@ -524,11 +528,13 @@ export class SimulationClient {
           elevation,
           validMask,
           removed,
+          pastElevation,
+          offsetM: request.offsetM,
           candidateId: request.candidateId,
           ratio: request.ratio,
           presetId: request.presetId,
         },
-        [elevation.buffer, validMask.buffer, removed.buffer],
+        [elevation.buffer, validMask.buffer, removed.buffer, pastElevation.buffer],
       )
     })
   }

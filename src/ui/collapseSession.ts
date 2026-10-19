@@ -181,7 +181,16 @@ export class CollapseSession {
     let result: CollapsePayload
     try {
       result = await this.client.collapse(
-        { terrainId, terrain: base, removed, candidateId, ratio, presetId },
+        {
+          terrainId,
+          terrain: base,
+          removed,
+          pastElevation: fill.pastElevation,
+          offsetM: fill.offsetM,
+          candidateId,
+          ratio,
+          presetId,
+        },
         (fraction) => {
           if (generation === this.computeGeneration) actions.setCollapseProgress(fraction)
         },

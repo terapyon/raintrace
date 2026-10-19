@@ -63,6 +63,9 @@ export type MainToWorkerMessage =
       elevation: Float32Array
       validMask: Uint8Array
       removed: Float32Array
+      /** 09 の結果の pastElevation（offsetM を足す前）と offsetM。水路を探すのに使う（spec 10b） */
+      pastElevation: Float32Array
+      offsetM: number
       candidateId: number
       ratio: CollapseRatio
       presetId: string
@@ -193,6 +196,15 @@ export interface DammedSiteSummary {
   spill: { lon: number; lat: number }
 }
 
+/** 盛土の下に仮定した水路（spec 10b） */
+export interface CulvertSummary {
+  /** 水路の線（pit から出口へ。セルの中心の [lon, lat]） */
+  line: Array<[number, number]>
+  lengthM: number
+  /** 崩れた土で端がふさがった */
+  blocked: boolean
+}
+
 /** 盛土が崩れた後の地形と、せき止められた場所（spec 10）。配列は格子と同じ並びで Transferable で送る */
 export interface CollapsePayload {
   /** 崩れる前の地形の id */
@@ -208,6 +220,9 @@ export interface CollapsePayload {
   depositedM3: number
   outsideM3: number
   dams: DammedSiteSummary[]
+  /** 水路を仮定したときの、溝ありの崩れる前の地形（解析・流出の縁つき、geo は入力の geo）。仮定しなければ null */
+  before: TerrainPayload | null
+  culvert: CulvertSummary | null
 }
 
 /** 再生の失敗の理由。no-elevation-at-rain-center は 03 の NoElevationAtRainCenterError（name で判別する） */

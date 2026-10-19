@@ -75,6 +75,8 @@ const payload = (terrainId = 5): CollapsePayload => ({
   depositedM3: 7,
   outsideM3: 1,
   dams: [dam],
+  before: null,
+  culvert: null,
 })
 
 const side = (depth: number[], maxDepth: number): CompareSide =>

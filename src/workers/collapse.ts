@@ -1,7 +1,14 @@
 import type { AssembledGrid } from '../dem/DemGrid'
 import { pixelToLonLat } from '../dem/tileMath'
 import { debrisPreset } from '../shared/debrisPresets'
-import type { CollapsePayload, CollapseRatio, TerrainGeo } from '../shared/protocol'
+import type {
+  CollapsePayload,
+  CollapseRatio,
+  CulvertSummary,
+  TerrainGeo,
+  TerrainPayload,
+} from '../shared/protocol'
+import { carveCulvert, culvertBlocked, findCulvert } from '../simulation/debris/culvert.ts'
 import { findDammedSites } from '../simulation/debris/dams.ts'
 import { simulateCollapse } from '../simulation/debris/simulateCollapse.ts'
 import { buildOutflowCells } from '../simulation/outflowCells'
@@ -15,6 +22,9 @@ export interface CollapseInput {
   elevation: Float32Array
   validMask: Uint8Array
   removed: Float32Array
+  /** 09 の結果の pastElevation（offsetM を足す前）と offsetM */
+  pastElevation: Float32Array
+  offsetM: number
   candidateId: number
   ratio: CollapseRatio
   presetId: string
@@ -40,20 +50,6 @@ export function computeCollapse(
     onProgress,
   )
 
-  // 崩れた後の地形の解析（流出の縁は validMask だけから作るので、崩れる前と同じ geo の下で作り直すだけ）
-  const afterGrid: AssembledGrid = {
-    elevation: result.after,
-    validMask: validMask.slice(),
-    width: size,
-    height: size,
-    cellSizeM,
-    invalidRatio: geo.invalidRatio,
-  }
-  const analysis = analyzeTerrain(afterGrid)
-  const outflow = buildOutflowCells(afterGrid.validMask, size)
-  const { payload: after } = packTerrain(afterGrid, analysis, geo, outflow)
-
-  // 崩れる前と、土を取り去っただけの跡（積もらせる前）の満水の量と比べて、せき止められた窪地を選ぶ
   const terrainOf = (z: Float32Array) => ({
     elevation: z,
     validMask,
@@ -61,17 +57,61 @@ export function computeCollapse(
     height: size,
     cellSizeM,
   })
-  const before = analyzeDepressions(terrainOf(elevation))
-  const scarElevation = new Float32Array(elevation.length)
-  for (let i = 0; i < scarElevation.length; i++) {
-    scarElevation[i] = (elevation[i] ?? 0) - (result.removed[i] ?? 0)
+  // 解析と流出の縁の入った地形にする（流出の縁は validMask だけから作るので、geo は崩れる前と同じ）
+  const packOf = (z: Float32Array) => {
+    const grid: AssembledGrid = {
+      elevation: z,
+      validMask: validMask.slice(),
+      width: size,
+      height: size,
+      cellSizeM,
+      invalidRatio: geo.invalidRatio,
+    }
+    const analysis = analyzeTerrain(grid)
+    const outflow = buildOutflowCells(grid.validMask, size)
+    return { analysis, payload: packTerrain(grid, analysis, geo, outflow).payload }
   }
+
+  // 今の地形の窪地と、盛土の下の水路（spec 10b §2）。候補は土を取り去るセル
+  const current = analyzeDepressions(terrainOf(elevation))
+  const past = new Float32Array(input.pastElevation.length)
+  for (let i = 0; i < past.length; i++) past[i] = (input.pastElevation[i] ?? 0) + input.offsetM
+  const candidate = new Uint8Array(elevation.length)
+  for (let i = 0; i < candidate.length; i++) candidate[i] = (result.removed[i] ?? 0) > 0 ? 1 : 0
+  const found = findCulvert({
+    elevation,
+    past,
+    validMask,
+    candidate,
+    labels: current.labels,
+    depressions: current.depressions,
+    size,
+    cellSizeM,
+  })
+  const blocked = found !== null && culvertBlocked(found, result.deposit)
+  // 水路があれば崩れる前に溝を掘る。ふさがっていなければ崩れた後にも掘る
+  const carve = (z: Float32Array) => (found === null ? z : carveCulvert(z, found))
+  const beforeElevation = carve(elevation)
+  const afterElevation = blocked ? result.after : carve(result.after)
+  const { analysis, payload: after } = packOf(afterElevation)
+
+  // 崩れる前と、土を取り去っただけの跡（積もらせる前）の満水の量と比べて、せき止められた窪地を選ぶ
+  const scarRaw = new Float32Array(elevation.length)
+  for (let i = 0; i < scarRaw.length; i++) {
+    scarRaw[i] = (elevation[i] ?? 0) - (result.removed[i] ?? 0)
+  }
+  const scarElevation = carve(scarRaw)
+  const before = found === null ? current : analyzeDepressions(terrainOf(beforeElevation))
   const scar = analyzeDepressions(terrainOf(scarElevation))
   const sites = findDammedSites(
-    { fill: before.fill, elevation, scar: { fill: scar.fill, elevation: scarElevation } },
+    {
+      fill: before.fill,
+      elevation: beforeElevation,
+      scar: { fill: scar.fill, elevation: scarElevation },
+    },
     {
       fill: analysis.fill,
-      elevation: result.after,
+      elevation: afterElevation,
       labels: analysis.labels,
       depressions: analysis.depressions,
     },
@@ -96,6 +136,20 @@ export function computeCollapse(
     }
   })
 
+  const culvert: CulvertSummary | null =
+    found === null
+      ? null
+      : {
+          line: Array.from(found.path, (i) => {
+            const row = Math.floor(i / size)
+            const col = i - row * size
+            const p = pixelToLonLat(geo.originX + col + 0.5, geo.originY + row + 0.5, geo.z)
+            return [p.lon, p.lat] as [number, number]
+          }),
+          lengthM: found.lengthM,
+          blocked,
+        }
+
   return {
     terrainId: input.terrainId,
     candidateId: input.candidateId,
@@ -108,13 +162,14 @@ export function computeCollapse(
     depositedM3: result.depositedM3,
     outsideM3: result.outsideM3,
     dams,
+    before: found === null ? null : packOf(beforeElevation).payload,
+    culvert,
   }
 }
 
-/** メインへ移す配列（実体は必ず ArrayBuffer。packTerrain の transfer と同じ並び + removed・deposit） */
+/** メインへ移す配列（実体は必ず ArrayBuffer。packTerrain の transfer と同じ並び + removed・deposit、あれば before の 7 つ） */
 export function collapseTransferables(result: CollapsePayload): ArrayBuffer[] {
-  const t = result.after
-  return [
+  const terrainBuffers = (t: TerrainPayload) => [
     t.elevation.buffer,
     t.validMask.buffer,
     t.flowDirection.buffer,
@@ -122,7 +177,11 @@ export function collapseTransferables(result: CollapsePayload): ArrayBuffer[] {
     t.labels.buffer,
     t.outflow.nearest.buffer,
     t.outflow.band.buffer,
+  ]
+  return [
+    ...terrainBuffers(result.after),
     result.removed.buffer,
     result.deposit.buffer,
+    ...(result.before === null ? [] : terrainBuffers(result.before)),
   ] as ArrayBuffer[]
 }

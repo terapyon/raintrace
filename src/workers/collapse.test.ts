@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { TerrainGeo } from '../shared/protocol'
 import { DEBRIS_BULKING } from '../simulation/debris/constants.ts'
+import { findCulvert } from '../simulation/debris/culvert.ts'
 import {
   CELL,
   SIZE,
   terraceWithRim,
+  terrain,
+  valleyWithCrossFill,
   valleyWithFill,
 } from '../simulation/debris/testTerrain.test-support.ts'
+import { analyzeDepressions } from '../simulation/terrain/analyzeDepressions'
 import { collapseTransferables, computeCollapse } from './collapse'
 
 const geo: TerrainGeo = {
@@ -35,6 +39,8 @@ function run(presetId = 'near', progress?: (f: number) => void) {
       elevation: grid.elevation,
       validMask: grid.validMask,
       removed,
+      pastElevation: grid.elevation.slice(),
+      offsetM: 0,
       candidateId: 1,
       ratio: 1,
       presetId,
@@ -100,11 +106,100 @@ describe('computeCollapse', () => {
       elevation: grid.elevation,
       validMask: grid.validMask,
       removed,
+      pastElevation: grid.elevation.slice(),
+      offsetM: 0,
       candidateId: 1,
       ratio: 1,
       presetId: 'far',
     })
     expect(payload.outsideM3).toBeGreaterThan(0)
     expect(payload.dams).toEqual([])
+  })
+})
+
+describe('computeCollapse の水路（spec 10b）', () => {
+  function runCross(opts: { scale?: number; shift?: number; offsetM?: number } = {}) {
+    const { grid, removed, past } = valleyWithCrossFill()
+    const scaled = removed.map((v) => v * (opts.scale ?? 1))
+    const payload = computeCollapse({
+      terrainId: 3,
+      geo,
+      elevation: grid.elevation,
+      validMask: grid.validMask,
+      removed: scaled,
+      pastElevation: past.map((v) => v + (opts.shift ?? 0)),
+      offsetM: opts.offsetM ?? 0,
+      candidateId: 1,
+      ratio: 1,
+      presetId: 'near',
+    })
+    return { grid, removed: scaled, past, payload }
+  }
+
+  it('valleyWithCrossFill・near・全部: 水路があり blocked、before に pit の窪地は無く、after の pit に窪地があり dams に入る', () => {
+    const { grid, payload } = runCross()
+    const orig = analyzeDepressions(terrain(grid.elevation, grid.validMask))
+    const dep = orig.depressions.filter((d) => d.significant)[0]
+    expect(dep).toBeDefined()
+    expect(payload.culvert).not.toBeNull()
+    expect(payload.culvert?.blocked).toBe(true)
+    expect(payload.culvert?.lengthM).toBeGreaterThan(0)
+    expect(payload.culvert?.line.length).toBeGreaterThan(1)
+    const before = payload.before
+    expect(before).not.toBeNull()
+    const lab = before?.labels[dep?.pitIndex ?? 0] ?? 0
+    expect(before?.depressions.find((d) => d.id === lab)?.significant ?? false).toBe(false)
+    expect(before?.geo).toBe(geo)
+    const afterLab = payload.after.labels[dep?.pitIndex ?? 0] ?? 0
+    expect(payload.after.depressions.find((d) => d.id === afterLab)?.significant).toBe(true)
+    expect(payload.dams.some((d) => d.depressionId === afterLab)).toBe(true)
+  })
+
+  it('崩れる厚さが小さく端に 0.5 m 届かないと blocked は false で、after にも溝がある', () => {
+    const { grid, removed, past, payload } = runCross({ scale: 0.02 })
+    const orig = analyzeDepressions(terrain(grid.elevation, grid.validMask))
+    const culvert = findCulvert({
+      elevation: grid.elevation,
+      past,
+      validMask: grid.validMask,
+      candidate: removed.map((v) => (v > 0 ? 1 : 0)) as unknown as Uint8Array,
+      labels: orig.labels,
+      depressions: orig.depressions,
+      size: SIZE,
+      cellSizeM: CELL,
+    })
+    expect(culvert).not.toBeNull()
+    let maxEnd = 0
+    for (const i of culvert?.ends ?? []) maxEnd = Math.max(maxEnd, payload.deposit[i] ?? 0)
+    expect(maxEnd).toBeLessThan(0.5)
+    expect(payload.culvert?.blocked).toBe(false)
+    culvert?.path.forEach((i, k) => {
+      expect(payload.after.elevation[i] ?? Number.NaN).toBeLessThanOrEqual(
+        (culvert.bed[k] ?? 0) + 1e-4,
+      )
+    })
+  })
+
+  it('offsetM を足した昔の地形で判定する（pastElevation を −3 m ずらし offsetM = +3 でも同じ path）', () => {
+    const a = runCross().payload
+    const b = runCross({ shift: -3, offsetM: 3 }).payload
+    expect(a.culvert).toBeTruthy()
+    expect(b.culvert?.line).toEqual(a.culvert?.line)
+    expect(b.culvert?.lengthM).toBe(a.culvert?.lengthM)
+  })
+
+  it('valleyWithFill（斜面の盛土）では before と culvert が null で、水路なしの結果', () => {
+    const { payload } = run()
+    expect(payload.before).toBeNull()
+    expect(payload.culvert).toBeNull()
+  })
+
+  it('collapseTransferables: before があればその配列も含み、重複が無い', () => {
+    const { payload } = runCross()
+    const list = collapseTransferables(payload)
+    const without = collapseTransferables({ ...payload, before: null })
+    expect(list.length).toBe(without.length + 7)
+    expect(new Set(list).size).toBe(list.length)
+    expect(list).toContain(payload.before?.elevation.buffer)
   })
 })

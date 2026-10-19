@@ -703,6 +703,7 @@ describe('SimulationClient の collapse（spec 10）', () => {
     validMask: new Uint8Array([1, 1, 1, 1]),
   } as unknown as TerrainPayload
   const removed = new Float32Array([0, 1, 0, 0])
+  const pastElevation = new Float32Array([5, 6, 7, 8])
   const result = (terrainId: number) => ({ terrainId }) as unknown as CollapsePayload
 
   function loaded() {
@@ -715,6 +716,8 @@ describe('SimulationClient の collapse（spec 10）', () => {
     terrainId,
     terrain,
     removed,
+    pastElevation,
+    offsetM: -1.5,
     candidateId: 3,
     ratio: 0.5 as const,
     presetId: 'near',
@@ -738,6 +741,11 @@ describe('SimulationClient の collapse（spec 10）', () => {
       expect.arrayContaining([sent.elevation.buffer, sent.validMask.buffer, sent.removed.buffer]),
     )
     expect(removed.byteLength).toBe(16)
+    expect(sent.offsetM).toBe(-1.5)
+    expect(sent.pastElevation).not.toBe(pastElevation)
+    expect(Array.from(sent.pastElevation)).toEqual([5, 6, 7, 8])
+    expect(worker.transferred).toContain(sent.pastElevation.buffer)
+    expect(pastElevation.byteLength).toBe(16)
     worker.reply({ type: 'collapseProgress', requestId: sent.requestId, fraction: 0.4 })
     worker.reply({ type: 'collapseReady', requestId: sent.requestId, result: result(terrainId) })
     await expect(done).resolves.toEqual(result(terrainId))
