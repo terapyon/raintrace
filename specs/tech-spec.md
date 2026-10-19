@@ -369,6 +369,17 @@ setRainfall() → step() ループ（雨は t = 0 に登録し、step ごとに�
 Renderer が GPU へ / React が統計を表示
 ```
 
+盛土が崩れた場合（実装 spec 10）は、同じ Worker に次のメッセージを足した（`src/shared/protocol.ts`）。大きな配列はメインが Worker へ写しを送る（Worker は格子を持たない。fillHistory と同じ）。
+
+| メインから Worker | 内容 | Worker からの返事 |
+|---|---|---|
+| `collapse`（`requestId`, `terrainId`, `geo`, 標高, マスク, 崩れる厚さ, 候補の id, 割合, プリセットの id） | 土砂の行き先を計算する（`computeCollapse`。粒の計算・形の整え・崩れた後の地形の解析・せき止めの判定） | `collapseProgress`（進み具合）→ `collapseReady`（崩れた後の地形・積もった厚さ・せき止められた場所）または `collapseFailed` |
+| `swapTerrain`（`requestId`, 標高, マスク, 格子の大きさ, 窪地） | 再生用のエンジンの地形を差し替える（タイルの読み直しをしない）。崩れる前｜崩れた後の切り替えで使う | `terrainSwapped` |
+| `compareCollapse`（`requestId`, 崩れる前・後の格子, 雨） | 再生用とは別のエンジンで、片側ずつ雨が降り終わるまで最速で計算する（`runToRainEnd`） | `compareProgress`（どちら側か・進み具合・残り秒の見込み）→ `compareReady`（両側の水深の写しと統計）または `compareFailed`（`cancelled` / `internal`） |
+| `cancelCompare`（`requestId`） | 比べる計算を中止する | `compareFailed`（`cancelled`） |
+
+`requestId` は呼び出しごとに増やし、古い返事は main 側で捨てる。`collapse` は Worker の中で同期して計算する（1000 m・DEM1A で約 3 秒）。`terrainId` は地形を差し替えると変わるので、盛土の履歴・崩れた後の突き合わせには、最後にタイルから読んだ地形の id（差し替えで変わらないもの）を使う。
+
 DEM の取得とデコードを Worker 内で行うことで、`OffscreenCanvas` の利用が可能になり、メインスレッドを一切ブロックしない。
 
 `createImageBitmap` は既定で色空間の変換やアルファの乗算を行うことがあり、PNG の RGB 値が変わると標高が狂う。`createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })` とし、Canvas は `getContext('2d', { willReadFrequently: true })` で取得する。実タイル 1 枚の既知の画素について、復号した標高が一致することを確かめるテストを置く。
@@ -910,6 +921,8 @@ base-spec §37 の構成に従う。
 初期実装は**日本語のみ**とする。i18n ライブラリは導入しない。
 
 ただし将来の多言語化に備え、UI に表示するすべての文字列を `src/ui/strings.ts` の単一オブジェクトに集約し、コンポーネント内に文字列リテラルを直接書かない。
+
+**例外（実装 spec 10）**: 崩れた土砂の「流れやすさ」のプリセットの表（`src/shared/debrisPresets.ts`）は、名前（`label`）と説明（`description`）をその表の中に持つ。Worker と UI が同じ表を共有し、行を足すだけで画面の選択肢・計算・テストに入るようにするため。表の外の文言は `strings.ts` に置く。
 
 ## 9.5 アクセシビリティ方針
 
@@ -1497,6 +1510,23 @@ tech-spec §6.3 の条件（500 m・DEM1A）では、1 番目（1 step の中央
 | `waterLayer` | 3.7 KB | — |
 | 総量 | 713.0 KB | 1.2 MB |
 
+10 完了時点（2026-10-19、`pnpm build && pnpm size`。gzip level 9、1KB = 1000 バイト）:
+
+| チャンク | 実測 | 予算 |
+|---|---:|---:|
+| `map` | 246.6 KB | 260 KB |
+| `ui` | 153.3 KB | 200 KB |
+| `index` | 37.0 KB（別に rolldown のランタイム 0.4 KB） | 20 KB（超過。記録のみ） |
+| 初期ロードの合計 | 437.2 KB | 500 KB |
+| `maplibre-gl-worker` | 131.8 KB | — |
+| `three` | 126.5 KB | — |
+| `simulation.worker` | 17.2 KB | — |
+| `View3d` | 6.0 KB | — |
+| `waterLayer` | 3.7 KB | — |
+| 総量 | 722.4 KB | 1.2 MB |
+
+- 09 完了時（430.6 KB）から、初期ロードは 6.6 KB、総量は 9.4 KB 増えた。上限に対して初期ロードは 62.8 KB の余裕がある。メモリ（比べる計算の間の Worker 約 140 MiB）は実装 spec 10 の記録 `docs/perf/2026-10-19-fill-collapse.md`
+
 - 盛土の履歴のコードが初期ロードを 06 完了時（419.8 KB）から約 10.8 KB、総量を約 17 KB 増やした。上限に対して初期ロードは 69.4 KB の余裕がある
 - A54 の静的ファイル（`public/data/a54/`、約 47 MB・382 個）はバンドルの外で、盛土の履歴をオンにしたときだけ範囲の周りの分を読む
 
@@ -1594,6 +1624,7 @@ MapLibre のアトリビューションコントロールに含める形で実�
 - 盛土の履歴がオンのときだけ: 「大規模盛土造成地：国土数値情報（大規模盛土造成地データ）（国土交通省）を加工して作成」（国土地理院の出典とはまとめず別に書く）
 - 盛土の履歴がオンのときだけ: 「人工地形：国土地理院 地形分類（人工地形）」（人工地形のソースの出典として足す）
 - 置き場所: 広い画面では右のパネルの左、狭い画面では地図の右上。パネルに隠れないようにする（常に見えることを保つため）
+- 実装 spec 10: スマートフォンの幅では、出典の置き場所を 220 px 空け、崩れる前｜崩れた後の切り替え（約 187 px）が出典の下に重ならないようにした（出典の文は折り返して背が高くなる）
 
 ## 16.2 依存ライブラリのライセンス
 
