@@ -20,6 +20,10 @@ describe('土砂の流れやすさのプリセット', () => {
       expect(p.persistence).toBeLessThanOrEqual(2.0)
       expect(p.reposeDeg).toBeGreaterThanOrEqual(0)
       expect(p.reposeDeg).toBeLessThanOrEqual(45)
+      expect(p.slopeThresholdDeg).toBeGreaterThanOrEqual(20)
+      expect(p.slopeThresholdDeg).toBeLessThanOrEqual(40)
+      expect(p.initialVelocityMS).toBeGreaterThanOrEqual(0)
+      expect(p.initialVelocityMS).toBeLessThanOrEqual(5)
     }
   })
 
