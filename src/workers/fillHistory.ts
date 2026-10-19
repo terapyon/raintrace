@@ -1,4 +1,4 @@
-import { createLimiter, GSI_RETRY_DELAYS_MS, retry } from '../dem/async'
+import { createLimiter, retry } from '../dem/async'
 import type { DemTileData } from '../dem/DemGrid'
 import type { FetchDemTile } from '../dem/demSelection'
 import { A54_TILE_Z } from '../dem/fillHistory/constants.ts'
@@ -25,7 +25,7 @@ import type {
   FillHistoryPayload,
   TerrainGeo,
 } from '../shared/protocol'
-import { HttpError, NetworkError, TILE_FETCH_TIMEOUT_MS } from './demLoader'
+import { gsiRetryOptions, HttpError, NetworkError, TILE_FETCH_TIMEOUT_MS } from './demLoader'
 
 /** 人工地形タイルのズームレベル。実データは z14 までで、z15 以上は 404 */
 const LANDFORM_TILE_Z = 14
@@ -182,12 +182,18 @@ async function loadLandform(
   fetchJson: FillHistoryDeps['fetchJson'],
 ): Promise<Array<{ rings: Rings; code: string }> | null> {
   try {
+    // 一部のタイルが 404 ならそのタイルは地物なし。覆うタイルがすべて 404 なら、データが無い（対応範囲の外）ので
+    // 「読めなかった」（null）にする（R11）
+    let found = 0
     const tiles = await Promise.all(
       tilesCovering(geo, LANDFORM_TILE_Z).map(async (tile) => {
         const json = await fetchJson(landformUrl(tile))
-        return json === null ? [] : parseLandformTile(json)
+        if (json === null) return []
+        found++
+        return parseLandformTile(json)
       }),
     )
+    if (found === 0) return null
     return tiles.flat().filter((p) => overlapsRange(p.rings, geo))
   } catch {
     return null
@@ -286,18 +292,6 @@ export function createJsonFetcher(
   origin: string,
 ): (url: string) => Promise<unknown | null> {
   const limit = createLimiter(6)
-  const sleep = (ms: number): Promise<void> =>
-    new Promise((resolve, reject) => {
-      const onAbort = (): void => {
-        clearTimeout(timer)
-        reject(signal.reason)
-      }
-      const timer = setTimeout(() => {
-        signal.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-      signal.addEventListener('abort', onAbort, { once: true })
-    })
   const fetchOnce = async (url: string): Promise<unknown | null> => {
     const attempt = AbortSignal.any([signal, AbortSignal.timeout(TILE_FETCH_TIMEOUT_MS)])
     let response: Response
@@ -316,11 +310,5 @@ export function createJsonFetcher(
       throw new NetworkError(error)
     }
   }
-  return (url) =>
-    retry(() => limit(() => fetchOnce(url)), {
-      delaysMs: GSI_RETRY_DELAYS_MS,
-      sleep,
-      shouldRetry: (error) =>
-        !signal.aborted && (error instanceof NetworkError || error instanceof HttpError),
-    })
+  return (url) => retry(() => limit(() => fetchOnce(url)), gsiRetryOptions(signal))
 }

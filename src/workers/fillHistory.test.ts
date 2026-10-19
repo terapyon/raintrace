@@ -140,4 +140,71 @@ describe('computeFillHistory', () => {
     expect(r.candidates[0]?.volumeM3).toBeLessThan(r.candidates[1]?.volumeM3 ?? 0)
     expect(r.a54Polygons).toHaveLength(1)
   })
+
+  it('人工地形のタイルがすべて 404 なら landformAvailable は false（A54 は true のまま）', async () => {
+    const r = await computeFillHistory(input(1, []), { fetchDem: fetchFlat, fetchJson: noJson })
+    expect(r.landformAvailable).toBe(false)
+    expect(r.a54Available).toBe(true)
+  })
+
+  it('人工地形の一部のタイルだけ 404 なら地物なしとして landformAvailable は true', async () => {
+    let first = true
+    const r = await computeFillHistory(input(1, []), {
+      fetchDem: fetchFlat,
+      fetchJson: async (url) => {
+        if (!url.includes('landform')) return null
+        if (first) {
+          first = false
+          return { features: [] }
+        }
+        return null
+      },
+    })
+    expect(r.landformAvailable).toBe(true)
+  })
+
+  it('盛土地・埋立地のコードは根拠（中）になり、切土地のコードは根拠にならない', async () => {
+    const g = geo(1)
+    const boxes: Box[] = [
+      [2, 2, 22, 22, 8], // A
+      [40, 40, 52, 52, 8], // B
+    ]
+    const square = (c0: number, r0: number, c1: number, r1: number) => {
+      const p = pixelToLonLat(g.originX + c0, g.originY + r0, Z)
+      const q = pixelToLonLat(g.originX + c1, g.originY + r1, Z)
+      return [
+        [
+          [p.lon, p.lat],
+          [q.lon, p.lat],
+          [q.lon, q.lat],
+          [p.lon, q.lat],
+          [p.lon, p.lat],
+        ],
+      ]
+    }
+    const tile = {
+      features: [
+        {
+          properties: { code: '11004' },
+          geometry: { type: 'Polygon', coordinates: square(0, 0, 24, 24) },
+        },
+        {
+          properties: { code: '11003' },
+          geometry: { type: 'Polygon', coordinates: square(38, 38, 54, 54) },
+        },
+        {
+          properties: { code: '999999' },
+          geometry: { type: 'Polygon', coordinates: square(0, 0, 64, 64) },
+        },
+      ],
+    }
+    const r = await computeFillHistory(input(1, boxes), {
+      fetchDem: fetchFlat,
+      fetchJson: async (url) => (url.includes('landform') ? tile : null),
+    })
+    const byRise = [...r.candidates].sort((x, y) => y.areaM2 - x.areaM2)
+    expect(byRise[0]?.evidence).toBe('moderate') // A（大きい台）
+    expect(byRise[1]?.evidence).toBe('limited') // B
+    expect(r.landformPolygons.map((p) => p.code).sort()).toEqual(['11003', '11004'])
+  })
 })

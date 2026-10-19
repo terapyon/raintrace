@@ -1,4 +1,4 @@
-import { createLimiter, GSI_RETRY_DELAYS_MS, retry } from '../dem/async'
+import { createLimiter, GSI_RETRY_DELAYS_MS, type RetryOptions, retry } from '../dem/async'
 import type { FetchDemTile, TileFetchResult } from '../dem/demSelection'
 import { type DemId, demTileUrl } from '../dem/demSources'
 import { decodeGsiDem } from '../dem/GsiDemDecoder'
@@ -34,16 +34,9 @@ export interface TileFetchProgress {
   onDone(): void
 }
 
-/**
- * 地理院の DEM タイルの取得関数を作る（spec 02 §4.3）。同時に 6 件まで。404 は missing、
- * それ以外の HTTP エラーとネットワークエラーは 0.5・1・2 秒の間隔で最大 3 回再試行する。signal で取り消す
- */
-export function createGsiTileFetcher(
-  signal: AbortSignal,
-  progress: TileFetchProgress,
-): FetchDemTile {
-  const limit = createLimiter(6)
-  const sleep = (ms: number): Promise<void> =>
+/** signal で取り消せる待ち。取り消されたら signal.reason で reject する（src/dem は純粋なので Worker 側に置く） */
+export function abortableSleep(signal: AbortSignal): (ms: number) => Promise<void> {
+  return (ms) =>
     new Promise((resolve, reject) => {
       const onAbort = (): void => {
         clearTimeout(timer)
@@ -55,6 +48,27 @@ export function createGsiTileFetcher(
       }, ms)
       signal.addEventListener('abort', onAbort, { once: true })
     })
+}
+
+/** 地理院への取得の再試行（0.5・1・2 秒。取り消されたら再試行しない。HTTP エラーとネットワークエラーが対象） */
+export function gsiRetryOptions(signal: AbortSignal): RetryOptions {
+  return {
+    delaysMs: GSI_RETRY_DELAYS_MS,
+    sleep: abortableSleep(signal),
+    shouldRetry: (error) =>
+      !signal.aborted && (error instanceof NetworkError || error instanceof HttpError),
+  }
+}
+
+/**
+ * 地理院の DEM タイルの取得関数を作る（spec 02 §4.3）。同時に 6 件まで。404 は missing、
+ * それ以外の HTTP エラーとネットワークエラーは 0.5・1・2 秒の間隔で最大 3 回再試行する。signal で取り消す
+ */
+export function createGsiTileFetcher(
+  signal: AbortSignal,
+  progress: TileFetchProgress,
+): FetchDemTile {
+  const limit = createLimiter(6)
   // fetcher ごとに 1 枚だけ作り、使い回す（レビュー L5）。最初に使うときに作る
   // （Node のテストでは OffscreenCanvas が無いので、fetcher の生成時には作らない）
   let context: OffscreenCanvasRenderingContext2D | null = null
@@ -79,12 +93,7 @@ export function createGsiTileFetcher(
           progress.onAttempt()
           return fetchOnce(dem, tile, signal, getContext)
         }),
-      {
-        delaysMs: GSI_RETRY_DELAYS_MS,
-        sleep,
-        shouldRetry: (error) =>
-          !signal.aborted && (error instanceof NetworkError || error instanceof HttpError),
-      },
+      gsiRetryOptions(signal),
     ).finally(() => progress.onDone())
   }
 }

@@ -173,5 +173,7 @@ async function runFillHistory(
           ? 'network'
           : 'internal'
     post({ type: 'fillHistoryFailed', requestId, reason, message: String(error) })
+    // 失敗したので、残りの取得を止める（loadTerrain と同じ）
+    controller.abort()
   }
 }
