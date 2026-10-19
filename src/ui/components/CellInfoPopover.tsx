@@ -4,7 +4,7 @@ import Popover from '@mui/material/Popover'
 import Typography from '@mui/material/Typography'
 import type { Popover as PopoverState } from '../../state/clickState'
 import type { CellInfo } from '../cellInfo'
-import { formatMeters } from '../format'
+import { formatMeters, formatSignedMeters } from '../format'
 import { strings } from '../strings'
 
 interface Props {
@@ -15,14 +15,24 @@ interface Props {
   onClose: () => void
 }
 
-function Value({ label, value, testId }: { label: string; value: number | null; testId: string }) {
+function Value({
+  label,
+  value,
+  testId,
+  format = formatMeters,
+}: {
+  label: string
+  value: number | null
+  testId: string
+  format?: (value: number) => string
+}) {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}>
       <Typography variant="body2" color="text.secondary">
         {label}
       </Typography>
       <Typography variant="body2" data-testid={testId}>
-        {value === null ? strings.format.none : formatMeters(value)}
+        {value === null ? strings.format.none : format(value)}
       </Typography>
     </Box>
   )
@@ -75,7 +85,12 @@ export function CellInfoPopover({ popover, cell, onConfirm, onClose }: Props) {
                 testId="cell-elevation"
               />
               {cell.deltaM !== undefined && (
-                <Value label={strings.cellInfo.delta} value={cell.deltaM} testId="cell-delta" />
+                <Value
+                  label={strings.cellInfo.delta}
+                  value={cell.deltaM}
+                  testId="cell-delta"
+                  format={formatSignedMeters}
+                />
               )}
               <Value label={strings.cellInfo.depth} value={cell.depthM} testId="cell-depth" />
               <Value label={strings.cellInfo.level} value={cell.levelM} testId="cell-level" />

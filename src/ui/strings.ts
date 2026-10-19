@@ -16,10 +16,12 @@ export const strings = {
     listTitle: '標高差の大きい範囲',
     none: '+5 m 以上の標高差の大きい範囲はありません',
     rowId: (id: number) => `#${id}`,
+    rowSeparator: '　',
     rise: (m: string) => `+${m} m`,
     volume: (approx: string) => `参考の体積 ${approx}`,
     evidence: { strong: '根拠: 強い', moderate: '根拠: 中くらい', limited: '根拠: 限られる' },
-    a54Overlap: (type: string) => `大規模盛土造成地に含まれます（${type}）`,
+    a54Overlap: (type: string | null) =>
+      type === null ? '大規模盛土造成地に含まれます' : `大規模盛土造成地に含まれます（${type}）`,
     a54Types: { valley: '谷埋め型', side: '腹付け型', unclassified: '型の区別なし' },
     landformOverlap: '人工地形の分類で盛土地とされています',
     detailAria: '選んだ範囲の詳細',

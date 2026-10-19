@@ -7,7 +7,13 @@ import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import { useStore } from 'zustand'
 import type { FillCandidate } from '../../shared/protocol'
-import { formatArea, formatDemLabel, formatVolumeApprox } from '../format'
+import {
+  formatArea,
+  formatDemLabel,
+  formatOffsetM,
+  formatRise,
+  formatVolumeApprox,
+} from '../format'
 import { strings } from '../strings'
 import type { TerrainSession } from '../terrainSession'
 
@@ -17,7 +23,7 @@ const t = strings.fillHistory
 function candidateLines(c: FillCandidate): string[] {
   return [
     formatArea(c.areaM2),
-    t.rise(c.maxRiseM.toFixed(1)),
+    formatRise(c.maxRiseM),
     t.volume(formatVolumeApprox(c.volumeM3)),
     t.evidence[c.evidence],
   ]
@@ -38,8 +44,10 @@ function CandidateDetail({ candidate }: { candidate: FillCandidate }) {
           {line}
         </Typography>
       ))}
-      {candidate.evidenceSources.includes('a54') && candidate.a54Type !== undefined && (
-        <Typography variant="body2">{t.a54Overlap(t.a54Types[candidate.a54Type])}</Typography>
+      {candidate.evidenceSources.includes('a54') && (
+        <Typography variant="body2">
+          {t.a54Overlap(candidate.a54Type === undefined ? null : t.a54Types[candidate.a54Type])}
+        </Typography>
       )}
       {candidate.evidenceSources.includes('landform') && (
         <Typography variant="body2">{t.landformOverlap}</Typography>
@@ -57,7 +65,6 @@ export function FillHistorySection({ session }: { session: TerrainSession }) {
   const fill = useStore(store, (s) => s.fillHistory)
   const breakdown = useStore(store, (s) => s.summary?.breakdown)
   const { enabled, status, summary, selectedId } = fill
-  const selected = summary?.candidates.find((c) => c.id === selectedId) ?? null
   return (
     <>
       <Typography variant="subtitle2">{t.title}</Typography>
@@ -88,6 +95,14 @@ export function FillHistorySection({ session }: { session: TerrainSession }) {
           {t.noOverlap}
         </Alert>
       )}
+      {enabled && (status === 'ready' || status === 'no-overlap') && (
+        <>
+          <Typography variant="body2">{t.past}</Typography>
+          {breakdown !== undefined && (
+            <Typography variant="body2">{t.now(formatDemLabel(breakdown))}</Typography>
+          )}
+        </>
+      )}
       {status === 'failed' && (
         <Alert severity="error" sx={{ my: 1 }}>
           {t.failed}
@@ -105,12 +120,8 @@ export function FillHistorySection({ session }: { session: TerrainSession }) {
               {t.a54Failed}
             </Alert>
           )}
-          <Typography variant="body2">{t.past}</Typography>
-          {breakdown !== undefined && (
-            <Typography variant="body2">{t.now(formatDemLabel(breakdown))}</Typography>
-          )}
           <Typography variant="body2" data-testid="fill-offset">
-            {t.offset(summary.offsetM.toFixed(1).replace('-', '−'))}
+            {t.offset(formatOffsetM(summary.offsetM))}
           </Typography>
           <Typography variant="subtitle2" sx={{ mt: 1 }}>
             {t.listTitle}
@@ -118,7 +129,10 @@ export function FillHistorySection({ session }: { session: TerrainSession }) {
           {summary.candidates.length === 0 ? (
             <Typography variant="body2">{t.none}</Typography>
           ) : (
-            <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+            <Box
+              component="ul"
+              sx={{ listStyle: 'none', m: 0, p: 0, maxHeight: '40dvh', overflowY: 'auto' }}
+            >
               {summary.candidates.map((c) => (
                 <li key={c.id}>
                   <ButtonBase
@@ -135,17 +149,22 @@ export function FillHistorySection({ session }: { session: TerrainSession }) {
                       p: 0.5,
                       borderRadius: 1,
                       bgcolor: c.id === selectedId ? 'action.selected' : undefined,
+                      '&.Mui-focusVisible': {
+                        outline: 2,
+                        outlineStyle: 'solid',
+                        outlineColor: 'primary.main',
+                      },
                     }}
                   >
                     <Typography variant="body2" component="span">
-                      {[t.rowId(c.id), ...candidateLines(c)].join('　')}
+                      {[t.rowId(c.id), ...candidateLines(c)].join(t.rowSeparator)}
                     </Typography>
                   </ButtonBase>
+                  {c.id === selectedId && <CandidateDetail candidate={c} />}
                 </li>
               ))}
             </Box>
           )}
-          {selected !== null && <CandidateDetail candidate={selected} />}
         </>
       )}
       {enabled && (

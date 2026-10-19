@@ -97,6 +97,39 @@ describe('FillHistorySection', () => {
     expect(text).toContain('人工地形の分類で盛土地とされています')
   })
 
+  it('詳しい欄は選んだ行の li の中に出る。A54 の型が無くても「含まれます」を出す', async () => {
+    const { show } = setup()
+    show('ready', {
+      candidates: [candidate({ id: 1 }), candidate({ id: 2, evidenceSources: ['a54'] })],
+    })
+    await userEvent.click(screen.getByTestId('fill-row-2'))
+    const detail = screen.getByTestId('fill-detail')
+    expect(screen.getByTestId('fill-row-2').closest('li')?.contains(detail)).toBe(true)
+    expect(screen.getByTestId('fill-row-1').closest('li')?.contains(detail)).toBe(false)
+    expect(detail.textContent).toContain('大規模盛土造成地に含まれます')
+    expect(detail.textContent).not.toContain('（')
+  })
+
+  it('no-overlap でも昔と今のデータの名前を出す（ready と同じ）', () => {
+    const { store, show } = setup()
+    act(() =>
+      store.getState().setTerrain({
+        demLevel: 1,
+        breakdown: { dem5a: 10 },
+        cellSizeM: 5,
+        invalidRatio: 0,
+        elevationRange: null,
+        depressionCount: 0,
+        largestDepression: null,
+      }),
+    )
+    show('no-overlap', null)
+    expect(screen.getByText(strings.fillHistory.past)).toBeTruthy()
+    expect(screen.getByText(/^今: /)).toBeTruthy()
+    show('failed', null)
+    expect(screen.queryByText(strings.fillHistory.past)).toBeNull()
+  })
+
   it('候補が無ければ「ありません」', () => {
     const { show } = setup()
     show('ready', { candidates: [] })
