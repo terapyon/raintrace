@@ -1,11 +1,14 @@
 /**
  * 盛土の履歴を実際の地理院タイルで確かめる（spec 09 §3.6・§7.3）。Node 24 で直接実行する:
  *
- *   node scripts/fill-history-check.ts <lat> <lon> <sizeM> [--shift-past <m>]
+ *   node scripts/fill-history-check.ts <lat> <lon> <sizeM> [--shift-past <m>] [--limit <N>]
  *
  * 今の DEM は src/dem の段の選び方（selectDem）で取り、昔の標高（dem_png z14）を今の格子に補間して、
  * ずれの補正・候補の抽出・根拠（A54・人工地形）まで求める。使った DEM・ずれ・候補（面積・最大・体積・根拠）と、
- * タイルの取得を除いた計算の時間を Markdown で出す。--shift-past は昔の標高を東へ <m> ずらす（位置のずれの記録用）。
+ * タイルの取得を除いた計算の時間を Markdown で出す。候補の一覧はアプリ（Worker）と同じ並び（根拠の強い順、同じなら体積の大きい順）で、
+ * 「#」は候補の id（面積の大きい順）。--limit <N> で表示する件数を変える（既定 15）。
+ * 注意: タイルの取得の層（DEM・A54・人工地形の取得と読み取り）は src/workers/fillHistory.ts から複製したもので、
+ * 共有しているのは計算（src/dem/fillHistory の関数）だけ。--shift-past は昔の標高を東へ <m> ずらす（位置のずれの記録用）。
  * 合否は判定しない。A54 は public/data/a54 から、人工地形（z14）は地理院から取る
  */
 import { readFileSync } from 'node:fs'
@@ -38,10 +41,14 @@ type Rings = Array<Array<[number, number]>>
 
 const args = process.argv.slice(2)
 const shiftIdx = args.indexOf('--shift-past')
+const limitIdx = args.indexOf('--limit')
+const limit = limitIdx >= 0 ? Number(args.splice(limitIdx, 2)[1]) : 15
 const shiftM = shiftIdx >= 0 ? Number(args.splice(shiftIdx, 2)[1]) : 0
 const [lat, lon, sizeM] = args.map(Number) as [number, number, number]
-if (![lat, lon, sizeM].every(Number.isFinite) || !Number.isFinite(shiftM)) {
-  console.error('使い方: node scripts/fill-history-check.ts <lat> <lon> <sizeM> [--shift-past <m>]')
+if (![lat, lon, sizeM].every(Number.isFinite) || !Number.isFinite(shiftM) || !(limit >= 0)) {
+  console.error(
+    '使い方: node scripts/fill-history-check.ts <lat> <lon> <sizeM> [--shift-past <m>] [--limit <N>]',
+  )
   process.exit(1)
 }
 
@@ -216,7 +223,13 @@ console.log('')
 console.log('| # | 面積 m² | 最大 m | 体積 m³ | 中心 | 根拠 |')
 console.log('| --- | ---: | ---: | ---: | --- | --- |')
 const levelText = { strong: '強い', moderate: '中くらい', limited: '限られる' } as const
-for (const c of candidates.slice(0, 15)) {
+const levelOrder = { strong: 0, moderate: 1, limited: 2 } as const
+const levelOf = (id: number) => evidence.get(id)?.level ?? 'limited'
+// アプリの一覧と同じ並び（根拠の強い順、同じなら体積の大きい順）
+const shown = [...candidates].sort(
+  (a, b) => levelOrder[levelOf(a.id)] - levelOrder[levelOf(b.id)] || b.volumeM3 - a.volumeM3,
+)
+for (const c of shown.slice(0, limit)) {
   const e = evidence.get(c.id)
   const p = pixelToLonLat(
     frame.originX + c.centroid.col + 0.5,
@@ -230,4 +243,4 @@ for (const c of candidates.slice(0, 15)) {
     `| ${c.id} | ${fmtInt(c.areaM2)} | +${c.maxRiseM.toFixed(1)} | ${fmtInt(c.volumeM3)} | ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)} | ${levelText[e?.level ?? 'limited']}${src ? ` [${src}]` : ''} |`,
   )
 }
-if (candidates.length > 15) console.log(`| … | 他 ${candidates.length - 15} 件 | | | | |`)
+if (shown.length > limit) console.log(`| … | 他 ${shown.length - limit} 件 | | | | |`)
