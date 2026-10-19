@@ -232,7 +232,7 @@ describe('View3d の範囲の地形の世代（E2E 用の data-view3d-range-gene
       elevation: new Float32Array([1, 2, 3, 4]),
       validMask: new Uint8Array([1, 1, 1, 1]),
     }
-    const dataset = (getContainer() as { dataset: Record<string, string> }).dataset
+    const dataset = (getContainer as unknown as () => { dataset: Record<string, string> })().dataset
     anyView.ensureRange()
     expect(dataset.view3dRangeGeneration).toBe('1')
     anyView.ensureRange()
