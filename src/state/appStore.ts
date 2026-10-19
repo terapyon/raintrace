@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { DemId } from '../dem/demSources'
-import type { TerrainErrorReason, TerrainPayload } from '../shared/protocol'
+import type { FillCandidate, TerrainErrorReason, TerrainPayload } from '../shared/protocol'
 import { CLOSED, type Popover } from './clickState'
 
 /** 読み込みの失敗の理由。superseded（新しい地点に置き換わった）は失敗として置かない */
@@ -42,6 +42,31 @@ export type ViewMode = '2d' | '3d'
  */
 export type View3dStatus = 'off' | 'loading' | '3d' | 'fallback-2d' | 'error'
 
+/** 盛土の履歴（spec 09）。保存しない画面の一時状態。off: 切っている。waiting: オンだが計算する地形がまだ無い。loading: 計算中 */
+export type FillHistoryStatus =
+  | 'off'
+  | 'waiting'
+  | 'loading'
+  | 'ready'
+  | 'unavailable'
+  | 'no-overlap'
+  | 'failed'
+
+/** パネルに出す小さな値だけ。大きな配列は FillHistorySession が持つ */
+export interface FillHistorySummary {
+  offsetM: number
+  candidates: FillCandidate[]
+  a54Available: boolean
+  landformAvailable: boolean
+}
+
+export interface FillHistoryState {
+  enabled: boolean
+  status: FillHistoryStatus
+  summary: FillHistorySummary | null
+  selectedId: number | null
+}
+
 export interface AppState {
   selected: { lon: number; lat: number } | null
   load: LoadState
@@ -51,6 +76,9 @@ export interface AppState {
   popover: Popover
   viewMode: ViewMode
   view3dStatus: View3dStatus
+  fillHistory: FillHistoryState
+  /** 今の地形か、昔の地形か（盛土の履歴。保存しない） */
+  terrainEpoch: 'now' | 'past'
 }
 
 export interface AppActions {
@@ -63,6 +91,11 @@ export interface AppActions {
   setPopover(popover: Popover): void
   setViewMode(mode: ViewMode): void
   setView3dStatus(status: View3dStatus): void
+  /** false で status 'off'・summary null・selectedId null・terrainEpoch 'now' に戻す */
+  setFillHistoryEnabled(enabled: boolean): void
+  setFillHistoryResult(status: FillHistoryStatus, summary: FillHistorySummary | null): void
+  selectFillCandidate(id: number | null): void
+  setTerrainEpoch(epoch: 'now' | 'past'): void
 }
 
 export type AppStore = StoreApi<AppState & AppActions>
@@ -85,14 +118,23 @@ export function createAppStore(): AppStore {
     popover: CLOSED,
     viewMode: '2d',
     view3dStatus: 'off',
+    fillHistory: { enabled: false, status: 'off', summary: null, selectedId: null },
+    terrainEpoch: 'now',
     selectPoint: (lon, lat) =>
-      set({
+      set((state) => ({
+        fillHistory: {
+          enabled: state.fillHistory.enabled,
+          status: state.fillHistory.enabled ? 'waiting' : 'off',
+          summary: null,
+          selectedId: null,
+        },
+        terrainEpoch: 'now',
         selected: { lon, lat },
         load: { status: 'loading', done: 0, started: 0 },
         summary: null,
         cursor: null,
         popover: CLOSED,
-      }),
+      })),
     setProgress: (done, started) => set({ load: { status: 'loading', done, started } }),
     setTerrain: (summary) => set({ summary, load: { status: 'ready' } }),
     setFailed: (reason) => set({ load: { status: 'failed', reason }, summary: null }),
@@ -100,8 +142,28 @@ export function createAppStore(): AppStore {
     // マウスの移動のたびに呼ばれる。同じ値なら同じ state を返し、購読者（パネル）に知らせない
     setCursor: (cursor) => set((state) => (sameCursor(state.cursor, cursor) ? state : { cursor })),
     setPopover: (popover) => set({ popover }),
-    setViewMode: (viewMode) => set({ viewMode }),
+    // 2D に戻すと昔の地形の表示も終わる（昔は 3D だけの表示。spec 09 §4.3）
+    setViewMode: (viewMode) =>
+      set(viewMode === '2d' ? { viewMode, terrainEpoch: 'now' } : { viewMode }),
     setView3dStatus: (view3dStatus) => set({ view3dStatus }),
+    setFillHistoryEnabled: (enabled) =>
+      set((state) =>
+        enabled
+          ? state.fillHistory.enabled
+            ? state
+            : { fillHistory: { ...state.fillHistory, enabled, status: 'waiting' } }
+          : {
+              fillHistory: { enabled, status: 'off', summary: null, selectedId: null },
+              terrainEpoch: 'now',
+            },
+      ),
+    setFillHistoryResult: (status, summary) =>
+      set((state) => ({
+        fillHistory: { ...state.fillHistory, status, summary, selectedId: null },
+      })),
+    selectFillCandidate: (selectedId) =>
+      set((state) => ({ fillHistory: { ...state.fillHistory, selectedId } })),
+    setTerrainEpoch: (terrainEpoch) => set({ terrainEpoch }),
   }))
 }
 

@@ -17,6 +17,7 @@ import type { TerrainSession } from '../terrainSession'
 import { ControlsSection } from './ControlsSection'
 import { DisclaimerNotice } from './DisclaimerDialog'
 import { DisplaySettings } from './DisplaySettings'
+import { FillHistorySection } from './FillHistorySection'
 import { SpillNotices } from './SpillNotices'
 import { StatisticsPanel } from './StatisticsPanel'
 import { Row, TerrainInfo } from './TerrainInfo'
@@ -138,6 +139,8 @@ export function Panel({
             <TerrainInfo store={store} />
             <Divider sx={{ my: 1 }} />
             <DisplaySettings app={store} settings={settings} />
+            <Divider sx={{ my: 1 }} />
+            <FillHistorySection session={session} />
             <SpillNotices simulation={simulation.store} />
           </Box>
         )}

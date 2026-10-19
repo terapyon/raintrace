@@ -8,14 +8,18 @@ import {
   formatDemLabel,
   formatElapsed,
   formatMeters,
+  formatOffsetM,
   formatOutflowRate,
   formatPercent,
   formatPlaybackRate,
   formatRainDepth,
   formatRainStatus,
+  formatRise,
+  formatSignedMeters,
   formatStep,
   formatStepsPerSecond,
   formatVolume,
+  formatVolumeApprox,
 } from './format'
 
 describe('表示の書式', () => {
@@ -95,5 +99,35 @@ describe('経過時間・降雨・流出の速さ・実行速度の書式（spec
   it('実行速度は「実時間の N 倍（M step/秒）」。どちらも四捨五入の整数', () => {
     expect(formatPlaybackRate(27.4, 59.6)).toBe('実時間の 27 倍（60 step/秒）')
     expect(formatPlaybackRate(0, 0)).toBe('実時間の 0 倍（0 step/秒）')
+  })
+})
+
+describe('formatVolumeApprox（spec 09 §6.3）', () => {
+  it('有効数字 2 桁に丸めてから単位を決める', () => {
+    expect(formatVolumeApprox(48)).toBe('約 48 m³')
+    expect(formatVolumeApprox(4520)).toBe('約 4,500 m³')
+    expect(formatVolumeApprox(9950)).toBe('約 1.0 万 m³')
+    expect(formatVolumeApprox(40000)).toBe('約 4.0 万 m³')
+    expect(formatVolumeApprox(45169)).toBe('約 4.5 万 m³')
+    expect(formatVolumeApprox(99500)).toBe('約 10 万 m³')
+    expect(formatVolumeApprox(100000)).toBe('約 10 万 m³')
+    expect(formatVolumeApprox(995000)).toBe('約 100 万 m³')
+    expect(formatVolumeApprox(1234567)).toBe('約 120 万 m³')
+  })
+})
+
+describe('盛土の履歴の数値の書式', () => {
+  it('formatOffsetM: 小数 1 桁、マイナスは「−」、0 に丸まるときは符号なし', () => {
+    expect(formatOffsetM(-2.4)).toBe('−2.4')
+    expect(formatOffsetM(1.26)).toBe('1.3')
+    expect(formatOffsetM(-0.04)).toBe('0.0')
+  })
+  it('formatRise: +付き小数 1 桁', () => {
+    expect(formatRise(7.26)).toBe('+7.3 m')
+  })
+  it('formatSignedMeters: 正に+を付け、0 と負は付けない', () => {
+    expect(formatSignedMeters(2)).toBe('+2.00 m')
+    expect(formatSignedMeters(-1.5)).toBe('−1.50 m')
+    expect(formatSignedMeters(0.001)).toBe('0.00 m')
   })
 })

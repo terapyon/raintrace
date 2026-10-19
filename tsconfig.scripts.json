@@ -10,5 +10,5 @@
   "include": ["scripts/**/*.ts"],
   // scripts/bench-engine.ts は src/simulation を import する。参照しないと、simulation のソースを
   // このプロジェクトの設定（noUncheckedIndexedAccess: true）で検査してしまう（tech-spec §10.3）
-  "references": [{ "path": "./tsconfig.sim.json" }]
+  "references": [{ "path": "./tsconfig.sim.json" }, { "path": "./tsconfig.core.json" }]
 }

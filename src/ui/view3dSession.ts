@@ -6,6 +6,7 @@ import type { WaterPalette } from '../map/waterColormap'
 import type { TerrainPayload } from '../shared/protocol'
 import type { AppStore, ViewMode } from '../state/appStore'
 import type { SettingsStore } from '../state/settingsStore'
+import type { FillHistorySession } from './fillHistorySession'
 import type { SimulationSession } from './simulationSession'
 
 /** View3d（map/view3d/View3d.ts）の、ここから使う部分。テストでは偽物に差し替える */
@@ -15,6 +16,8 @@ export interface View3dLike {
   setExaggeration(value: number): void
   setBasemap(basemap: Basemap): void
   setWater(water: Float32Array | null): void
+  /** 非 null で範囲の地形を昔の標高にし、水面を隠す。null で今に戻す */
+  setPastElevation(past: Float32Array | null): void
   setPalette(palette: WaterPalette): void
   setShowOutflow(show: boolean): void
   restore(): void
@@ -37,6 +40,7 @@ export class View3dSession {
   private readonly simulation: SimulationSession
   private readonly app: AppStore
   private readonly settings: SettingsStore
+  private readonly fillHistory: Pick<FillHistorySession, 'result' | 'onResult'>
   private readonly load: () => Promise<View3dFactory>
   private options: View3dOptions = DEFAULT_VIEW3D_OPTIONS
   private controller: MapController | null = null
@@ -49,11 +53,13 @@ export class View3dSession {
     simulation: SimulationSession,
     app: AppStore,
     settings: SettingsStore,
+    fillHistory: Pick<FillHistorySession, 'result' | 'onResult'>,
     load: () => Promise<View3dFactory> = loadView3d,
   ) {
     this.simulation = simulation
     this.app = app
     this.settings = settings
+    this.fillHistory = fillHistory
     this.load = load
     simulation.onTerrain((terrain) => {
       this.terrain = terrain
@@ -63,6 +69,15 @@ export class View3dSession {
       this.water = water
       this.view?.setWater(water)
     })
+    fillHistory.onResult(() => this.syncPast())
+  }
+
+  /** 「昔」を見ていて結果があるときだけ昔の標高を渡す。それ以外は null（今の地形） */
+  private syncPast(): void {
+    const result = this.fillHistory.result()
+    const past =
+      this.app.getState().terrainEpoch === 'past' && result !== null ? result.pastElevation : null
+    this.view?.setPastElevation(past)
   }
 
   /** 3D の選択肢（計測用のフック perfHook が、最初に 3D にする前に呼ぶ） */
@@ -81,6 +96,7 @@ export class View3dSession {
     const offRestyle = controller.onRestyle(() => this.view?.restore())
     const offApp = this.app.subscribe((state, previous) => {
       if (state.viewMode !== previous.viewMode) void this.applyMode(state.viewMode)
+      if (state.terrainEpoch !== previous.terrainEpoch) this.syncPast()
     })
     const offSettings = this.settings.subscribe((state, previous) => {
       const exaggeration = state.display.verticalExaggeration
@@ -149,6 +165,7 @@ export class View3dSession {
         view.setTerrain(this.terrain)
         view.setWater(this.water)
         this.view = view
+        this.syncPast()
         return view
       })
       // .then の第 2 引数は load() 自体の rejection しか拾わず、上の onFulfilled（create・View3d の

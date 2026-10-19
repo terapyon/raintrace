@@ -1,0 +1,16 @@
+/* 出典（MapLibre の AttributionControl）をパネルに隠さない（tech-spec §16.1・spec 09 裁定 R17）。
+   md 以上（Panel.tsx の wide と同じ 900px）は右のパネル（320px）の左、未満は下のパネルに届かない地図の右上に出す。
+   左上の 2D/3D・昔/今の切り替えと重ならないよう、右上では幅を絞って折り返す */
+.maplibregl-ctrl-bottom-right {
+  right: 320px;
+  max-width: calc(100% - 320px - 16px);
+}
+
+@media (max-width: 899.95px) {
+  .maplibregl-ctrl-bottom-right {
+    top: 0;
+    bottom: auto;
+    right: 0;
+    max-width: calc(100% - 140px);
+  }
+}

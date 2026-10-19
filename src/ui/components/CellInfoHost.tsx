@@ -9,6 +9,10 @@ import { CellInfoPopover } from './CellInfoPopover'
 export function CellInfoHost({ session }: { session: TerrainSession }) {
   const popover = useStore(session.store, (s) => s.popover)
   useStore(session.simulation.store, (s) => s.stats?.step)
+  // 盛土の履歴のオン・オフ、結果の到着、今と昔の切り替えで、開いている間の値も読み直す
+  useStore(session.store, (s) => s.fillHistory.enabled)
+  useStore(session.store, (s) => s.fillHistory.status)
+  useStore(session.store, (s) => s.terrainEpoch)
   const cell = popover.kind === 'cell' ? session.cellInfo(popover.lon, popover.lat) : null
   return (
     <CellInfoPopover

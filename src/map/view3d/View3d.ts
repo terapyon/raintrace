@@ -62,6 +62,8 @@ export class View3d {
   private showOutflow: boolean
   /** terrain の無効セルを埋めた標高。3D で描くときに初めて作る（2D の間は作らない） */
   private range: RangeElevation | null = null
+  /** 「昔」の標高（無効は NaN）。非 null の間、範囲の標高は昔のもので、水面は外す（spec 09 §4.3） */
+  private past: Float32Array | null = null
   private enabled = false
   private rendering: View3dRendering = 'off'
   /** 3D の視点へ動かしている間。動き終えたら data-view3d-framed を立てる */
@@ -118,6 +120,8 @@ export class View3d {
   setTerrain(terrain: TerrainPayload | null): void {
     this.terrain = terrain
     this.range = null
+    // 昔の標高は前の範囲のもの。新しい範囲では持ち越さない（UI 側は結果の破棄で null も送る）
+    this.past = null
     this.controller.whenLoaded(() => {
       this.removeWater()
       if (this.rendering === 'off' || this.terrain === null) return
@@ -143,6 +147,21 @@ export class View3d {
         this.hide3d('off')
         this.controller.map.easeTo({ pitch: 0, duration: CAMERA_MS })
       }
+    })
+  }
+
+  /**
+   * 範囲の中の地形を昔の標高（非 null）か今（null）にする。昔の間は 3D の水面を外し、今に戻すと最新の水深で足し直す
+   */
+  setPastElevation(past: Float32Array | null): void {
+    if (past === this.past) return
+    this.past = past
+    this.range = null
+    this.controller.whenLoaded(() => {
+      if (this.rendering !== '3d' || this.terrain === null) return
+      this.terrain3d.setRange(this.ensureRange())
+      if (this.past !== null) this.removeWater()
+      else this.ensureWater()
     })
   }
 
@@ -214,7 +233,15 @@ export class View3d {
     if (this.range === null) {
       const start = performance.now()
       const { geo } = terrain
-      const elevation = fillInvalidNearest(terrain.elevation, terrain.validMask, geo.size, geo.size)
+      const elevation =
+        this.past === null
+          ? fillInvalidNearest(terrain.elevation, terrain.validMask, geo.size, geo.size)
+          : fillInvalidNearest(
+              this.past,
+              Uint8Array.from(this.past, (v) => (Number.isFinite(v) ? 1 : 0)),
+              geo.size,
+              geo.size,
+            )
       this.options.onPrepareTime?.(performance.now() - start)
       this.range = {
         z: geo.z,
@@ -260,6 +287,8 @@ export class View3d {
   /** 水面の Custom Layer を、無ければ足す。three は初めて要るときに動的 import で読む（spec 05 §3.8） */
   private ensureWater(): void {
     if (!this.options.water || this.rendering !== '3d' || this.terrain === null) return
+    // 昔の地形を見ている間は水面を出さない（水は今の地形の上を流れた結果なので）
+    if (this.past !== null) return
     if (this.controller.map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) return
     if (this.waterLoading) return
     this.waterLoading = true
@@ -279,7 +308,7 @@ export class View3d {
     const terrain = this.terrain
     const range = this.ensureRange()
     const { map } = this.controller
-    if (this.rendering !== '3d' || terrain === null || range === null) return
+    if (this.rendering !== '3d' || terrain === null || range === null || this.past !== null) return
     if (map.getLayer(VIEW3D_LAYER_IDS.water) !== undefined) return
     this.water?.dispose()
     const start = performance.now()

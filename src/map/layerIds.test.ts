@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { beforeLayerId, OVERLAY_LAYER_ORDER, TERRAIN_LAYER_IDS, WATER_LAYER_IDS } from './layerIds'
+import {
+  beforeLayerId,
+  FILL_LAYER_IDS,
+  OVERLAY_LAYER_ORDER,
+  TERRAIN_LAYER_IDS,
+  WATER_LAYER_IDS,
+} from './layerIds'
 import { VIEW3D_LAYER_IDS } from './view3d/layerIds'
 
 /** 今あるレイヤーの集合から has を作る */
@@ -12,6 +18,7 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
   it('並びは地形・水・3D のレイヤー ID をちょうど 1 回ずつ含む', () => {
     const all = [
       ...Object.values(TERRAIN_LAYER_IDS),
+      ...Object.values(FILL_LAYER_IDS),
       ...Object.values(WATER_LAYER_IDS),
       ...Object.values(VIEW3D_LAYER_IDS),
     ]
@@ -71,5 +78,16 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
     expect(beforeLayerId(WATER_LAYER_IDS.water, having(WATER_LAYER_IDS.outflow))).toBe(
       WATER_LAYER_IDS.outflow,
     )
+  })
+
+  it('fill-delta は窪地の上・水深の下、fill-markers は一番上（spec 09 §4.2）', () => {
+    const order = OVERLAY_LAYER_ORDER
+    const at = (id: string): number => order.indexOf(id)
+    expect(at(FILL_LAYER_IDS.delta)).toBe(at(TERRAIN_LAYER_IDS.depressions) + 1)
+    expect(at(FILL_LAYER_IDS.landform)).toBe(at(FILL_LAYER_IDS.delta) + 1)
+    expect(at(FILL_LAYER_IDS.a54)).toBe(at(FILL_LAYER_IDS.landform) + 1)
+    expect(at(FILL_LAYER_IDS.a54)).toBeLessThan(at(WATER_LAYER_IDS.water))
+    expect(at(FILL_LAYER_IDS.markers)).toBe(order.length - 1)
+    expect(at(FILL_LAYER_IDS.markers)).toBe(at(TERRAIN_LAYER_IDS.markers) + 1)
   })
 })

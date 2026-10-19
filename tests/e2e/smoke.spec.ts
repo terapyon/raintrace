@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 import { strings } from '../../src/ui/strings'
 import { acknowledgeDisclaimer } from './support/app'
 import { type GsiCounts, routeGsi } from './support/gsi'
@@ -132,4 +132,44 @@ test('Button・ToggleButton の文字が大文字にならない（単位の m�
   await expect(stepButton).toBeVisible()
   expect(await rangeButton.innerText()).toBe(strings.rainfall.rangeSizeValue(250))
   expect(await stepButton.innerText()).toBe(strings.playback.step)
+})
+
+// 出典はパネルに隠れてはならない（tech-spec §16.1・spec 09 裁定 R17）。
+// 出典・パネル・左上の切り替えの外接矩形が重ならず、出典が画面の中に収まることを確かめる
+async function expectAttributionClear(page: Page, viewport: { width: number; height: number }) {
+  const box = async (selector: string) => {
+    const b = await page.locator(selector).first().boundingBox()
+    if (b === null) throw new Error(`${selector} の位置が取れない`)
+    return b
+  }
+  const attribution = await box('.maplibregl-ctrl-attrib')
+  const overlaps = (a: typeof attribution, b: typeof attribution) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+  expect(attribution.x).toBeGreaterThanOrEqual(0)
+  expect(attribution.y).toBeGreaterThanOrEqual(0)
+  expect(attribution.x + attribution.width).toBeLessThanOrEqual(viewport.width)
+  expect(attribution.y + attribution.height).toBeLessThanOrEqual(viewport.height)
+  expect(overlaps(attribution, await box('.MuiDrawer-paper'))).toBe(false)
+  expect(overlaps(attribution, await box(`[aria-label="${strings.view3d.mode}"]`))).toBe(false)
+}
+
+test('出典が、広い画面（1280×800）で右のパネルに隠れない', async ({ page }) => {
+  const viewport = { width: 1280, height: 800 }
+  await page.setViewportSize(viewport)
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: strings.attribution.text })).toBeVisible()
+  await expectAttributionClear(page, viewport)
+})
+
+test('出典が、狭い画面（390×844）で下のパネルを開いていてもたたんでいても隠れない', async ({
+  page,
+}) => {
+  const viewport = { width: 390, height: 844 }
+  await page.setViewportSize(viewport)
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: strings.attribution.text })).toBeVisible()
+  await expectAttributionClear(page, viewport)
+  await page.getByRole('button', { name: strings.panel.collapse }).click()
+  await expect(page.getByRole('button', { name: strings.panel.expand })).toBeVisible()
+  await expectAttributionClear(page, viewport)
 })

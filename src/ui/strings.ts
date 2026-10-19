@@ -1,8 +1,41 @@
 /** 画面に出す文字列（tech-spec §9.4）。コンポーネントに文字列リテラルを直接書かない */
 export const strings = {
+  epoch: { label: '地形の時期', past: '昔', now: '今' },
+  fillHistory: {
+    title: '盛土の履歴',
+    enable: '昔と今の地形を比べる',
+    waiting: '地点を選ぶと、昔と今の地形を比べます',
+    loading: '昔の標高を読み込んで比べています',
+    unavailable: 'この範囲は今の地形も 10 m の標高（DEM10B）のため、昔と比べられません',
+    noOverlap: '昔と今の両方に標高があるセルがありません',
+    failed: '昔の標高を読み込めませんでした',
+    landformFailed: '人工地形の分類を読み込めませんでした。根拠の判定に使っていません',
+    a54Failed: '大規模盛土造成地のデータを読み込めませんでした。根拠の判定に使っていません',
+    past: '昔: 10 m の標高（DEM10B。1/25,000 地形図から作成。地形の時期は地域によりおおむね 1990〜2000 年頃）',
+    now: (dem: string) => `今: ${dem}`,
+    offset: (m: string) => `昔と今の標高の基準のずれ ${m} m を差し引いています`,
+    listTitle: '標高差の大きい範囲',
+    none: '+5 m 以上の標高差の大きい範囲はありません',
+    rowId: (id: number) => `#${id}`,
+    rowSeparator: '　',
+    rise: (m: string) => `+${m} m`,
+    volume: (approx: string) => `参考の体積 ${approx}`,
+    evidence: { strong: '根拠: 強い', moderate: '根拠: 中くらい', limited: '根拠: 限られる' },
+    a54Overlap: (type: string | null) =>
+      type === null ? '大規模盛土造成地に含まれます' : `大規模盛土造成地に含まれます（${type}）`,
+    a54Types: { valley: '谷埋め型', side: '腹付け型', unclassified: '型の区別なし' },
+    landformOverlap: '人工地形の分類で盛土地とされています',
+    detailAria: '選んだ範囲の詳細',
+    notice:
+      'この機能は、公開されている標高データ（昔: 10 m の標高、今: 範囲で使った標高）の差を見せるものです。盛土や斜面の安全性、崩れる可能性を判定するものではありません。昔と今のデータが、この場所の造成の前と後であるとは限りません。昔の 10 m の標高は精度が 5 m 程度と粗く、タイルにするときに平らに均されているため、起伏の激しい場所ではずれが大きくなることがあります。5 m 未満の変化は示さず、示した範囲も実際に盛られたとは限りません。体積は標高差から出した参考の値です。大規模盛土造成地は、安全性の確認が必要な箇所を示すもので、危険な箇所を示すものではありません。',
+    a54Attribution:
+      '大規模盛土造成地：国土数値情報（大規模盛土造成地データ）（国土交通省）を加工して作成',
+    landformAttribution: '人工地形：国土地理院 地形分類（人工地形）',
+  },
   attribution: {
     text: '地図・標高データ：国土地理院',
     url: 'https://maps.gsi.go.jp/development/ichiran.html',
+    note: '解析・シミュレーション表示：地理院タイル（標高タイル）を加工して RainTrace が作成',
   },
   map: {
     ariaLabel: '地図',
@@ -176,6 +209,9 @@ export const strings = {
     useAsCenter: 'ここを降雨中心にする',
     newPoint: 'ここを新しい地点にする',
     close: '閉じる',
+    pastElevation: '昔の標高',
+    nowElevation: '今の標高',
+    delta: '差（補正後）',
   },
   /** 地図の ○ の説明（spec 07 §3.4） */
   markerInfo: {
@@ -200,6 +236,8 @@ export const strings = {
     cellSize: (value: string) => `約 ${value} m`,
     percent: (value: string) => `${value}%`,
     cubicMeters: (value: string) => `${value} m³`,
+    volumeApproxMan: (value: string) => `約 ${value} 万 m³`,
+    volumeApprox: (value: string) => `約 ${value} m³`,
     area: (value: string) => `${value} m²`,
     stepsPerSecond: (value: string) => `${value} step/秒`,
     step: (step: number) => `Step ${step}`,

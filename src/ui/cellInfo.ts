@@ -4,7 +4,15 @@ import type { TerrainPayload } from '../shared/protocol'
 
 export type CellInfo =
   | { kind: 'no-data' }
-  | { kind: 'value'; elevationM: number; depthM: number; levelM: number }
+  | {
+      kind: 'value'
+      elevationM: number
+      depthM: number
+      levelM: number
+      /** 盛土の履歴がオンのときだけ（NaN は null） */
+      pastM?: number | null
+      deltaM?: number | null
+    }
 
 /**
  * 地点のセルの標高・水深・水位（base-spec §39）。範囲の外は null。
@@ -15,6 +23,7 @@ export function cellInfoAt(
   water: Float32Array | null,
   lon: number,
   lat: number,
+  history?: { past: Float32Array; delta: Float32Array },
 ): CellInfo | null {
   // 世界のコピーの上のクリックも、選んだ地点と同じ [−180, 180) の経度で調べる
   const cell = cellAt(terrain.geo, wrapLongitude(lon), lat)
@@ -23,5 +32,12 @@ export function cellInfoAt(
   if (terrain.validMask[index] !== 1) return { kind: 'no-data' }
   const elevationM = terrain.elevation[index] ?? 0
   const depthM = water?.[index] ?? 0
-  return { kind: 'value', elevationM, depthM, levelM: elevationM + depthM }
+  const info: CellInfo = { kind: 'value', elevationM, depthM, levelM: elevationM + depthM }
+  if (history !== undefined) {
+    const finiteOrNull = (v: number | undefined): number | null =>
+      v === undefined || Number.isNaN(v) ? null : v
+    info.pastM = finiteOrNull(history.past[index])
+    info.deltaM = finiteOrNull(history.delta[index])
+  }
+  return info
 }

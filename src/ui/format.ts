@@ -15,6 +15,29 @@ export const formatCubicMeters = (value: number): string =>
 /** 水量（base-spec §38、spec 04 §6.3）: 小数 1 桁、1 m³ 未満は小数 2 桁。桁は丸めた後の値で決める */
 export const formatVolume = (m3: number): string =>
   strings.format.cubicMeters(m3.toFixed(Math.abs(Number(m3.toFixed(2))) < 1 ? 2 : 1))
+/** 参考の体積（spec 09 §6.3）: 先に有効数字 2 桁へ丸めてから単位を決める。1 万 m³ 以上は万 m³（10 万未満は小数 1 桁） */
+export function formatVolumeApprox(m3: number): string {
+  const group = (v: number): string => v.toLocaleString('en-US')
+  const rounded = Number(m3.toPrecision(2))
+  if (rounded >= 10000) {
+    const man = rounded / 10000
+    return strings.format.volumeApproxMan(man < 10 ? man.toFixed(1) : group(man))
+  }
+  return strings.format.volumeApprox(group(rounded))
+}
+/** 最大の上昇（spec 09 §6.3）: 「+7.3 m」 */
+export const formatRise = (m: number): string => strings.fillHistory.rise(m.toFixed(1))
+/** 基準のずれ: 小数 1 桁、マイナスは「−」。丸めて 0 になるときは符号を付けない（「−0.0」を出さない） */
+export function formatOffsetM(m: number): string {
+  const fixed = m.toFixed(1)
+  return Number(fixed) === 0 ? '0.0' : fixed.replace('-', '−')
+}
+/** 符号付きの m（差）: 正の値には「+」、負の値には「−」（formatOffsetM と同じ）を付ける */
+export function formatSignedMeters(value: number): string {
+  const fixed = value.toFixed(2)
+  const n = Number(fixed)
+  return strings.format.meters(n > 0 ? `+${fixed}` : n < 0 ? fixed.replace('-', '−') : fixed)
+}
 export const formatArea = (m2: number): string => strings.format.area(String(Math.round(m2)))
 export const formatStepsPerSecond = (rate: number): string =>
   strings.format.stepsPerSecond(String(Math.round(rate)))

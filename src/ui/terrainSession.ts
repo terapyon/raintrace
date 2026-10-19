@@ -1,8 +1,10 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { wrapLongitude } from '../dem/tileMath'
+import { FILL_LAYER_IDS, FillHistoryOverlay } from '../map/FillHistoryOverlay'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TERRAIN_LAYER_IDS, TerrainOverlay } from '../map/TerrainOverlay'
+import type { FillHistoryPayload } from '../shared/protocol'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
 import { arrowSpacingForRange } from '../state/arrowSpacing'
 import { type ClickEvent, type ClickTarget, type MarkerRef, reduceClick } from '../state/clickState'
@@ -10,6 +12,7 @@ import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
+import { FillHistorySession } from './fillHistorySession'
 import {
   type MarkerInfoRow,
   markerHitBox,
@@ -17,6 +20,7 @@ import {
   markerRefsFromFeatures,
 } from './markerInfo'
 import type { SimulationSession } from './simulationSession'
+import { strings } from './strings'
 import { View3dSession } from './view3dSession'
 
 /**
@@ -30,6 +34,8 @@ export class TerrainSession {
   private readonly settings: SettingsStore
   /** 2D と 3D の切り替えと 3D の表示（spec 05 §3.6） */
   readonly view3d: View3dSession
+  /** 盛土の履歴の計算と結果（spec 09 §4.6） */
+  readonly fillHistory: FillHistorySession
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
   // URL の書き込みは、変更（地点の選択・地図の移動・雨量や範囲の変更）から 300ms 置いてまとめて行う（spec 04 §7）
@@ -47,7 +53,8 @@ export class TerrainSession {
     this.store = store
     this.simulation = simulation
     this.settings = settings
-    this.view3d = new View3dSession(simulation, store, settings)
+    this.fillHistory = new FillHistorySession(client, store, simulation)
+    this.view3d = new View3dSession(simulation, store, settings, this.fillHistory)
   }
 
   /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通）を範囲に比例させた値（spec 05 §3.3） */
@@ -68,11 +75,25 @@ export class TerrainSession {
       (run) => controller.whenLoaded(run),
       (lon, lat) => this.dispatchClick({ type: 'marker-drag-end', lon, lat }),
     )
+    // 盛土の履歴は地形の上、水の下（OVERLAY_LAYER_ORDER が位置を決める）。結果の出入りと選択に合わせて描く
+    const fillOverlay = new FillHistoryOverlay(
+      map,
+      (run) => controller.whenLoaded(run),
+      strings.fillHistory.a54Attribution,
+      strings.fillHistory.landformAttribution,
+    )
+    const showFill = (result: FillHistoryPayload | null): void => {
+      const geo = this.client.terrain?.geo
+      if (result === null || geo === undefined) fillOverlay.clear()
+      else fillOverlay.show(result, geo, this.store.getState().fillHistory.selectedId)
+    }
+    const offFillResult = this.fillHistory.onResult(showFill)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
     // ベースマップの切り替えの後に、地形 → 水の順に足し直す（水は地形のレイヤーの間に入れる）
     const offRestyle = controller.onRestyle(() => {
       this.overlay?.restore()
+      fillOverlay.restore()
       this.simulation.restoreOverlay()
     })
     // 3D の足し直しは 04 の重ね描きの足し直しの後に行う（onRestyle は登録した順に呼ばれる）
@@ -88,6 +109,12 @@ export class TerrainSession {
       // ○（最低点・あふれ出し点）に当たれば、セル情報の代わりに印の説明を開く（spec 07 §3.1）。
       // 当たりの判定は描画された円に任せ、±4 px の矩形で問い合わせる。3D でも circle は地形に焼かれず直接
       // 描かれ、queryRenderedFeatures は標高を渡して判定する（軽微 m1）
+      // 盛土の候補の印に当たれば、その候補を選ぶ（セル情報は開かない）
+      const candidate = fillCandidateAt(event.point.x, event.point.y)
+      if (candidate !== null) {
+        this.store.getState().selectFillCandidate(candidate)
+        return
+      }
       const markers = markersAt(event.point.x, event.point.y)
       if (markers.length > 0) {
         this.dispatchClick({ type: 'marker-click', markers, lon: lng, lat, x, y })
@@ -110,6 +137,14 @@ export class TerrainSession {
         map.queryRenderedFeatures(markerHitBox(px, py), { layers: [TERRAIN_LAYER_IDS.markers] }),
       )
     }
+    const fillCandidateAt = (px: number, py: number): number | null => {
+      if (map.getLayer(FILL_LAYER_IDS.markers) === undefined) return null
+      const features = map.queryRenderedFeatures(markerHitBox(px, py), {
+        layers: [FILL_LAYER_IDS.markers],
+      })
+      const id = features[0]?.properties?.id
+      return typeof id === 'number' ? id : null
+    }
     // ○ の上では指の形のカーソル（spec 07 §3.5）。レイヤー付きの mouseenter・mouseleave は、レイヤーが無い間は
     // 問い合わせない（maplibre-gl-dev.mjs 24517〜24560 の _createDelegatedListener）。ドラッグ中は MapLibre に任せる
     const onMarkerEnter = (): void => {
@@ -131,6 +166,9 @@ export class TerrainSession {
     }
     const unsubscribe = this.store.subscribe((state, previous) => {
       if (state.display !== previous.display) this.overlay?.setDisplay(this.overlayDisplay())
+      if (state.fillHistory.selectedId !== previous.fillHistory.selectedId) {
+        fillOverlay.setSelected(state.fillHistory.selectedId)
+      }
     })
     const unsubscribeSettings = this.settings.subscribe((state, previous) => {
       // 範囲の大きさの変更は、同じ地点を読み込み直してリセットする（spec 04 §3）
@@ -169,10 +207,12 @@ export class TerrainSession {
       unsubscribe()
       unsubscribeSettings()
       offRestyle()
+      offFillResult()
       detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()
       this.overlay = null
+      fillOverlay.clear()
       this.controller = null
     }
   }
@@ -228,7 +268,19 @@ export class TerrainSession {
   cellInfo(lon: number, lat: number): CellInfo | null {
     const terrain = this.client.terrain
     if (terrain === null) return null
-    return cellInfoAt(terrain, this.client.water, lon, lat)
+    const store = this.store.getState()
+    // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）
+    const result = store.fillHistory.enabled ? this.fillHistory.result() : null
+    const history =
+      result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
+    return cellInfoAt(terrain, this.client.water, lon, lat, history)
+  }
+
+  /** 一覧で選んだ範囲の中心へ地図を動かす（拡大率は変えない。spec 09 §6.3） */
+  focusFillCandidate(id: number): void {
+    const candidate = this.store.getState().fillHistory.summary?.candidates.find((c) => c.id === id)
+    if (candidate === undefined || this.controller === null) return
+    this.controller.map.easeTo({ center: [candidate.centroid.lon, candidate.centroid.lat] })
   }
 
   /** 印の説明の数値（spec 07 §3.4、計画で決めたこと 3）。地形が無ければ空 */

@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     // UI のテスト（.test.tsx）は、ファイルの先頭の `// @vitest-environment jsdom` で jsdom を選ぶ（既定は node）
-    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs'],
+    include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs', 'scripts/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

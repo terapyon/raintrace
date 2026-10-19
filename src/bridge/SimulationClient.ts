@@ -1,4 +1,6 @@
 import type {
+  FillHistoryFailureReason,
+  FillHistoryPayload,
   FrameMessage,
   MainToWorkerMessage,
   PlaybackSpeed,
@@ -45,6 +47,17 @@ export class TerrainLoadError extends Error {
   }
 }
 
+/** 盛土の履歴の失敗の理由。superseded: 新しい依頼に置き換わった。worker: Worker が異常終了した */
+export type FillHistoryErrorReason = FillHistoryFailureReason | 'superseded' | 'worker'
+
+export class FillHistoryLoadError extends Error {
+  readonly reason: FillHistoryErrorReason
+  constructor(reason: FillHistoryErrorReason, message: string) {
+    super(message)
+    this.reason = reason
+  }
+}
+
 /** メインが受け取った frame。water は次の frame が届くまで手元に置く。runId は FrameMessage と同じ */
 export interface FrameView {
   water: Float32Array<ArrayBuffer>
@@ -71,6 +84,14 @@ interface PendingTerrain {
   onProgress: ((done: number, started: number) => void) | undefined
 }
 
+interface PendingFillHistory {
+  requestId: number
+  /** 依頼した時点の地形（loadTerrain の requestId）。応答のときの今の地形と比べる */
+  terrainId: number
+  resolve: (result: FillHistoryPayload) => void
+  reject: (error: FillHistoryLoadError) => void
+}
+
 /**
  * メインスレッドで Worker を所有する（tech-spec §5.1）。アプリで 1 つだけ作る（01 の申し送り H2）。
  * 読み込んだ地形と最新の水深の配列はここに持ち、React やストアには載せない
@@ -85,6 +106,7 @@ export class SimulationClient {
   private readonly createWorker: () => WorkerPort
   private readonly pendingPings = new Map<number, PendingPing>()
   private pendingTerrain: PendingTerrain | null = null
+  private pendingFillHistory: PendingFillHistory | null = null
   private readonly frameListeners = new Set<(frame: FrameView) => void>()
   private readonly simFailedListeners = new Set<(reason: SimFailureReason, runId: number) => void>()
   private readonly crashListeners = new Set<() => void>()
@@ -126,6 +148,32 @@ export class SimulationClient {
           new TerrainLoadError(message.reason, message.message),
         )
         break
+      case 'fillHistoryReady': {
+        // Worker は計算中に地形が変わったかを知らないので、直前の loadTerrain の前の地形の結果が返りうる。
+        // 依頼の terrainId と応答の terrainId が、今の地形と同じものだけを通す
+        const pending = this.takeFillHistory(message.requestId)
+        if (pending === null) break
+        if (message.result.terrainId === this.terrainId && pending.terrainId === this.terrainId) {
+          pending.resolve(message.result)
+        } else {
+          pending.reject(
+            new FillHistoryLoadError('superseded', '地形が変わったため結果を捨てました'),
+          )
+        }
+        break
+      }
+      case 'fillHistoryFailed': {
+        const pending = this.takeFillHistory(message.requestId)
+        if (pending === null) break
+        if (pending.terrainId === this.terrainId) {
+          pending.reject(new FillHistoryLoadError(message.reason, message.message))
+        } else {
+          pending.reject(
+            new FillHistoryLoadError('superseded', '地形が変わったため結果を捨てました'),
+          )
+        }
+        break
+      }
       case 'frame':
         this.receiveFrame(message)
         break
@@ -193,6 +241,36 @@ export class SimulationClient {
       this.pendingTerrain = { requestId, resolve, reject, onProgress }
       worker.postMessage({ type: 'loadTerrain', requestId, lon, lat, sizeM })
       this.armWatchdog()
+    })
+  }
+
+  /**
+   * 今の地形の盛土の履歴を頼む（spec 09 §4.6）。Worker は格子を持たないので、標高とマスクの写しを送る
+   * （メインの地形はそのまま残す）。前の依頼は superseded で失敗させる
+   */
+  computeFillHistory(terrainId: number, terrain: TerrainPayload): Promise<FillHistoryPayload> {
+    this.pendingFillHistory?.reject(
+      new FillHistoryLoadError('superseded', '新しい依頼に置き換わりました'),
+    )
+    this.pendingFillHistory = null
+    const requestId = this.nextId++
+    return new Promise((resolve, reject) => {
+      let worker: WorkerPort
+      try {
+        worker = this.port()
+      } catch (error) {
+        throw new FillHistoryLoadError(
+          'worker',
+          error instanceof Error ? error.message : String(error),
+        )
+      }
+      this.pendingFillHistory = { requestId, terrainId, resolve, reject }
+      const elevation = terrain.elevation.slice()
+      const validMask = terrain.validMask.slice()
+      worker.postMessage(
+        { type: 'fillHistory', requestId, terrainId, geo: terrain.geo, elevation, validMask },
+        [elevation.buffer, validMask.buffer],
+      )
     })
   }
 
@@ -359,7 +437,16 @@ export class SimulationClient {
     return pending
   }
 
+  private takeFillHistory(requestId: number): PendingFillHistory | null {
+    const pending = this.pendingFillHistory
+    if (pending === null || pending.requestId !== requestId) return null
+    this.pendingFillHistory = null
+    return pending
+  }
+
   private failAll(error: TerrainLoadError): void {
+    this.pendingFillHistory?.reject(new FillHistoryLoadError('worker', error.message))
+    this.pendingFillHistory = null
     for (const entry of this.pendingPings.values()) {
       clearTimeout(entry.timer)
       entry.reject(error)
