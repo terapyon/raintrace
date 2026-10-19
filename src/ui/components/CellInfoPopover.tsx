@@ -15,14 +15,14 @@ interface Props {
   onClose: () => void
 }
 
-function Value({ label, value, testId }: { label: string; value: number; testId: string }) {
+function Value({ label, value, testId }: { label: string; value: number | null; testId: string }) {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}>
       <Typography variant="body2" color="text.secondary">
         {label}
       </Typography>
       <Typography variant="body2" data-testid={testId}>
-        {formatMeters(value)}
+        {value === null ? strings.format.none : formatMeters(value)}
       </Typography>
     </Box>
   )
@@ -58,11 +58,25 @@ export function CellInfoPopover({ popover, cell, onConfirm, onClose }: Props) {
         {popover.kind === 'cell' &&
           (cell?.kind === 'value' ? (
             <>
+              {cell.pastM !== undefined && (
+                <Value
+                  label={strings.cellInfo.pastElevation}
+                  value={cell.pastM}
+                  testId="cell-past-elevation"
+                />
+              )}
               <Value
-                label={strings.cellInfo.elevation}
+                label={
+                  cell.pastM !== undefined
+                    ? strings.cellInfo.nowElevation
+                    : strings.cellInfo.elevation
+                }
                 value={cell.elevationM}
                 testId="cell-elevation"
               />
+              {cell.deltaM !== undefined && (
+                <Value label={strings.cellInfo.delta} value={cell.deltaM} testId="cell-delta" />
+              )}
               <Value label={strings.cellInfo.depth} value={cell.depthM} testId="cell-depth" />
               <Value label={strings.cellInfo.level} value={cell.levelM} testId="cell-level" />
             </>

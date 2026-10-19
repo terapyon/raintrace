@@ -15,6 +15,14 @@ export const formatCubicMeters = (value: number): string =>
 /** 水量（base-spec §38、spec 04 §6.3）: 小数 1 桁、1 m³ 未満は小数 2 桁。桁は丸めた後の値で決める */
 export const formatVolume = (m3: number): string =>
   strings.format.cubicMeters(m3.toFixed(Math.abs(Number(m3.toFixed(2))) < 1 ? 2 : 1))
+/** 参考の体積（spec 09 §6.3）: 有効数字 2 桁。1 万 m³ 以上は万 m³、未満は m³ */
+export function formatVolumeApprox(m3: number): string {
+  const group = (v: number): string => v.toLocaleString('en-US')
+  if (m3 >= 10000) {
+    return strings.format.volumeApproxMan(group(Number((m3 / 10000).toPrecision(2))))
+  }
+  return strings.format.volumeApprox(group(Number(m3.toPrecision(2))))
+}
 export const formatArea = (m2: number): string => strings.format.area(String(Math.round(m2)))
 export const formatStepsPerSecond = (rate: number): string =>
   strings.format.stepsPerSecond(String(Math.round(rate)))

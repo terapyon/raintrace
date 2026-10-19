@@ -16,6 +16,7 @@ import {
   formatStep,
   formatStepsPerSecond,
   formatVolume,
+  formatVolumeApprox,
 } from './format'
 
 describe('表示の書式', () => {
@@ -95,5 +96,14 @@ describe('経過時間・降雨・流出の速さ・実行速度の書式（spec
   it('実行速度は「実時間の N 倍（M step/秒）」。どちらも四捨五入の整数', () => {
     expect(formatPlaybackRate(27.4, 59.6)).toBe('実時間の 27 倍（60 step/秒）')
     expect(formatPlaybackRate(0, 0)).toBe('実時間の 0 倍（0 step/秒）')
+  })
+})
+
+describe('formatVolumeApprox（spec 09 §6.3）', () => {
+  it('有効数字 2 桁。1 万 m³ 以上は万 m³', () => {
+    expect(formatVolumeApprox(45169)).toBe('約 4.5 万 m³')
+    expect(formatVolumeApprox(4520)).toBe('約 4,500 m³')
+    expect(formatVolumeApprox(48)).toBe('約 48 m³')
+    expect(formatVolumeApprox(1234567)).toBe('約 120 万 m³')
   })
 })

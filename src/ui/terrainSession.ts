@@ -267,7 +267,20 @@ export class TerrainSession {
   cellInfo(lon: number, lat: number): CellInfo | null {
     const terrain = this.client.terrain
     if (terrain === null) return null
-    return cellInfoAt(terrain, this.client.water, lon, lat)
+    const store = this.store.getState()
+    // 昔の地形を見ている間は、地形そのものが昔の標高なので、比べる値は足さない
+    const result =
+      store.fillHistory.enabled && store.terrainEpoch === 'now' ? this.fillHistory.result() : null
+    const history =
+      result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
+    return cellInfoAt(terrain, this.client.water, lon, lat, history)
+  }
+
+  /** 一覧で選んだ範囲の中心へ地図を動かす（拡大率は変えない。spec 09 §6.3） */
+  focusFillCandidate(id: number): void {
+    const candidate = this.store.getState().fillHistory.summary?.candidates.find((c) => c.id === id)
+    if (candidate === undefined || this.controller === null) return
+    this.controller.map.easeTo({ center: [candidate.centroid.lon, candidate.centroid.lat] })
   }
 
   /** 印の説明の数値（spec 07 §3.4、計画で決めたこと 3）。地形が無ければ空 */

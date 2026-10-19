@@ -40,3 +40,33 @@ describe('cellInfoAt（base-spec §39）', () => {
     expect(cellInfoAt(terrain, null, outside.lon, outside.lat)).toBeNull()
   })
 })
+
+describe('cellInfoAt の盛土の履歴（spec 09 §6.6）', () => {
+  it('history があれば昔の標高と差を返し、NaN は null', () => {
+    const history = {
+      past: Float32Array.of(10, 0, Number.NaN, 0),
+      delta: Float32Array.of(Math.fround(2.5), 0, 0, Number.NaN),
+    }
+    const a = at(0, 0)
+    expect(cellInfoAt(terrain, null, a.lon, a.lat, history)).toMatchObject({
+      kind: 'value',
+      pastM: 10,
+      deltaM: 2.5,
+    })
+    const b = at(0, 1)
+    expect(cellInfoAt(terrain, null, b.lon, b.lat, history)).toMatchObject({
+      pastM: null,
+      deltaM: 0,
+    })
+    const c = at(1, 1)
+    expect(cellInfoAt(terrain, null, c.lon, c.lat, history)).toMatchObject({
+      pastM: 0,
+      deltaM: null,
+    })
+  })
+
+  it('history が無ければ pastM・deltaM を持たない', () => {
+    const p = at(0, 0)
+    expect(cellInfoAt(terrain, null, p.lon, p.lat)).not.toHaveProperty('pastM')
+  })
+})
