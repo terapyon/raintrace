@@ -15,7 +15,9 @@ import {
   formatRainDepth,
   formatRainStatus,
   formatRise,
+  formatSignedArea,
   formatSignedMeters,
+  formatSignedVolume,
   formatStep,
   formatStepsPerSecond,
   formatVolume,
@@ -129,5 +131,15 @@ describe('盛土の履歴の数値の書式', () => {
     expect(formatSignedMeters(2)).toBe('+2.00 m')
     expect(formatSignedMeters(-1.5)).toBe('−1.50 m')
     expect(formatSignedMeters(0.001)).toBe('0.00 m')
+  })
+})
+
+describe('符号付きの差（丸めて 0 になる値）', () => {
+  it('符号も「-」も付けない', () => {
+    expect(formatSignedVolume(-0.004)).toBe('0.0 m³')
+    expect(formatSignedVolume(0.04)).toBe('0.0 m³')
+    expect(formatSignedArea(-0.4)).toBe('0 m²')
+    expect(formatSignedVolume(-2)).toBe('−2.0 m³')
+    expect(formatSignedArea(3)).toBe('+3 m²')
   })
 })

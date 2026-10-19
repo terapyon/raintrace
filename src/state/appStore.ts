@@ -274,7 +274,13 @@ export function createAppStore(): AppStore {
         }
       }),
     setTerrainEpoch: (terrainEpoch) => set({ terrainEpoch }),
-    openCollapse: (candidateId) => set({ collapse: { ...CLOSED_COLLAPSE, candidateId } }),
+    openCollapse: (candidateId) =>
+      set((state) =>
+        // 開いている候補をもう一度押しても、計算の結果や設定を消さない
+        state.collapse.candidateId === candidateId
+          ? state
+          : { collapse: { ...CLOSED_COLLAPSE, candidateId } },
+      ),
     closeCollapse: () => set({ collapse: CLOSED_COLLAPSE }),
     setCollapseRatio: (ratio) =>
       set((state) =>

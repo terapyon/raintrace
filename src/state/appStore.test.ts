@@ -227,6 +227,17 @@ describe('collapse（spec 10）', () => {
     return store
   }
 
+  it('開いている候補への openCollapse は何も変えない', () => {
+    const store = createAppStore()
+    store.getState().openCollapse(4)
+    store.getState().setCollapseRatio(0.5)
+    const before = store.getState().collapse
+    store.getState().openCollapse(4)
+    expect(store.getState().collapse).toBe(before)
+    store.getState().openCollapse(5)
+    expect(store.getState().collapse).toEqual({ ...CLOSED_COLLAPSE, candidateId: 5 })
+  })
+
   it('openCollapse は ratio 1・既定のプリセット・idle・before・compare idle で開く', () => {
     const store = createAppStore()
     store.getState().openCollapse(4)

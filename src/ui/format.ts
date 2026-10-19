@@ -101,7 +101,8 @@ export const formatPlaybackRate = (simSecondsPerSecond: number, stepsPerSecond: 
 function signed(value: number, digits: number): string {
   const fixed = value.toFixed(digits)
   const n = Number(fixed)
-  return n > 0 ? `+${fixed}` : n < 0 ? fixed.replace('-', '−') : fixed
+  // 丸めて 0 になる値（-0.004 など）は符号も「-」も付けない
+  return n > 0 ? `+${fixed}` : n < 0 ? fixed.replace('-', '−') : n.toFixed(digits)
 }
 /** 符号付きの水量の差（spec 10 §5.3） */
 export const formatSignedVolume = (m3: number): string => strings.format.cubicMeters(signed(m3, 1))

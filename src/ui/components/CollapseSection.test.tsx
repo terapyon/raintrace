@@ -76,7 +76,7 @@ const patch = (store: ReturnType<typeof createAppStore>, over: object) =>
 
 describe('CollapseSection', () => {
   it('候補の詳しい欄の「崩れたと仮定する」で openCollapse(id)、CollapseSection が出る', async () => {
-    const { session, store } = setup()
+    const { session, store, compute } = setup()
     render(
       <>
         <FillHistorySection session={session} />
@@ -89,6 +89,11 @@ describe('CollapseSection', () => {
     expect(store.getState().fillHistory.selectedId).toBe(3)
     expect(screen.getByTestId('collapse-section')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: strings.collapse.compute }))
+    expect(compute).toHaveBeenCalledOnce()
+    // もう一度押しても、開いた状態（と選んだ設定）は消えない
+    await userEvent.click(screen.getByRole('button', { name: strings.collapse.ratios[0.5] }))
+    await userEvent.click(screen.getByRole('button', { name: strings.collapse.open }))
+    expect(store.getState().collapse.ratio).toBe(0.5)
   })
 
   it('崩れる量・流れやすさの選択肢は DEBRIS_PRESETS の行の数だけ出る', async () => {
@@ -97,6 +102,10 @@ describe('CollapseSection', () => {
     render(<CollapseSection session={session} heavyRain={false} />)
     const group = screen.getByRole('group', { name: strings.collapse.preset })
     expect(within(group).getAllByRole('button')).toHaveLength(DEBRIS_PRESETS.length)
+    // ツールチップの説明が名前を上書きしない
+    for (const p of DEBRIS_PRESETS) {
+      expect(within(group).getByRole('button', { name: p.label })).toBeTruthy()
+    }
     expect(
       within(screen.getByRole('group', { name: strings.collapse.ratio })).getAllByRole('button'),
     ).toHaveLength(3)
@@ -128,10 +137,19 @@ describe('CollapseSection', () => {
           {
             depressionId: 2,
             capacityM3: 12000,
-            addedCapacityM3: 12000,
+            addedCapacityM3: 5000,
             maxDepthM: 2.5,
             areaM2: 800,
             spillElevation: 31.2,
+            spill: { lon: 0, lat: 0 },
+          },
+          {
+            depressionId: 9,
+            capacityM3: 3000,
+            addedCapacityM3: 1000,
+            maxDepthM: 1,
+            areaM2: 300,
+            spillElevation: 40,
             spill: { lon: 0, lat: 0 },
           },
         ],
@@ -141,7 +159,11 @@ describe('CollapseSection', () => {
     expect(result.textContent).toContain('約 4.5 万 m³')
     expect(result.textContent).toContain(strings.collapse.outside('約 4,000 m³'))
     expect(result.textContent).toContain(strings.collapse.outsideNotice('約 4,000 m³'))
-    expect(result.textContent).toContain('せき止められた場所: 1 か所（溜まりうる水 約 1.2 万 m³）')
+    expect(result.textContent).toContain('せき止められた場所: 2 か所（溜まりうる水 約 1.5 万 m³）')
+    // 行は溜まりうる水（capacityM3）を、場所の番号は並びの順で出す
+    expect(result.textContent).toContain('場所 1　溜まりうる水 約 1.2 万 m³')
+    expect(result.textContent).toContain('場所 2　溜まりうる水 約 3,000 m³')
+    expect(result.textContent).toContain('あふれ出す標高 31.20 m')
     expect(result.textContent).toContain('最大の深さ 2.50 m')
   })
 
@@ -177,6 +199,12 @@ describe('CollapseSection', () => {
     const progress = screen.getByTestId('compare-progress')
     expect(progress.textContent).toContain('崩れた後を計算しています（残り約 3 分）')
     expect(within(progress).getAllByRole('progressbar')).toHaveLength(2)
+    expect(within(progress).getByText(strings.collapse.sides.before)).toBeTruthy()
+    // 計算中は設定を変えられない
+    expect(
+      (screen.getByRole('button', { name: strings.collapse.ratios[0.5] }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
     await userEvent.click(screen.getByRole('button', { name: strings.collapse.cancel }))
     expect(cancel).toHaveBeenCalledOnce()
 
@@ -204,6 +232,24 @@ describe('CollapseSection', () => {
       (screen.getByRole('button', { name: strings.collapse.compare }) as HTMLButtonElement)
         .disabled,
     ).toBe(true)
+  })
+
+  it('土砂の計算中の進み具合のバーに名前がある', () => {
+    const { session, store } = setup()
+    store.getState().openCollapse(3)
+    patch(store, { status: 'computing', progress: 0.4 })
+    render(<CollapseSection session={session} heavyRain={false} />)
+    expect(screen.getByRole('progressbar', { name: strings.collapse.computing })).toBeTruthy()
+  })
+
+  it('開いたとき、見える位置へ寄せる', () => {
+    const { session, store } = setup()
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    render(<CollapseSection session={session} heavyRain={false} />)
+    expect(scroll).not.toHaveBeenCalled()
+    act(() => store.getState().openCollapse(3))
+    expect(scroll).toHaveBeenCalledOnce()
   })
 
   it('画面の文字に「崩壊確率」「被害」「危険」を含まない', () => {

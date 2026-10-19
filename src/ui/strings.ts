@@ -19,8 +19,15 @@ export const strings = {
     outsideNotice: (v: string) => `土砂の一部（${v}）が範囲の外へ流れ出ました`,
     dams: (n: number, v: string) => `せき止められた場所: ${n} か所（溜まりうる水 ${v}）`,
     noDams: 'せき止められた場所はありません',
-    damRow: (id: number, capacity: string, depth: string, spill: string, area: string) =>
-      `#${id}　溜まりうる水 ${capacity}　最大の深さ ${depth}　あふれ出す高さ ${spill}　面積 ${area}`,
+    damRow: (
+      n: number,
+      sep: string,
+      capacity: string,
+      depth: string,
+      spill: string,
+      area: string,
+    ) =>
+      `場所 ${n}${sep}溜まりうる水 ${capacity}${sep}最大の深さ ${depth}${sep}あふれ出す標高 ${spill}${sep}面積 ${area}`,
     compare: '崩れる前と後を比べる',
     compareHint: '今の雨の設定で、雨が降り終わる時点まで両方を計算します',
     compareSlow: '範囲や雨の設定によっては、数分以上かかります',
@@ -39,7 +46,7 @@ export const strings = {
       after: '崩れた後',
       diff: '差',
       maxDepth: '最大の水深',
-      floodedArea: '湛水面積',
+      floodedArea: '湛水面積（1 cm 以上）',
       storedWater: '溜まった水の量',
       outflowWater: '流れ出た水の量',
       damMaxDepth: 'せき止められた場所の水深の最大',
