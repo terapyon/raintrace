@@ -1,49 +1,20 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { DEBRIS_PRESETS, type DebrisPreset } from '../../shared/debrisPresets.ts'
 import { analyzeDepressions } from '../terrain/analyzeDepressions.ts'
-import type { DebrisGrid, DebrisParams } from './runout.ts'
+import type { DebrisParams } from './runout.ts'
 import { simulateCollapse } from './simulateCollapse.ts'
+import {
+  CELL,
+  FILL,
+  SIZE,
+  terrain,
+  VALLEY_COL,
+  VALLEY_DROP,
+  valleyWithFill,
+} from './testTerrain.test-support.ts'
 
 // テストは core-is-pure の対象外なので、プリセットの表を src/shared から直接使う
 const NEAR = (DEBRIS_PRESETS.find((p) => p.id === 'near') as DebrisPreset).params
-
-const SIZE = 60
-const CELL = 5
-const VALLEY_COL = 30
-/** 谷筋の縦断の勾配（1 セルで下る高さ） */
-const VALLEY_DROP = 0.25
-/** 東西の斜面の 1 セルあたりの高さ（30°） */
-const SIDE_RISE = Math.tan(Math.PI / 6) * CELL
-
-/** 南北に下る V 字の谷（北が上流）。東西の斜面は 30° */
-function valley(r: number, c: number): number {
-  return 200 - VALLEY_DROP * r + SIDE_RISE * Math.abs(c - VALLEY_COL)
-}
-
-/** 盛土: 谷の上流寄りの東の斜面に、厚さ t の土を載せる */
-const FILL = { r0: 14, r1: 22, c0: 32, c1: 37 }
-function inFill(r: number, c: number): boolean {
-  return r >= FILL.r0 && r <= FILL.r1 && c >= FILL.c0 && c <= FILL.c1
-}
-
-/** 盛土を載せた谷。removed = 盛土の厚さ（全部崩す） */
-function valleyWithFill(thickness: number): { grid: DebrisGrid; removed: Float32Array } {
-  const elevation = new Float32Array(SIZE * SIZE)
-  const removed = new Float32Array(SIZE * SIZE)
-  const validMask = new Uint8Array(SIZE * SIZE).fill(1)
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      const t = inFill(r, c) ? thickness : 0
-      elevation[r * SIZE + c] = valley(r, c) + t
-      removed[r * SIZE + c] = t
-    }
-  }
-  return { grid: { elevation, validMask, size: SIZE, cellSizeM: CELL }, removed }
-}
-
-function terrain(elevation: Float32Array, validMask: Uint8Array) {
-  return { elevation, validMask, width: SIZE, height: SIZE, cellSizeM: CELL }
-}
 
 function expectMassConserved(r: { collapsedM3: number; depositedM3: number; outsideM3: number }) {
   expect(r.collapsedM3).toBeGreaterThan(0)
