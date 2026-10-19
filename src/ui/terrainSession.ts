@@ -1,6 +1,7 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { wrapLongitude } from '../dem/tileMath'
+import { CollapseOverlay } from '../map/CollapseOverlay'
 import { FILL_LAYER_IDS, FillHistoryOverlay } from '../map/FillHistoryOverlay'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TERRAIN_LAYER_IDS, TerrainOverlay } from '../map/TerrainOverlay'
@@ -92,12 +93,30 @@ export class TerrainSession {
       else fillOverlay.show(result, geo, this.store.getState().fillHistory.selectedId)
     }
     const offFillResult = this.fillHistory.onResult(showFill)
+    // 崩れた後の積もった土・せき止められた場所・新しい水は、崩れた後の地形を見せている間だけ描く
+    const collapseOverlay = new CollapseOverlay(map, (run) => controller.whenLoaded(run))
+    const showCollapse = (): void => {
+      const { collapse } = this.store.getState()
+      const result = this.collapse.result()
+      const geo = result?.after.geo
+      if (collapse.view !== 'after' || collapse.status !== 'ready' || !result || !geo) {
+        collapseOverlay.clear()
+        return
+      }
+      collapseOverlay.show(result, geo)
+      const compared = this.collapse.compareResult()
+      if (collapse.compare.status === 'done' && compared !== null) {
+        collapseOverlay.showCompare(compared.before.depth, compared.after.depth, geo)
+      }
+    }
+    const offCollapseChange = this.collapse.onChange(showCollapse)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
     // ベースマップの切り替えの後に、地形 → 水の順に足し直す（水は地形のレイヤーの間に入れる）
     const offRestyle = controller.onRestyle(() => {
       this.overlay?.restore()
       fillOverlay.restore()
+      collapseOverlay.restore()
       this.simulation.restoreOverlay()
     })
     // 3D の足し直しは 04 の重ね描きの足し直しの後に行う（onRestyle は登録した順に呼ばれる）
@@ -177,6 +196,15 @@ export class TerrainSession {
     }
     const unsubscribe = this.store.subscribe((state, previous) => {
       if (state.display !== previous.display) this.overlay?.setDisplay(this.overlayDisplay())
+      const { collapse } = state
+      const before = previous.collapse
+      if (
+        collapse.view !== before.view ||
+        collapse.status !== before.status ||
+        collapse.compare.status !== before.compare.status
+      ) {
+        showCollapse()
+      }
       if (state.fillHistory.selectedId !== previous.fillHistory.selectedId) {
         fillOverlay.setSelected(state.fillHistory.selectedId)
       }
@@ -220,11 +248,13 @@ export class TerrainSession {
       unsubscribeSettings()
       offRestyle()
       offFillResult()
+      offCollapseChange()
       detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()
       this.overlay = null
       fillOverlay.clear()
+      collapseOverlay.clear()
       this.controller = null
     }
   }
