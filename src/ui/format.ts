@@ -96,3 +96,15 @@ export const formatPlaybackRate = (simSecondsPerSecond: number, stepsPerSecond: 
     String(Math.round(simSecondsPerSecond)),
     formatStepsPerSecond(stepsPerSecond),
   )
+
+/** 差の符号（正は「+」、負は「−」）。丸めて 0 になるときは符号を付けない */
+function signed(value: number, digits: number): string {
+  const fixed = value.toFixed(digits)
+  const n = Number(fixed)
+  return n > 0 ? `+${fixed}` : n < 0 ? fixed.replace('-', '−') : fixed
+}
+/** 符号付きの水量の差（spec 10 §5.3） */
+export const formatSignedVolume = (m3: number): string => strings.format.cubicMeters(signed(m3, 1))
+/** 符号付きの面積の差（spec 10 §5.3） */
+export const formatSignedArea = (m2: number): string =>
+  strings.format.area(signed(Math.round(m2), 0))

@@ -12,7 +12,11 @@ import { strings } from '../strings'
 export function TerrainEpochToggle({ app }: { app: AppStore }) {
   const visible = useStore(
     app,
-    (s) => s.viewMode === '3d' && s.view3dStatus === '3d' && s.fillHistory.status === 'ready',
+    (s) =>
+      s.viewMode === '3d' &&
+      s.view3dStatus === '3d' &&
+      s.fillHistory.status === 'ready' &&
+      s.collapse.view !== 'after',
   )
   const epoch = useStore(app, (s) => s.terrainEpoch)
   if (!visible) return null

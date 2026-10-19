@@ -1,6 +1,53 @@
 /** 画面に出す文字列（tech-spec §9.4）。コンポーネントに文字列リテラルを直接書かない */
 export const strings = {
   epoch: { label: '地形の時期', past: '昔', now: '今' },
+  scenario: { label: '地形の状態', before: '崩れる前', after: '崩れた後' },
+  collapse: {
+    title: '崩れたと仮定した場合',
+    open: '崩れたと仮定する',
+    target: (id: string, volume: string, evidence: string) =>
+      `標高差の大きい範囲: ${id}（${volume}、${evidence}）`,
+    ratio: '崩れる量',
+    ratios: { 1: '全部', 0.5: '半分', 0.25: '4分の1' } as Record<1 | 0.5 | 0.25, string>,
+    preset: '流れやすさ',
+    compute: '土砂の行き先を計算する',
+    computing: '土砂の行き先を計算しています',
+    failed: '土砂の行き先を計算できませんでした',
+    collapsed: '崩れた土',
+    deposited: '積もった土',
+    outside: (v: string) => `（範囲の外へ ${v}）`,
+    outsideNotice: (v: string) => `土砂の一部（${v}）が範囲の外へ流れ出ました`,
+    dams: (n: number, v: string) => `せき止められた場所: ${n} か所（溜まりうる水 ${v}）`,
+    noDams: 'せき止められた場所はありません',
+    damRow: (id: number, capacity: string, depth: string, spill: string, area: string) =>
+      `#${id}　溜まりうる水 ${capacity}　最大の深さ ${depth}　あふれ出す高さ ${spill}　面積 ${area}`,
+    compare: '崩れる前と後を比べる',
+    compareHint: '今の雨の設定で、雨が降り終わる時点まで両方を計算します',
+    compareSlow: '範囲や雨の設定によっては、数分以上かかります',
+    sides: { before: '崩れる前', after: '崩れた後' },
+    compareRunning: (side: string, remaining: string | null) =>
+      remaining === null
+        ? `${side}を計算しています`
+        : `${side}を計算しています（残り約 ${remaining}）`,
+    remainingMinutes: (n: number) => `${n} 分`,
+    remainingLessThanMinute: '1 分未満',
+    cancel: '中止',
+    compareFailed: '比べる計算ができませんでした',
+    compareAt: '雨が降り終わった時点で比べています',
+    table: {
+      before: '崩れる前',
+      after: '崩れた後',
+      diff: '差',
+      maxDepth: '最大の水深',
+      floodedArea: '湛水面積',
+      storedWater: '溜まった水の量',
+      outflowWater: '流れ出た水の量',
+      damMaxDepth: 'せき止められた場所の水深の最大',
+    },
+    newWater: (a: string) => `新しく水が溜まった範囲 +${a}`,
+    notice:
+      'これは「この盛土が崩れたと仮定した場合」の地形と水の流れを、簡単なモデルで描いたものです。盛土が崩れる可能性や、実際の災害の起こり方を予測するものではありません。土砂の流れ方は、土の水の含み方などで大きく変わります。せき止めが決壊することや、地面への浸透は考えていません。実際の安全性の評価には、地盤の調査や安定の解析が必要です。',
+  },
   fillHistory: {
     title: '盛土の履歴',
     enable: '昔と今の地形を比べる',

@@ -50,3 +50,14 @@ describe('TerrainEpochToggle（3D の昔・今の切り替え）', () => {
     expect(app.getState().terrainEpoch).toBe('now')
   })
 })
+
+describe('TerrainEpochToggle（崩れた後の間）', () => {
+  it('collapse.view が after の間は隠す', () => {
+    const app = readyStore()
+    app.getState().setViewMode('3d')
+    render(<TerrainEpochToggle app={app} />)
+    expect(screen.getByRole('group', { name: strings.epoch.label })).toBeTruthy()
+    act(() => app.getState().setCollapseView('after'))
+    expect(screen.queryByRole('group', { name: strings.epoch.label })).toBeNull()
+  })
+})
