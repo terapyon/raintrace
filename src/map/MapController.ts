@@ -1,5 +1,6 @@
 import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import './attribution.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { type Attribution, type Basemap, createGsiStyle } from './basemapStyle'
 import { FILL_LAYER_IDS, OVERLAY_LAYER_ORDER } from './layerIds'
