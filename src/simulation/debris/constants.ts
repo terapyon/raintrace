@@ -22,3 +22,19 @@ export const GRAVITY = 9.81
 export const DAM_MIN_ADDED_M3 = 100
 export const DAM_MIN_RATIO = 0.1
 export const DAM_MIN_AREA_M2 = 200
+
+/**
+ * 盛土の下の水路を仮定する（spec 10b §2）。値を変えるときは spec と計画も改訂する
+ */
+
+/** 水路の長さの上限（m） */
+export const CULVERT_MAX_LENGTH_M = 1000
+
+/** 水路の端とみなす範囲。候補のセルから水路に沿ってこのセル数まで */
+export const CULVERT_END_CELLS = 8
+
+/** 水路がふさがったとみなす、端に積もった土の厚さ（m、以上） */
+export const CULVERT_BLOCK_DEPOSIT_M = 0.5
+
+/** 昔の地形が pit より高い所を通る道の重み（高さ 1 m あたり、1 歩の費用に足す倍率） */
+export const CULVERT_CLIMB_WEIGHT = 5

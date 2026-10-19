@@ -34,6 +34,37 @@ export function valleyWithFill(thickness: number): { grid: DebrisGrid; removed: 
   return { grid: { elevation, validMask, size: SIZE, cellSizeM: CELL }, removed }
 }
 
+/** 谷をまたぐ盛土の範囲（行 24〜29・列 18〜42）と、天端の谷底からの高さ */
+const CROSS_FILL = { r0: 24, r1: 29, c0: 18, c1: 42, crestRise: 6 }
+
+/**
+ * 谷をまたぐ盛土を載せた谷。天端は平らで、谷筋の盛土の北端の谷底より 6 m 高い。
+ * 盛土の上流側は谷がせき止められた窪地になる。removed = 盛土の厚さ、past = 盛土のない昔の地形（谷そのもの）
+ */
+export function valleyWithCrossFill(): {
+  grid: DebrisGrid
+  removed: Float32Array
+  past: Float32Array
+} {
+  const { r0, r1, c0, c1, crestRise } = CROSS_FILL
+  const crest = valley(r0, VALLEY_COL) + crestRise
+  const elevation = new Float32Array(SIZE * SIZE)
+  const removed = new Float32Array(SIZE * SIZE)
+  const past = new Float32Array(SIZE * SIZE)
+  const validMask = new Uint8Array(SIZE * SIZE).fill(1)
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const i = r * SIZE + c
+      const v = valley(r, c)
+      const inCross = r >= r0 && r <= r1 && c >= c0 && c <= c1
+      elevation[i] = inCross ? Math.max(v, crest) : v
+      removed[i] = elevation[i]! - v
+      past[i] = v
+    }
+  }
+  return { grid: { elevation, validMask, size: SIZE, cellSizeM: CELL }, removed, past }
+}
+
 export function terrain(elevation: Float32Array, validMask: Uint8Array) {
   return { elevation, validMask, width: SIZE, height: SIZE, cellSizeM: CELL }
 }
