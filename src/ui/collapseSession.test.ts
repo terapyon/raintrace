@@ -162,17 +162,26 @@ function setup() {
       landformAvailable: false,
     })
   }
-  /** 候補 4 を開いて計算し、結果まで進める */
-  const ready = async () => {
+  /** 候補 4 を開いて計算し、結果まで進める。ready の直後に崩れた後への差し替えが始まる（返事は呼び出し側が返す） */
+  const computeOnly = () => {
     load()
     app.getState().selectFillCandidate(4)
     app.getState().openCollapse(4)
     const done = session.compute()
     collapses.at(-1)?.resolve(payload())
+    return done
+  }
+  /** 計算して、自動の差し替え（崩れた後）が済むまで進める */
+  const ready = async () => {
+    const before = swaps.length
+    const done = computeOnly()
+    await vi.waitFor(() => expect(swaps.length).toBe(before + 1))
+    swaps.at(-1)?.resolve()
     await done
   }
   /** 崩れた後を表示する（差し替えの返事まで進める） */
   const showAfter = async () => {
+    if (app.getState().collapse.view === 'after') return
     const done = session.setView('after')
     swaps.at(-1)?.resolve()
     await done
@@ -192,6 +201,7 @@ function setup() {
     showTerrain,
     load,
     ready,
+    computeOnly,
     showAfter,
     setFill: (r: FillHistoryPayload | null) => {
       fillResult = r
@@ -201,7 +211,7 @@ function setup() {
 
 describe('CollapseSession', () => {
   it('openCollapse → compute で computing → ready、summary に体積と dams', async () => {
-    const { client, app, session, collapses, collapseProgress, load } = setup()
+    const { client, app, session, collapses, collapseProgress, swaps, container, load } = setup()
     load()
     app.getState().selectFillCandidate(4)
     app.getState().openCollapse(4)
@@ -221,10 +231,16 @@ describe('CollapseSession', () => {
     collapseProgress[0]?.(0.3)
     expect(app.getState().collapse.progress).toBe(0.3)
     collapses[0]?.resolve({ ...payload(), ratio: 0.5 })
+    // ready になると、崩れた後へ自動で切り替える（spec 10 §1.3 手順 3）
+    await vi.waitFor(() => expect(swaps).toHaveLength(1))
+    expect(client.swapTerrain).toHaveBeenLastCalledWith(after)
+    swaps[0]?.resolve()
     await done
+    expect(container.dataset.collapseView).toBe('after')
     expect(session.result()?.after).toBe(after)
     expect(app.getState().collapse).toMatchObject({
       status: 'ready',
+      view: 'after',
       summary: {
         candidateId: 4,
         ratio: 0.5,
@@ -295,6 +311,9 @@ describe('CollapseSession', () => {
   it('setView(after) は差し替え → variant の terrainReady → 地図を動かさずに描き直す。before で基に戻す', async () => {
     const { client, simulation, app, session, swaps, container, showTerrain, ready } = setup()
     await ready()
+    const toBefore = session.setView('before')
+    swaps.at(-1)?.resolve()
+    await toBefore
     app.getState().setTerrainEpoch('past')
     expect(container.dataset.collapseView).toBe('before')
     const done = session.setView('after')
@@ -302,7 +321,7 @@ describe('CollapseSession', () => {
     // 差し替えの途中は swapping（Task 10 が再生と比べる操作を止める。Task 6 のレビュー M1）
     expect(app.getState().collapse.swapping).toBe(true)
     expect(app.getState().collapse.view).toBe('before')
-    swaps[0]?.resolve()
+    swaps.at(-1)?.resolve()
     await done
     expect(simulation.terrainReady).toHaveBeenLastCalledWith(after, CENTER, { variant: true })
     expect(showTerrain).toHaveBeenLastCalledWith(after)
@@ -312,7 +331,7 @@ describe('CollapseSession', () => {
 
     const back = session.setView('before')
     expect(client.swapTerrain).toHaveBeenLastCalledWith(base)
-    swaps[1]?.resolve()
+    swaps.at(-1)?.resolve()
     await back
     expect(simulation.terrainReady).toHaveBeenLastCalledWith(base, CENTER, { variant: true })
     expect(showTerrain).toHaveBeenLastCalledWith(base)
@@ -355,9 +374,10 @@ describe('CollapseSession', () => {
   })
 
   it('崩れた後への差し替えの途中で閉じたら、崩れた後にしない', async () => {
-    const { client, simulation, app, session, swaps, container, ready } = setup()
-    await ready()
-    const done = session.setView('after')
+    const { client, simulation, app, swaps, container, computeOnly } = setup()
+    // ready 直後の自動の差し替えの途中で閉じる
+    const done = computeOnly()
+    await vi.waitFor(() => expect(swaps).toHaveLength(1))
     app.getState().closeCollapse()
     swaps[0]?.resolve()
     await done
@@ -368,6 +388,19 @@ describe('CollapseSession', () => {
     await tick()
     expect(app.getState().collapse.view).toBe('before')
     expect(container.dataset.collapseView).toBe('before')
+  })
+
+  it('ready になる前に閉じたら、崩れた後へ切り替えない', async () => {
+    const { client, app, session, collapses, load } = setup()
+    load()
+    app.getState().selectFillCandidate(4)
+    app.getState().openCollapse(4)
+    const done = session.compute()
+    app.getState().closeCollapse()
+    collapses[0]?.resolve(payload())
+    await done
+    expect(client.swapTerrain).not.toHaveBeenCalled()
+    expect(app.getState().collapse.view).toBe('before')
   })
 
   it('setCollapseRatio で結果を捨てて idle に戻り、view も before に戻す', async () => {

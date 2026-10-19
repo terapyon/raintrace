@@ -208,6 +208,8 @@ export class CollapseSession {
       outsideM3: result.outsideM3,
       dams: result.dams,
     })
+    // 計算した土砂を地図・3D に出す（spec 10 §1.3 手順 3）。「崩れる前」へはいつでも戻せる
+    await this.setView('after')
   }
 
   /**

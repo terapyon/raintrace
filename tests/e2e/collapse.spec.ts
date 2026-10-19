@@ -118,7 +118,10 @@ test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
     await computeToReady(page)
     const mapEl = mapElement(page)
     const toggle = scenarioToggle(page)
-    // 計算が済んだ直後は崩れる前の地形のまま
+    // 計算が済むと、押さなくても崩れた後の地形と積もった土が出る
+    await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
+    await expect.poll(() => overlayLayers(page)).toContain(COLLAPSE_LAYER_IDS.deposit)
+    await toggle.getByRole('button', { name: strings.scenario.before, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'before')
     await expect.poll(() => overlayLayers(page)).not.toContain(COLLAPSE_LAYER_IDS.deposit)
     await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
@@ -161,9 +164,6 @@ test.describe('盛土が崩れたら（spec 10 §7.2）', () => {
     await openCollapse(page)
     await computeToReady(page)
     const mapEl = mapElement(page)
-    await scenarioToggle(page)
-      .getByRole('button', { name: strings.scenario.after, exact: true })
-      .click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
     // 範囲の外をクリックして「ここを新しい地点にする」を押す
     await clickMap(page, 0.1, 0.5)
@@ -186,10 +186,13 @@ test.describe('盛土が崩れたらの 3D（spec 10 §7.2）', { tag: '@3d' }, 
     const mapEl = mapElement(page)
     const generation = async (): Promise<number> =>
       Number((await mapEl.getAttribute('data-view3d-range-generation')) ?? '0')
-    await expect.poll(generation, { timeout: 60_000 }).toBeGreaterThan(0)
     const toggle = scenarioToggle(page)
-    // 崩れる前のうちに基準を取り、崩れた後に切り替えて 3D の地形が作り直されることを見る
+    // 崩れた後を表示中に 3D にした。崩れる前へ切り替えて落ち着いてから基準を取り、崩れた後へ戻して
+    // 3D の地形が作り直されることを見る
+    await toggle.getByRole('button', { name: strings.scenario.before, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'before')
+    await expect(toggle.getByRole('button', { pressed: true })).toHaveText(strings.scenario.before)
+    await expect.poll(generation, { timeout: 60_000 }).toBeGreaterThan(0)
     const base = await generation()
     await toggle.getByRole('button', { name: strings.scenario.after, exact: true }).click()
     await expect(mapEl).toHaveAttribute('data-collapse-view', 'after')
