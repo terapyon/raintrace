@@ -90,6 +90,7 @@ export function runout(
   removed: Float32Array,
   params: DebrisParams,
   seed: number,
+  onProgress?: (fraction: number) => void,
 ): RunoutResult {
   const { elevation, validMask, size, cellSizeM } = grid
   const n = size * size
@@ -127,6 +128,14 @@ export function runout(
 
   let collapsedM3 = 0
   let outsideM3 = 0
+
+  // 進み具合は崩れるセルの処理済みの割合。10% ごとに最大 10 回だけ知らせる
+  let sourceCount = 0
+  if (onProgress) {
+    for (let i = 0; i < n; i++) if (validMask[i] !== 0 && removed[i] > 0) sourceCount++
+  }
+  let sourceDone = 0
+  let reported = 0
 
   for (let source = 0; source < n; source++) {
     const t = removed[source]
@@ -215,6 +224,14 @@ export function runout(
         // 堆積: 止まったセルに積む。後の粒はこの上を通る
         surface[cur] += particleThickness
         depositAcc[cur] += particleThickness
+      }
+    }
+    sourceDone++
+    if (onProgress) {
+      const tenth = Math.floor((sourceDone * 10) / sourceCount)
+      if (tenth > reported) {
+        reported = tenth
+        onProgress(sourceDone / sourceCount)
       }
     }
   }

@@ -6,6 +6,7 @@ import { PERF_CHANNEL } from '../shared/perfProtocol'
 import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../shared/protocol'
 import { buildOutflowCells } from '../simulation/outflowCells'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
+import { collapseTransferables, computeCollapse } from './collapse'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
 import { computeFillHistory, createJsonFetcher, FillHistoryError } from './fillHistory'
 import type { RunnerPorts } from './simulationRunner'
@@ -47,6 +48,8 @@ const runner = new SimulationRunner(ports)
 let current: AbortController | null = null
 // 盛土の履歴の計算（spec 09）。新しい fillHistory や loadTerrain が来たら取り消す
 let currentFill: AbortController | null = null
+// 盛土が崩れた後の計算（spec 10）。新しい collapse や loadTerrain が来たら取り消す
+let currentCollapse: AbortController | null = null
 
 self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
   const message = event.data
@@ -59,6 +62,7 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       runner.suspend()
       current?.abort()
       currentFill?.abort()
+      currentCollapse?.abort()
       const controller = new AbortController()
       current = controller
       void loadTerrain(message, controller)
@@ -69,6 +73,13 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       const controller = new AbortController()
       currentFill = controller
       void runFillHistory(message, controller)
+      break
+    }
+    case 'collapse': {
+      currentCollapse?.abort()
+      const controller = new AbortController()
+      currentCollapse = controller
+      runCollapse(message, controller)
       break
     }
     default:
@@ -175,5 +186,24 @@ async function runFillHistory(
     post({ type: 'fillHistoryFailed', requestId, reason, message: String(error) })
     // 失敗したので、残りの取得を止める（loadTerrain と同じ）
     controller.abort()
+  }
+}
+
+// 計算は同期なので、実行中に別のメッセージは処理されない。取り消しは「開始前に次の要求が来ていた」場合のみ効く
+function runCollapse(
+  message: Extract<MainToWorkerMessage, { type: 'collapse' }>,
+  controller: AbortController,
+): void {
+  const { requestId } = message
+  const { signal } = controller
+  try {
+    const result = computeCollapse(message, (fraction) => {
+      if (!signal.aborted) post({ type: 'collapseProgress', requestId, fraction })
+    })
+    if (signal.aborted) return
+    post({ type: 'collapseReady', requestId, result }, collapseTransferables(result))
+  } catch (error) {
+    if (signal.aborted) return
+    post({ type: 'collapseFailed', requestId, message: String(error) })
   }
 }

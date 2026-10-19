@@ -53,6 +53,19 @@ export type MainToWorkerMessage =
       elevation: Float32Array
       validMask: Uint8Array
     }
+  | {
+      // 盛土が崩れた後の地形の計算（spec 10）。fillHistory と同じく、メインが今の標高とマスクの写しを送る
+      type: 'collapse'
+      requestId: number
+      terrainId: number
+      geo: TerrainGeo
+      elevation: Float32Array
+      validMask: Uint8Array
+      removed: Float32Array
+      candidateId: number
+      ratio: CollapseRatio
+      presetId: string
+    }
   | SimulationCommand
 
 /**
@@ -137,6 +150,37 @@ export interface FillHistoryPayload {
  */
 export type FillHistoryFailureReason = 'unavailable' | 'no-overlap' | 'network' | 'internal'
 
+/** 崩れる量（候補の盛土の厚さに対する割合） */
+export type CollapseRatio = 1 | 0.5 | 0.25
+
+/** 崩れてせき止められた窪地。spill はあふれ出し点の経緯度 */
+export interface DammedSiteSummary {
+  depressionId: number
+  capacityM3: number
+  addedCapacityM3: number
+  maxDepthM: number
+  areaM2: number
+  spillElevation: number
+  spill: { lon: number; lat: number }
+}
+
+/** 盛土が崩れた後の地形と、せき止められた場所（spec 10）。配列は格子と同じ並びで Transferable で送る */
+export interface CollapsePayload {
+  /** 崩れる前の地形の id */
+  terrainId: number
+  candidateId: number
+  ratio: CollapseRatio
+  presetId: string
+  /** 崩れた後の地形（解析・流出の縁・geo は崩れる前と同じ geo） */
+  after: TerrainPayload
+  removed: Float32Array
+  deposit: Float32Array
+  collapsedM3: number
+  depositedM3: number
+  outsideM3: number
+  dams: DammedSiteSummary[]
+}
+
 /** 再生の失敗の理由。no-elevation-at-rain-center は 03 の NoElevationAtRainCenterError（name で判別する） */
 export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
 
@@ -182,5 +226,8 @@ export type WorkerToMainMessage =
       reason: FillHistoryFailureReason
       message: string
     }
+  | { type: 'collapseProgress'; requestId: number; fraction: number }
+  | { type: 'collapseReady'; requestId: number; result: CollapsePayload }
+  | { type: 'collapseFailed'; requestId: number; message: string }
   | FrameMessage
   | SimFailedMessage

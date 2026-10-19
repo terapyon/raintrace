@@ -18,6 +18,7 @@ export function simulateCollapse(
   removed: Float32Array,
   params: DebrisParams,
   seed: number = DEBRIS_SEED,
+  onProgress?: (fraction: number) => void,
 ): CollapseResult {
   const { elevation, validMask, size, cellSizeM } = grid
   const n = size * size
@@ -32,7 +33,7 @@ export function simulateCollapse(
     base[i] = elevation[i] - removedClean[i]
   }
 
-  const result = runout(grid, removedClean, params, seed)
+  const result = runout(grid, removedClean, params, seed, onProgress)
   const { deposit } = result
   settleDeposit(base, deposit, validMask, size, cellSizeM, params.reposeDeg)
 
