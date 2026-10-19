@@ -44,6 +44,15 @@ export type SimulationCommand =
 export type MainToWorkerMessage =
   | { type: 'ping'; id: number }
   | { type: 'loadTerrain'; requestId: number; lon: number; lat: number; sizeM: number }
+  | {
+      // 盛土の履歴（spec 09）。Worker は格子を持たないので、メインが今の標高とマスクの写しを送る
+      type: 'fillHistory'
+      requestId: number
+      terrainId: number
+      geo: TerrainGeo
+      elevation: Float32Array
+      validMask: Uint8Array
+    }
   | SimulationCommand
 
 /**
@@ -81,6 +90,52 @@ export interface TerrainPayload extends TerrainAnalysis {
    */
   outflow: OutflowCells
 }
+
+/** 盛土の候補の根拠の段階。strong: A54 に重なる。moderate: 人工地形（盛土地・埋立地）に重なる。limited: どちらにも重ならない */
+export type FillEvidence = 'strong' | 'moderate' | 'limited'
+
+/** A54 の盛土区分。valley: 谷埋め型。side: 腹付け型。unclassified: 区分をしていない */
+export type A54Type = 'valley' | 'side' | 'unclassified'
+
+/** 標高差の大きい範囲（盛土の候補。spec 09 §4）。体積は参考値 */
+export interface FillCandidate {
+  id: number
+  areaM2: number
+  maxRiseM: number
+  volumeM3: number
+  centroid: { lon: number; lat: number }
+  evidence: FillEvidence
+  evidenceSources: Array<'a54' | 'landform'>
+  a54Type?: A54Type
+}
+
+/**
+ * 盛土の履歴の結果。terrainId はその地形を読み込んだ loadTerrain の requestId。
+ * 配列は格子（size × size）と同じ並びで、Transferable で送る。NaN は無効
+ */
+export interface FillHistoryPayload {
+  terrainId: number
+  pastElevation: Float32Array
+  /** 今 − 昔 から範囲全体のずれ（offsetM）を引いた標高差 */
+  deltaCorrected: Float32Array
+  /** 候補のセルに候補の id、それ以外は 0 */
+  candidateLabels: Int32Array
+  offsetM: number
+  /** 根拠が強い順、次に体積の大きい順 */
+  candidates: FillCandidate[]
+  /** 範囲にかかる分だけ（地図に描く） */
+  a54Polygons: Array<{ rings: Array<Array<[number, number]>>; a54Type: A54Type }>
+  /** 盛土地・埋立地に加え、切土地・改変工事中も含む（地図に描く） */
+  landformPolygons: Array<{ rings: Array<Array<[number, number]>>; code: string }>
+  a54Available: boolean
+  landformAvailable: boolean
+}
+
+/**
+ * unavailable: 段 3（DEM10B）の地形では出せない。no-overlap: 昔の標高と重なる有効なセルが無い。
+ * network: 昔の標高の取得に失敗。internal: それ以外
+ */
+export type FillHistoryFailureReason = 'unavailable' | 'no-overlap' | 'network' | 'internal'
 
 /** 再生の失敗の理由。no-elevation-at-rain-center は 03 の NoElevationAtRainCenterError（name で判別する） */
 export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
@@ -120,5 +175,12 @@ export type WorkerToMainMessage =
   | { type: 'terrainProgress'; requestId: number; done: number; started: number }
   | { type: 'terrainLoaded'; requestId: number; terrain: TerrainPayload }
   | { type: 'terrainFailed'; requestId: number; reason: TerrainFailureReason; message: string }
+  | { type: 'fillHistoryReady'; requestId: number; result: FillHistoryPayload }
+  | {
+      type: 'fillHistoryFailed'
+      requestId: number
+      reason: FillHistoryFailureReason
+      message: string
+    }
   | FrameMessage
   | SimFailedMessage

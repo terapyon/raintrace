@@ -7,6 +7,7 @@ import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../sh
 import { buildOutflowCells } from '../simulation/outflowCells'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
+import { computeFillHistory, createJsonFetcher, FillHistoryError } from './fillHistory'
 import type { RunnerPorts } from './simulationRunner'
 import { SimulationRunner } from './simulationRunner'
 import { createStepTimeRing, STEP_TIME_PUBLISH_MS } from './stepTiming'
@@ -44,6 +45,8 @@ const runner = new SimulationRunner(ports)
 
 // 新しい地点の読み込みが来たら、取得中のものを取り消す（spec 02 §4.3）
 let current: AbortController | null = null
+// 盛土の履歴の計算（spec 09）。新しい fillHistory や loadTerrain が来たら取り消す
+let currentFill: AbortController | null = null
 
 self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
   const message = event.data
@@ -55,9 +58,17 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       // 地点の変更はリセット（spec 04 §3）。前の地形の再生を止め、その frame を送らない
       runner.suspend()
       current?.abort()
+      currentFill?.abort()
       const controller = new AbortController()
       current = controller
       void loadTerrain(message, controller)
+      break
+    }
+    case 'fillHistory': {
+      currentFill?.abort()
+      const controller = new AbortController()
+      currentFill = controller
+      void runFillHistory(message, controller)
       break
     }
     default:
@@ -132,5 +143,35 @@ async function loadTerrain(
     post({ type: 'terrainFailed', requestId, reason, message: String(error) })
     // 1 枚の失敗で読み込み全体が失敗したので、残りの取得を止める（計画のレビュー P4）
     controller.abort()
+  }
+}
+
+async function runFillHistory(
+  message: Extract<MainToWorkerMessage, { type: 'fillHistory' }>,
+  controller: AbortController,
+): Promise<void> {
+  const { requestId } = message
+  const { signal } = controller
+  try {
+    const noProgress = { onStart: () => {}, onAttempt: () => {}, onDone: () => {} }
+    const result = await computeFillHistory(message, {
+      fetchDem: createGsiTileFetcher(signal, noProgress),
+      fetchJson: createJsonFetcher(signal, self.location.origin),
+    })
+    if (signal.aborted) return // 新しい計算か読み込みに置き換わった
+    post({ type: 'fillHistoryReady', requestId, result }, [
+      result.pastElevation.buffer as ArrayBuffer,
+      result.deltaCorrected.buffer as ArrayBuffer,
+      result.candidateLabels.buffer as ArrayBuffer,
+    ])
+  } catch (error) {
+    if (signal.aborted) return
+    const reason =
+      error instanceof FillHistoryError
+        ? error.reason
+        : error instanceof HttpError || error instanceof NetworkError
+          ? 'network'
+          : 'internal'
+    post({ type: 'fillHistoryFailed', requestId, reason, message: String(error) })
   }
 }
