@@ -6,6 +6,8 @@ export type Basemap = 'std' | 'pale' | 'photo'
 export interface Attribution {
   text: string
   url: string
+  /** リンクのあとに続ける、加工して作成した旨 */
+  note: string
 }
 
 /** 地理院タイルの標準地図・淡色地図・写真（ズーム 2〜18）。写真は seamlessphoto の JPEG */
@@ -26,7 +28,7 @@ export function createGsiStyle(basemap: Basemap, attribution: Attribution): Styl
         tileSize: 256,
         minzoom: 2,
         maxzoom: 18,
-        attribution: `<a href="${attribution.url}" target="_blank" rel="noopener noreferrer">${attribution.text}</a>`,
+        attribution: `<a href="${attribution.url}" target="_blank" rel="noopener noreferrer">${attribution.text}</a> ／ ${attribution.note}`,
       },
     },
     layers: [{ id, type: 'raster', source: id }],

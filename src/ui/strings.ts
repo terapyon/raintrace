@@ -3,6 +3,7 @@ export const strings = {
   attribution: {
     text: '地図・標高データ：国土地理院',
     url: 'https://maps.gsi.go.jp/development/ichiran.html',
+    note: '解析・シミュレーション表示：地理院タイル（標高タイル）を加工して RainTrace が作成',
   },
   map: {
     ariaLabel: '地図',
