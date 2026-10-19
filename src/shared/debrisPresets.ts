@@ -44,7 +44,9 @@ const FAR: DebrisPreset = {
   label: '遠くまで流れる',
   description: '水を含んだ土が谷を流れ下る（熱海の例）',
   params: {
-    mu: 0.12,
+    // 熱海・伊豆山（1000 m）で、0.12 では源から約 100 m で止まり、谷筋を流れ下らなかった。0.08 以下で約 570 m 下流まで届く
+    // （0.04〜0.07 でほぼ同じ）。境目から離して 0.06 にした（docs/perf/2026-10-19-fill-collapse.md）
+    mu: 0.06,
     massToDragM: 100,
     divergence: 2,
     persistence: 2,
