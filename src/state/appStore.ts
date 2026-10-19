@@ -273,7 +273,11 @@ export function createAppStore(): AppStore {
           ...(open !== null && open !== selectedId ? { collapse: CLOSED_COLLAPSE } : {}),
         }
       }),
-    setTerrainEpoch: (terrainEpoch) => set({ terrainEpoch }),
+    // 崩れた後を表示中は昔の地形を見せない（spec 10 §5.4）
+    setTerrainEpoch: (terrainEpoch) =>
+      set((state) =>
+        terrainEpoch === 'past' && state.collapse.view === 'after' ? state : { terrainEpoch },
+      ),
     openCollapse: (candidateId) =>
       set((state) =>
         // 開いている候補をもう一度押しても、計算の結果や設定を消さない
@@ -308,7 +312,12 @@ export function createAppStore(): AppStore {
       set((state) => ({
         collapse: { ...state.collapse, status, summary, progress: status === 'ready' ? 1 : 0 },
       })),
-    setCollapseView: (view) => set((state) => ({ collapse: { ...state.collapse, view } })),
+    setCollapseView: (view) =>
+      set((state) => ({
+        collapse: { ...state.collapse, view },
+        // 崩れた後へ入るときは今に戻す（3D の昔の標高を、地形の差し替えより先に外す）
+        ...(view === 'after' ? { terrainEpoch: 'now' as const } : {}),
+      })),
     setCollapseSwapping: (swapping) =>
       set((state) =>
         state.collapse.swapping === swapping

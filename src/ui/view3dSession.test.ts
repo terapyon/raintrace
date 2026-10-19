@@ -369,4 +369,22 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
       expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
     })
   })
+
+  it('昔を表示中に崩れた後へ切り替えると、setPastElevation(null) の後に setTerrain(after) が届く', async () => {
+    const { simulation, app, view, fillHistory } = setup()
+    simulation.terrainReady(terrain, CENTER)
+    app.getState().setViewMode('3d')
+    await vi.waitFor(() => expect(view.setEnabled).toHaveBeenCalledWith(true))
+    fillHistory.set(pastResult)
+    app.getState().setTerrainEpoch('past')
+    expect(view.setPastElevation).toHaveBeenLastCalledWith(PAST)
+    const after = { geo: { size: 5 } } as unknown as TerrainPayload
+    app.getState().setCollapseView('after')
+    simulation.terrainReady(after, CENTER, { variant: true })
+    expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
+    expect(view.setTerrain).toHaveBeenLastCalledWith(after)
+    const nullOrder = view.setPastElevation.mock.invocationCallOrder.at(-1) ?? 0
+    const terrainOrder = view.setTerrain.mock.invocationCallOrder.at(-1) ?? 0
+    expect(nullOrder).toBeLessThan(terrainOrder)
+  })
 })

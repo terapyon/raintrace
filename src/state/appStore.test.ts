@@ -311,4 +311,16 @@ describe('collapse（spec 10）', () => {
       compare: { status: 'running', side: 'before' },
     })
   })
+
+  it('view が after の間は setTerrainEpoch("past") を無視し、after へ入ると now に戻る', () => {
+    const store = createAppStore()
+    store.getState().setTerrainEpoch('past')
+    store.getState().setCollapseView('after')
+    expect(store.getState().terrainEpoch).toBe('now')
+    store.getState().setTerrainEpoch('past')
+    expect(store.getState().terrainEpoch).toBe('now')
+    store.getState().setCollapseView('before')
+    store.getState().setTerrainEpoch('past')
+    expect(store.getState().terrainEpoch).toBe('past')
+  })
 })

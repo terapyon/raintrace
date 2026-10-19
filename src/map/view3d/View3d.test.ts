@@ -210,3 +210,35 @@ describe('View3d の onWaterDebug（計測用の受け口。spec 06 §3、着手
     expect(onWaterDebug).toHaveBeenCalledWith(null)
   })
 })
+
+describe('View3d の範囲の地形の世代（E2E 用の data-view3d-range-generation）', () => {
+  it('範囲の地形を新しく作るたびに 1 増やして地図の要素に書く（作り直さないなら増やさない）', () => {
+    const { controller, getContainer } = createHarness()
+    const view = new View3d(controller, {
+      options: DEFAULT_VIEW3D_OPTIONS,
+      basemap: 'pale',
+      exaggeration: 1,
+      palette: 'stepped',
+      showOutflow: true,
+      onRendering: () => {},
+    })
+    const anyView = view as unknown as {
+      terrain: unknown
+      range: unknown
+      ensureRange: () => unknown
+    }
+    anyView.terrain = {
+      geo: { z: 15, originX: 0, originY: 0, size: 2 },
+      elevation: new Float32Array([1, 2, 3, 4]),
+      validMask: new Uint8Array([1, 1, 1, 1]),
+    }
+    const dataset = (getContainer() as { dataset: Record<string, string> }).dataset
+    anyView.ensureRange()
+    expect(dataset.view3dRangeGeneration).toBe('1')
+    anyView.ensureRange()
+    expect(dataset.view3dRangeGeneration).toBe('1')
+    anyView.range = null
+    anyView.ensureRange()
+    expect(dataset.view3dRangeGeneration).toBe('2')
+  })
+})
