@@ -1,5 +1,6 @@
 /** 画面に出す文字列（tech-spec §9.4）。コンポーネントに文字列リテラルを直接書かない */
 export const strings = {
+  epoch: { label: '地形の時期', past: '昔', now: '今' },
   fillHistory: {
     title: '盛土の履歴',
     enable: '昔と今の地形を比べる',

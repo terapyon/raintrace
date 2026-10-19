@@ -53,8 +53,8 @@ export class TerrainSession {
     this.store = store
     this.simulation = simulation
     this.settings = settings
-    this.view3d = new View3dSession(simulation, store, settings)
     this.fillHistory = new FillHistorySession(client, store, simulation)
+    this.view3d = new View3dSession(simulation, store, settings, this.fillHistory)
   }
 
   /** 地形の重ね描きの表示。矢印の間隔は設定のストア（水の流れと共通）を範囲に比例させた値（spec 05 §3.3） */

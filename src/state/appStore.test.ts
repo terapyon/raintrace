@@ -151,6 +151,16 @@ describe('盛土の履歴の状態', () => {
     expect(store.getState().terrainEpoch).toBe('now')
   })
 
+  it('setViewMode(2d) で terrainEpoch は now に戻り、3d では変わらない', () => {
+    const store = createAppStore()
+    store.getState().setViewMode('3d')
+    store.getState().setTerrainEpoch('past')
+    store.getState().setViewMode('3d')
+    expect(store.getState().terrainEpoch).toBe('past')
+    store.getState().setViewMode('2d')
+    expect(store.getState().terrainEpoch).toBe('now')
+  })
+
   it('オフのまま selectPoint しても off のまま', () => {
     const store = createAppStore()
     store.getState().selectPoint(139, 35)

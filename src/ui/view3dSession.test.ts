@@ -3,7 +3,7 @@ import { FakeWorker } from '../bridge/fakeWorker.test-support'
 import { SimulationClient } from '../bridge/SimulationClient'
 import type { MapController } from '../map/MapController'
 import type { View3dInit } from '../map/view3d/View3d'
-import type { TerrainPayload } from '../shared/protocol'
+import type { FillHistoryPayload, TerrainPayload } from '../shared/protocol'
 import { createAppStore } from '../state/appStore'
 import { memoryStorage } from '../state/memoryStorage.test-support'
 import { createSettingsStore } from '../state/settingsStore'
@@ -27,12 +27,35 @@ function fakeView() {
     setExaggeration: vi.fn(),
     setBasemap: vi.fn(),
     setWater: vi.fn(),
+    setPastElevation: vi.fn(),
     setPalette: vi.fn(),
     setShowOutflow: vi.fn(),
     restore: vi.fn(),
     dispose: vi.fn(),
   } satisfies View3dLike
 }
+
+/** FillHistorySession の偽物（結果を入れ替えて、購読者に知らせる） */
+function fakeFillHistory() {
+  let payload: FillHistoryPayload | null = null
+  const listeners = new Set<(result: FillHistoryPayload | null) => void>()
+  return {
+    result: () => payload,
+    onResult: (listener: (result: FillHistoryPayload | null) => void) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    set(next: FillHistoryPayload | null) {
+      payload = next
+      for (const listener of listeners) listener(next)
+    },
+  }
+}
+
+const PAST = new Float32Array([1, 2, Number.NaN, 4])
+const pastResult = { pastElevation: PAST } as unknown as FillHistoryPayload
 
 function setup(load?: () => Promise<View3dFactory>) {
   const client = new SimulationClient(() => new FakeWorker())
@@ -49,7 +72,8 @@ function setup(load?: () => Promise<View3dFactory>) {
         return view
       },
     )
-  const session = new View3dSession(simulation, app, settings, loader)
+  const fillHistory = fakeFillHistory()
+  const session = new View3dSession(simulation, app, settings, fillHistory, loader)
   const restyle: (() => void)[] = []
   const controller = {
     onRestyle: (listener: () => void) => {
@@ -58,7 +82,7 @@ function setup(load?: () => Promise<View3dFactory>) {
     },
   } as unknown as MapController
   const detach = session.attach(controller)
-  return { settings, simulation, app, view, inits, loader, restyle, detach }
+  return { settings, simulation, app, view, inits, loader, restyle, detach, fillHistory }
 }
 
 describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6・§3.8）', () => {
@@ -241,7 +265,7 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
       const settings = createSettingsStore(memoryStorage())
       const simulation = new SimulationSession(client, createSimulationStore(), settings)
       const app = createAppStore()
-      const session = new View3dSession(simulation, app, settings, load)
+      const session = new View3dSession(simulation, app, settings, fakeFillHistory(), load)
       const controllerA = { onRestyle: () => () => {} } as unknown as MapController
       const controllerB = { onRestyle: () => () => {} } as unknown as MapController
       const detachA = session.attach(controllerA)
@@ -292,5 +316,57 @@ describe('View3dSession（3D の遅延読み込みとつなぎ。spec 05 §3.6�
     expect(inits[0]?.showOutflow).toBe(false)
     settings.getState().setDisplay({ showOutflowCells: true })
     expect(view.setShowOutflow).toHaveBeenLastCalledWith(true)
+  })
+  describe('昔と今の切り替え（spec 09 §4.3）', () => {
+    async function threeD() {
+      const ctx = setup()
+      ctx.app.getState().setViewMode('3d')
+      await vi.waitFor(() => expect(ctx.view.setEnabled).toHaveBeenCalledWith(true))
+      ctx.fillHistory.set(pastResult)
+      ctx.view.setPastElevation.mockClear()
+      return ctx
+    }
+
+    it('3D で「昔」にすると setPastElevation に昔の標高が渡り、「今」で null に戻る', async () => {
+      const { app, view } = await threeD()
+      app.getState().setTerrainEpoch('past')
+      expect(view.setPastElevation).toHaveBeenLastCalledWith(PAST)
+      app.getState().setTerrainEpoch('now')
+      expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
+    })
+
+    it('「昔」のまま結果が消える（新しい地点の読み込み）と null に戻る', async () => {
+      const { app, view, fillHistory } = await threeD()
+      app.getState().setTerrainEpoch('past')
+      app.getState().selectPoint(139, 35)
+      fillHistory.set(null)
+      expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
+      expect(app.getState().terrainEpoch).toBe('now')
+    })
+
+    it('「昔」のまま盛土の履歴をオフにすると null に戻る', async () => {
+      const { app, view, fillHistory } = await threeD()
+      app.getState().setFillHistoryEnabled(true)
+      app.getState().setTerrainEpoch('past')
+      app.getState().setFillHistoryEnabled(false)
+      fillHistory.set(null)
+      expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
+    })
+
+    it('「昔」のまま 2D に戻すと null に戻る（terrainEpoch は now）', async () => {
+      const { app, view } = await threeD()
+      app.getState().setTerrainEpoch('past')
+      app.getState().setViewMode('2d')
+      expect(app.getState().terrainEpoch).toBe('now')
+      expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
+    })
+
+    it('結果が無いうちは「昔」にしても null のまま', async () => {
+      const { app, view, fillHistory } = await threeD()
+      fillHistory.set(null)
+      view.setPastElevation.mockClear()
+      app.getState().setTerrainEpoch('past')
+      expect(view.setPastElevation).toHaveBeenLastCalledWith(null)
+    })
   })
 })

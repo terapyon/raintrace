@@ -142,7 +142,9 @@ export function createAppStore(): AppStore {
     // マウスの移動のたびに呼ばれる。同じ値なら同じ state を返し、購読者（パネル）に知らせない
     setCursor: (cursor) => set((state) => (sameCursor(state.cursor, cursor) ? state : { cursor })),
     setPopover: (popover) => set({ popover }),
-    setViewMode: (viewMode) => set({ viewMode }),
+    // 2D に戻すと昔の地形の表示も終わる（昔は 3D だけの表示。spec 09 §4.3）
+    setViewMode: (viewMode) =>
+      set(viewMode === '2d' ? { viewMode, terrainEpoch: 'now' } : { viewMode }),
     setView3dStatus: (view3dStatus) => set({ view3dStatus }),
     setFillHistoryEnabled: (enabled) =>
       set((state) =>
