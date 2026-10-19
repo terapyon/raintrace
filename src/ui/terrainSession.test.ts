@@ -47,4 +47,13 @@ describe('TerrainSession.cellInfo の盛土の履歴（spec 09 §6.6）', () => 
     store.getState().setTerrainEpoch('past')
     expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9, deltaM: 3 })
   })
+
+  it('崩れた後を表示している間は、昔の標高・差を足さない（ruling R8）', () => {
+    const { store, session } = sessionWith()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().setCollapseView('after')
+    expect(session.cellInfo(p.lon, p.lat)).not.toHaveProperty('pastM')
+    store.getState().setCollapseView('before')
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9 })
+  })
 })

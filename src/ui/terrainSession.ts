@@ -12,6 +12,7 @@ import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
+import { CollapseSession } from './collapseSession'
 import { FillHistorySession } from './fillHistorySession'
 import {
   type MarkerInfoRow,
@@ -36,6 +37,8 @@ export class TerrainSession {
   readonly view3d: View3dSession
   /** 盛土の履歴の計算と結果（spec 09 §4.6） */
   readonly fillHistory: FillHistorySession
+  /** 盛土が崩れたと仮定した場合の計算・崩れる前後の切り替え・比べる計算（spec 10） */
+  readonly collapse: CollapseSession
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
   // URL の書き込みは、変更（地点の選択・地図の移動・雨量や範囲の変更）から 300ms 置いてまとめて行う（spec 04 §7）
@@ -54,6 +57,7 @@ export class TerrainSession {
     this.simulation = simulation
     this.settings = settings
     this.fillHistory = new FillHistorySession(client, store, simulation)
+    this.collapse = new CollapseSession(client, store, simulation, this.fillHistory, settings)
     this.view3d = new View3dSession(simulation, store, settings, this.fillHistory)
   }
 
@@ -98,6 +102,13 @@ export class TerrainSession {
     })
     // 3D の足し直しは 04 の重ね描きの足し直しの後に行う（onRestyle は登録した順に呼ばれる）
     const detach3d = this.view3d.attach(controller)
+    // 崩れる前後の切り替えでは、同じ範囲の地形を地図を動かさずに描き直す（ruling R1）。
+    // パネルの地形の要約は読み込んだ地形のまま（setTerrain は呼ばない）
+    const detachCollapse = this.collapse.attachMap({
+      container: map.getContainer(),
+      showTerrain: (terrain) =>
+        this.overlay?.showTerrain(terrain, this.overlayDisplay(), { fit: false }),
+    })
 
     const onClick = (event: MapMouseEvent): void => {
       const { lng, lat } = event.lngLat
@@ -196,6 +207,7 @@ export class TerrainSession {
     } else if (view.zoom !== null) map.setZoom(view.zoom)
 
     return () => {
+      detachCollapse()
       detach3d()
       map.off('click', onClick)
       map.off('mouseenter', TERRAIN_LAYER_IDS.markers, onMarkerEnter)
@@ -269,8 +281,12 @@ export class TerrainSession {
     const terrain = this.client.terrain
     if (terrain === null) return null
     const store = this.store.getState()
-    // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）
-    const result = store.fillHistory.enabled ? this.fillHistory.result() : null
+    // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）。
+    // 崩れた後を表示している間は足さない（履歴は崩れる前の地形のもの。ruling R8）
+    const result =
+      store.fillHistory.enabled && store.collapse.view !== 'after'
+        ? this.fillHistory.result()
+        : null
     const history =
       result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
     return cellInfoAt(terrain, this.client.water, lon, lat, history)

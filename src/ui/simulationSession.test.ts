@@ -667,13 +667,25 @@ describe('SimulationSession: 崩れる前後の切り替え（variant。spec 10 
     session.terrainReady(terrain, CENTER, { variant: true })
     expect(store.getState().status).toBe('idle')
     expect(seen).toEqual([{ terrain, variant: true }])
-    // 速度と矢印の設定は送り直す
-    expect(worker.posted.slice(sent).map((m) => m.type)).toEqual(['setSpeed', 'setArrows'])
+    // 紛れ込んだ実行を止める reset を新しい runId で送り（Task 6 のレビュー M1）、速度と矢印の設定は送り直す
+    expect(worker.posted.slice(sent).map((m) => m.type)).toEqual(['reset', 'setSpeed', 'setArrows'])
+    expect(worker.posted[sent]).toEqual({ type: 'reset', runId: 2 })
     // 新しい地形で、また start できる
     session.start(RAIN)
     expect(store.getState().status).toBe('running')
     session.terrainCleared()
     expect(seen.at(-1)).toEqual({ terrain: null, variant: false })
+  })
+
+  it('variant の後は、reset の runId の frame を受け、それより前の runId の frame は捨てる', () => {
+    const { worker, client, store, session } = setup()
+    session.start(RAIN)
+    session.terrainReady(terrain, CENTER, { variant: true })
+    const terrainId = client.terrainId ?? 0
+    worker.reply(frameMessage(terrainId, 3, { runId: 1, stats: statsAt(3) }))
+    expect(store.getState().stats).toBeNull()
+    worker.reply(frameMessage(terrainId, 0, { runId: 2, stats: statsAt(0) }))
+    expect(store.getState().stats?.step).toBe(0)
   })
 
   it('variant でない terrainReady は variant: false で知らせる', () => {

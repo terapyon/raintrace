@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CompareSide, FillHistoryPayload, TerrainPayload } from '../shared/protocol'
+import type {
+  CollapsePayload,
+  CompareSide,
+  FillHistoryPayload,
+  TerrainPayload,
+} from '../shared/protocol'
 import { FakeWorker, frameMessage, simFailedMessage } from './fakeWorker.test-support'
 import { LOAD_STALL_TIMEOUT_MS, SimulationClient } from './SimulationClient'
 
@@ -554,6 +559,12 @@ describe('SimulationClient の swapTerrain（spec 10 §5.2）', () => {
     expect(client.terrainId).toBe(terrainId)
   })
 
+  it('地形を読み込んでいなければ、送らずに失敗する（Task 6 のレビュー M2）', async () => {
+    const { worker, client } = setup()
+    await expect(client.swapTerrain(swapped)).rejects.toMatchObject({ reason: 'internal' })
+    expect(worker.posted).toHaveLength(0)
+  })
+
   it('読み込み中の差し替えは送らずに失敗する', async () => {
     const { worker, client } = loadedSetup()
     void client.loadTerrain(1, 1, 500)
@@ -680,6 +691,111 @@ describe('SimulationClient の compareCollapse', () => {
   it('Worker が異常終了したら worker で失敗する', async () => {
     const { worker, client } = loaded()
     const done = client.compareCollapse(terrain, terrain, rain, () => {})
+    worker.crash()
+    await expect(done).rejects.toMatchObject({ reason: 'worker' })
+  })
+})
+
+describe('SimulationClient の collapse（spec 10）', () => {
+  const terrain = {
+    geo: { size: 2, cellSizeM: 5 },
+    elevation: new Float32Array([1, 2, 3, 4]),
+    validMask: new Uint8Array([1, 1, 1, 1]),
+  } as unknown as TerrainPayload
+  const removed = new Float32Array([0, 1, 0, 0])
+  const result = (terrainId: number) => ({ terrainId }) as unknown as CollapsePayload
+
+  function loaded() {
+    const { worker, client } = setup()
+    void client.loadTerrain(0, 0, 500)
+    const terrainId = worker.loaded(terrain)
+    return { worker, client, terrainId }
+  }
+  const request = (terrainId: number) => ({
+    terrainId,
+    terrain,
+    removed,
+    candidateId: 3,
+    ratio: 0.5 as const,
+    presetId: 'near',
+  })
+  const lastCollapse = (worker: FakeWorker) => {
+    const last = worker.posted.at(-1)
+    if (last?.type !== 'collapse') throw new Error('collapse ではありません')
+    return last
+  }
+
+  it('標高・マスク・崩れる厚さの写しを送り、進み具合を流し、応答で解決する', async () => {
+    const { worker, client, terrainId } = loaded()
+    const seen: number[] = []
+    const done = client.collapse(request(terrainId), (f) => seen.push(f))
+    const sent = lastCollapse(worker)
+    expect(sent).toMatchObject({ terrainId, candidateId: 3, ratio: 0.5, presetId: 'near' })
+    expect(sent.removed).not.toBe(removed)
+    expect(Array.from(sent.removed)).toEqual([0, 1, 0, 0])
+    expect(sent.elevation).not.toBe(terrain.elevation)
+    expect(worker.transferred).toEqual(
+      expect.arrayContaining([sent.elevation.buffer, sent.validMask.buffer, sent.removed.buffer]),
+    )
+    expect(removed.byteLength).toBe(16)
+    worker.reply({ type: 'collapseProgress', requestId: sent.requestId, fraction: 0.4 })
+    worker.reply({ type: 'collapseReady', requestId: sent.requestId, result: result(terrainId) })
+    await expect(done).resolves.toEqual(result(terrainId))
+    expect(seen).toEqual([0.4])
+  })
+
+  it('新しい依頼は前の依頼を superseded で失敗させ、古い応答と進み具合を捨てる', async () => {
+    const { worker, client, terrainId } = loaded()
+    const firstProgress = vi.fn()
+    const first = client.collapse(request(terrainId), firstProgress)
+    const firstId = lastCollapse(worker).requestId
+    const second = client.collapse(request(terrainId))
+    await expect(first).rejects.toMatchObject({ reason: 'superseded' })
+    worker.reply({ type: 'collapseProgress', requestId: firstId, fraction: 0.9 })
+    worker.reply({ type: 'collapseReady', requestId: firstId, result: result(terrainId) })
+    expect(firstProgress).not.toHaveBeenCalled()
+    const secondId = lastCollapse(worker).requestId
+    worker.reply({ type: 'collapseReady', requestId: secondId, result: result(terrainId) })
+    await expect(second).resolves.toEqual(result(terrainId))
+  })
+
+  it('依頼の後に地形を読み込み直したら superseded で失敗する', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.collapse(request(terrainId))
+    const { requestId } = lastCollapse(worker)
+    void client.loadTerrain(1, 1, 500)
+    await expect(done).rejects.toMatchObject({ reason: 'superseded' })
+    worker.loaded(terrain)
+    worker.reply({ type: 'collapseReady', requestId, result: result(terrainId) })
+  })
+
+  it('差し替えの後も、読み込んだ地形の結果は通る（baseTerrainId で突き合わせる。ruling R7）', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.collapse(request(terrainId))
+    const { requestId } = lastCollapse(worker)
+    const swap = client.swapTerrain(terrain)
+    const swapMessage = worker.posted.at(-1)
+    if (swapMessage?.type !== 'swapTerrain') throw new Error('swapTerrain ではありません')
+    worker.reply({ type: 'terrainSwapped', requestId: swapMessage.requestId })
+    await swap
+    worker.reply({ type: 'collapseReady', requestId, result: result(terrainId) })
+    await expect(done).resolves.toEqual(result(terrainId))
+  })
+
+  it('collapseFailed は internal で失敗する', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.collapse(request(terrainId))
+    worker.reply({
+      type: 'collapseFailed',
+      requestId: lastCollapse(worker).requestId,
+      message: 'x',
+    })
+    await expect(done).rejects.toMatchObject({ reason: 'internal' })
+  })
+
+  it('Worker が異常終了したら worker で失敗する', async () => {
+    const { worker, client, terrainId } = loaded()
+    const done = client.collapse(request(terrainId))
     worker.crash()
     await expect(done).rejects.toMatchObject({ reason: 'worker' })
   })

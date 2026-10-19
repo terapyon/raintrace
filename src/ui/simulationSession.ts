@@ -1,10 +1,10 @@
-import type { FrameView, SimulationClient } from '../bridge/SimulationClient'
+import type { FrameView, RainfallInput, SimulationClient } from '../bridge/SimulationClient'
 import { gridPositionM } from '../dem/gridRange'
 import type { MapController } from '../map/MapController'
 import { WaterOverlay } from '../map/WaterOverlay'
 import type { WaterPalette } from '../map/waterColormap'
 import { waterArrowFeatures } from '../map/waterFeatures'
-import type { PlaybackSpeed, TerrainPayload } from '../shared/protocol'
+import type { PlaybackSpeed, TerrainGeo, TerrainPayload } from '../shared/protocol'
 import { arrowSpacingForRange } from '../state/arrowSpacing'
 import type { RainfallSettings } from '../state/persistedSettings'
 import type { SettingsState, SettingsStore } from '../state/settingsStore'
@@ -13,6 +13,26 @@ import { createThrottle, type Throttle } from '../state/throttle'
 
 /** variant: 崩れる前後の切り替え（同じ地点で、エンジンの地形だけが変わった。spec 10 §5.2） */
 export type TerrainListener = (terrain: TerrainPayload | null, info: { variant: boolean }) => void
+
+/**
+ * 画面の雨の設定を、エンジンに渡す雨にする（降雨中心は格子の北西端からの距離、継続時間は分から秒）。
+ * 再生（SimulationSession.start）と崩れる前後の比較（CollapseSession.compare）で共有する（ruling R4）
+ */
+export function rainfallInput(
+  rain: RainfallSettings,
+  geo: TerrainGeo,
+  center: { lon: number; lat: number },
+): RainfallInput {
+  const { x, y } = gridPositionM(geo, center.lon, center.lat)
+  return {
+    x,
+    y,
+    radiusM: rain.radiusM,
+    intensityMmPerH: rain.intensityMmPerH,
+    durationS: rain.durationMin * 60,
+    wholeRange: rain.wholeRange,
+  }
+}
 
 /** 統計をストアへ入れる間隔（10Hz。tech-spec §5.1） */
 export const STATS_INTERVAL_MS = 100
@@ -125,18 +145,23 @@ export class SimulationSession {
     options: { variant?: boolean } = {},
   ): void {
     const variant = options.variant === true
+    this.terrain = terrain
+    this.center = center
     if (variant) {
-      // 新しい地形では前の実行の水・統計・矢印は意味を持たない。再生も止まっている（Worker が止める）
+      // 新しい地形では前の実行の水・統計・矢印は意味を持たない。差し替えの命令を送ってから terrainSwapped が
+      // 届くまでの間に再生の命令（start など）が差し替えの後へ入りうるので、0 に戻すだけでなく runId を進めて
+      // reset を送り、紛れ込んだ実行を止める（Task 6 のレビュー M1）。その後の frame は新しい runId のもの
+      this.runId += 1
+      this.client.reset(this.runId)
       this.statsThrottle.cancel()
       this.clearWater()
       this.store.getState().reset()
+    } else {
+      // Worker は loadTerrain の直後 runId を 0 にする（新しい地形では実行がまだ始まっていない）。
+      // 異常終了で作り直した Worker も、terrainReady は必ず新しい読み込みの後に呼ばれるので、
+      // ここで揃えておけば両者は常に同じ基準（0）から始まる
+      this.runId = 0
     }
-    this.terrain = terrain
-    this.center = center
-    // Worker は loadTerrain の直後 runId を 0 にする（新しい地形では実行がまだ始まっていない）。
-    // 異常終了で作り直した Worker も、terrainReady は必ず新しい読み込みの後に呼ばれるので、
-    // ここで揃えておけば両者は常に同じ基準（0）から始まる
-    this.runId = 0
     // 異常終了で作り直した Worker（新しい PlaybackScheduler）は速度 1・既定の矢印設定で始まり、
     // ストアが持つ今の速度とずれる。読み込みが済むたびに送り直して揃える（コントローラーの追加の裁定）
     this.client.setSpeed(this.store.getState().speed)
@@ -215,19 +240,8 @@ export class SimulationSession {
   /** 雨を登録して再生を始める（spec 08 §4.2）。継続時間は分から秒にする */
   start(rain: RainfallSettings): void {
     if (this.terrain === null || this.center === null) return
-    const { x, y } = gridPositionM(this.terrain.geo, this.center.lon, this.center.lat)
     this.runId += 1
-    this.client.start(
-      {
-        x,
-        y,
-        radiusM: rain.radiusM,
-        intensityMmPerH: rain.intensityMmPerH,
-        durationS: rain.durationMin * 60,
-        wholeRange: rain.wholeRange,
-      },
-      this.runId,
-    )
+    this.client.start(rainfallInput(rain, this.terrain.geo, this.center), this.runId)
     this.clearWater()
     this.store
       .getState()
