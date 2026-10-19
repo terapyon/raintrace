@@ -10,6 +10,7 @@ import type {
 } from '../shared/protocol'
 import type { StepStats } from '../simulation/types'
 import { CLOSED, type Popover } from './clickState'
+import type { RainfallSettings, RangeSizeM } from './persistedSettings'
 
 /** 読み込みの失敗の理由。superseded（新しい地点に置き換わった）は失敗として置かない */
 export type LoadFailureReason = Exclude<TerrainErrorReason, 'superseded'>
@@ -112,6 +113,22 @@ export interface CompareState {
   progress: number
   remainingS: number | null
   summary: CompareSummary | null
+  /** 比べたときの雨の設定と範囲の大きさ。比べていなければ null */
+  settings: CompareSettings | null
+}
+
+/** 比べる計算に効く設定（雨の設定と範囲の大きさ）。比べた後に変わったかを見る */
+export type CompareSettings = RainfallSettings & { sizeM: RangeSizeM }
+
+/** 比べた後に設定が変わったか。範囲全体に降らせている間は、半径の違いは結果に効かないので見ない */
+export function compareSettingsChanged(used: CompareSettings, now: CompareSettings): boolean {
+  return (
+    used.intensityMmPerH !== now.intensityMmPerH ||
+    used.durationMin !== now.durationMin ||
+    used.wholeRange !== now.wholeRange ||
+    used.sizeM !== now.sizeM ||
+    (!now.wholeRange && used.radiusM !== now.radiusM)
+  )
 }
 
 /** 崩れたと仮定した場合（spec 10）。保存しない画面の一時状態 */
@@ -136,6 +153,7 @@ export const IDLE_COMPARE: CompareState = {
   progress: 0,
   remainingS: null,
   summary: null,
+  settings: null,
 }
 
 export const CLOSED_COLLAPSE: CollapseState = {

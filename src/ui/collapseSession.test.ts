@@ -122,7 +122,12 @@ function setup() {
     cancelCompare: vi.fn(() => {
       compares.at(-1)?.reject(new CompareError('cancelled', 'x'))
     }),
+    onCrash: (l: () => void) => {
+      crashListeners.push(l)
+      return () => {}
+    },
   }
+  const crashListeners: Array<() => void> = []
   type Listener = (t: TerrainPayload | null, info: { variant: boolean }) => void
   const terrainListeners: Listener[] = []
   const simulation = {
@@ -188,6 +193,9 @@ function setup() {
   }
   return {
     client,
+    crash: () => {
+      for (const l of crashListeners) l()
+    },
     simulation,
     app,
     settings,
@@ -467,6 +475,14 @@ describe('CollapseSession', () => {
       status: 'done',
       side: null,
       summary: { damMaxDepthM: expect.closeTo(0.8), newWaterAreaM2: 4 },
+      // 比べたときの雨の設定と範囲の大きさ（比べ直しの知らせに使う）
+      settings: {
+        intensityMmPerH: 50,
+        durationMin: 60,
+        radiusM: 100,
+        wholeRange: true,
+        sizeM: settings.getState().area.sizeM,
+      },
     })
   })
 
@@ -489,6 +505,41 @@ describe('CollapseSession', () => {
     await done
     expect(client.cancelCompare).toHaveBeenCalled()
     expect(app.getState().collapse.compare.status).toBe('idle')
+  })
+
+  it('崩れた後を表示中に Worker が異常終了したら、差し替えずに閉じ、before に戻す', async () => {
+    const { client, app, session, swaps, container, showTerrain, ready, crash } = setup()
+    await ready()
+    expect(app.getState().collapse.view).toBe('after')
+    const swapsBefore = swaps.length
+    crash()
+    await Promise.resolve()
+    expect(app.getState().collapse).toMatchObject({
+      candidateId: null,
+      status: 'idle',
+      view: 'before',
+      swapping: false,
+    })
+    expect(container.dataset.collapseView).toBe('before')
+    // 新しい Worker には地形が無いので、差し替えは頼まない。地図は基の地形で描き直す
+    expect(swaps).toHaveLength(swapsBefore)
+    expect(client.swapTerrain).toHaveBeenCalledTimes(swapsBefore)
+    expect(showTerrain).toHaveBeenLastCalledWith(base)
+    expect(session.result()).toBeNull()
+  })
+
+  it('崩れた後への差し替えの途中で異常終了したら、差し替えの返事を待たずに before に戻す', async () => {
+    const { app, swaps, container, computeOnly, crash } = setup()
+    const done = computeOnly()
+    await vi.waitFor(() => expect(swaps).toHaveLength(1))
+    expect(app.getState().collapse.swapping).toBe(true)
+    crash()
+    expect(app.getState().collapse).toMatchObject({ view: 'before', swapping: false })
+    // 異常終了で差し替えの依頼は失敗する
+    swaps[0]?.reject(new Error('worker'))
+    await done
+    expect(app.getState().collapse.view).toBe('before')
+    expect(container.dataset.collapseView).toBe('before')
   })
 
   it('比べる計算の失敗は failed', async () => {

@@ -5,6 +5,7 @@ export const strings = {
   collapse: {
     title: '崩れたと仮定した場合',
     open: '崩れたと仮定する',
+    close: '閉じる',
     target: (id: string, volume: string, evidence: string) =>
       `標高差の大きい範囲: ${id}（${volume}、${evidence}）`,
     ratio: '崩れる量',
@@ -44,14 +45,15 @@ export const strings = {
     cancel: '中止',
     compareFailed: '比べる計算ができませんでした',
     compareAt: '雨が降り終わった時点で比べています',
+    compareStale: '雨の設定が変わりました。比べ直してください',
     table: {
       before: '崩れる前',
       after: '崩れた後',
       diff: '差',
       maxDepth: '最大の水深',
       floodedArea: '湛水面積（1 cm 以上）',
-      storedWater: '溜まった水の量',
-      outflowWater: '流れ出た水の量',
+      storedWater: '範囲の中に溜まった水の量',
+      outflowWater: '範囲の外へ流れ出た水の量',
       damMaxDepth: 'せき止められた場所の水深の最大',
     },
     newWater: (a: string) => `新しく水が溜まった範囲 +${a}`,

@@ -129,6 +129,7 @@ export class CollapseSession {
       this.writeView('before')
       this.discard(false)
     })
+    client.onCrash(() => this.onCrash())
     app.subscribe((state, previous) => {
       if (state.collapse === previous.collapse) return
       if (!discarded(state.collapse, previous.collapse)) return
@@ -232,9 +233,15 @@ export class CollapseSession {
     const generation = ++this.compareGeneration
     this.comparing = true
     const actions = this.app.getState()
-    const running = { ...IDLE_COMPARE, status: 'running' as const, side: 'before' as const }
+    const { rainfall, area } = this.settings.getState()
+    const running = {
+      ...IDLE_COMPARE,
+      status: 'running' as const,
+      side: 'before' as const,
+      settings: { ...rainfall, sizeM: area.sizeM },
+    }
     actions.setCompare(running)
-    const rain = rainfallInput(this.settings.getState().rainfall, base.geo, center)
+    const rain = rainfallInput(rainfall, base.geo, center)
     let result: { before: CompareSide; after: CompareSide }
     try {
       result = await this.client.compareCollapse(base, payload.after, rain, (progress) => {
@@ -270,6 +277,7 @@ export class CollapseSession {
       progress: 1,
       remainingS: null,
       summary: compareSummary(result, payload.after, payload.dams),
+      settings: running.settings,
     })
   }
 
@@ -309,6 +317,24 @@ export class CollapseSession {
     }
     if (changed) this.notify()
     if (swapBack && this.engine === 'after') void this.show('before')
+  }
+
+  /**
+   * Worker の異常終了。新しい Worker には地形が無いので差し替えは頼まず、エンジン・表示を崩れる前にして閉じる。
+   * 待っていた依頼（計算・比較・差し替え）は SimulationClient が失敗させ、世代が進んでいるので捨てる
+   */
+  private onCrash(): void {
+    const showingAfter = this.app.getState().collapse.view === 'after'
+    this.viewGeneration += 1
+    this.engine = 'before'
+    // 比べる計算は SimulationClient が既に失敗させている（取り消しを送る相手もいない）
+    this.comparing = false
+    const actions = this.app.getState()
+    actions.setCollapseSwapping(false)
+    // 閉じると、購読の discard が結果を捨てる（エンジンは before なので差し替えない）
+    actions.closeCollapse()
+    if (showingAfter && this.base !== null) this.map?.showTerrain(this.base)
+    this.writeView('before')
   }
 
   private async show(view: View): Promise<void> {

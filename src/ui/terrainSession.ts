@@ -34,7 +34,7 @@ export class TerrainSession {
   readonly store: AppStore
   private readonly client: SimulationClient
   readonly simulation: SimulationSession
-  private readonly settings: SettingsStore
+  readonly settings: SettingsStore
   /** 2D と 3D の切り替えと 3D の表示（spec 05 §3.6） */
   readonly view3d: View3dSession
   /** 盛土の履歴の計算と結果（spec 09 §4.6） */
@@ -304,9 +304,10 @@ export class TerrainSession {
     if (terrain === null) return null
     const store = this.store.getState()
     // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）。
-    // 崩れた後を表示している間は足さない（履歴は崩れる前の地形のもの。ruling R8）
+    // 崩れた後を表示している間と、差し替えの途中（エンジンの地形がまだ崩れた後でありうる）は足さない
+    // （履歴は崩れる前の地形のもの。ruling R8）
     const result =
-      store.fillHistory.enabled && store.collapse.view !== 'after'
+      store.fillHistory.enabled && store.collapse.view !== 'after' && !store.collapse.swapping
         ? this.fillHistory.result()
         : null
     const history =

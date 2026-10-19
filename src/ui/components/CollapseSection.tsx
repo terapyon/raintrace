@@ -17,7 +17,11 @@ import { useStore } from 'zustand'
 import { MAX_SHOWN_DAMS } from '../../shared/damDisplay'
 import { DEBRIS_PRESETS } from '../../shared/debrisPresets'
 import type { CollapseRatio } from '../../shared/protocol'
-import type { CollapseSummary, CompareSummary } from '../../state/appStore'
+import {
+  type CollapseSummary,
+  type CompareSummary,
+  compareSettingsChanged,
+} from '../../state/appStore'
 import {
   formatArea,
   formatMeters,
@@ -95,7 +99,7 @@ function ResultLines({ summary }: { summary: CollapseSummary }) {
   )
 }
 
-function CompareTable({ summary }: { summary: CompareSummary }) {
+function CompareTable({ summary, stale }: { summary: CompareSummary; stale: boolean }) {
   const { before, after } = summary
   const rows: { label: string; before: string; after: string; diff: string }[] = [
     {
@@ -125,6 +129,11 @@ function CompareTable({ summary }: { summary: CompareSummary }) {
   ]
   return (
     <Box sx={{ mt: 1 }} data-testid="compare-result">
+      {stale && (
+        <Alert severity="warning" sx={{ my: 0.5 }} data-testid="compare-stale">
+          {t.compareStale}
+        </Alert>
+      )}
       <Typography variant="caption" component="p">
         {t.compareAt}
       </Typography>
@@ -182,6 +191,8 @@ export function CollapseSection({
   const candidate = useStore(app, (s) =>
     s.fillHistory.summary?.candidates.find((c) => c.id === s.collapse.candidateId),
   )
+  const rainfall = useStore(session.settings, (s) => s.rainfall)
+  const sizeM = useStore(session.settings, (s) => s.area.sizeM)
   const rootRef = useRef<HTMLDivElement>(null)
   const openId = collapse.candidateId
   // 開いたとき（候補が替わったときも）、狭い画面で見えない位置にあるパネルの中でも見えるようにする
@@ -194,10 +205,18 @@ export function CollapseSection({
   const locked = status === 'computing' || compare.status === 'running' || swapping
   const canCompute = status === 'idle' || status === 'failed'
   const side = compare.side
+  // 比べた後に雨の設定や範囲の大きさを変えたら、表は残して比べ直しを促す
+  const stale =
+    compare.settings !== null && compareSettingsChanged(compare.settings, { ...rainfall, sizeM })
   return (
     <Box ref={rootRef} data-testid="collapse-section" sx={{ mt: 1 }}>
       <Divider sx={{ mb: 1 }} />
-      <Typography variant="subtitle2">{t.title}</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Typography variant="subtitle2">{t.title}</Typography>
+        <Button size="small" onClick={() => actions.closeCollapse()}>
+          {t.close}
+        </Button>
+      </Box>
       {candidate !== undefined && (
         <Typography variant="body2">
           {t.target(
@@ -328,7 +347,7 @@ export function CollapseSection({
               </Alert>
             )}
             {compare.status === 'done' && compare.summary !== null && (
-              <CompareTable summary={compare.summary} />
+              <CompareTable summary={compare.summary} stale={stale} />
             )}
           </Box>
         </>

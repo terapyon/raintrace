@@ -21,7 +21,7 @@ const history = {
 function sessionWith() {
   const store = createAppStore()
   const simulation = { onTerrain: () => () => {}, onWater: () => () => {} }
-  const client = { terrain, water: null }
+  const client = { terrain, water: null, onCrash: () => () => {} }
   const session = new TerrainSession(
     client as never,
     store,
@@ -54,6 +54,15 @@ describe('TerrainSession.cellInfo の盛土の履歴（spec 09 §6.6）', () => 
     store.getState().setCollapseView('after')
     expect(session.cellInfo(p.lon, p.lat)).not.toHaveProperty('pastM')
     store.getState().setCollapseView('before')
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9 })
+  })
+
+  it('崩れる前へ戻す差し替えの途中（エンジンはまだ崩れた後でありうる）も、昔の標高・差を足さない', () => {
+    const { store, session } = sessionWith()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().setCollapseSwapping(true)
+    expect(session.cellInfo(p.lon, p.lat)).not.toHaveProperty('pastM')
+    store.getState().setCollapseSwapping(false)
     expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9 })
   })
 })

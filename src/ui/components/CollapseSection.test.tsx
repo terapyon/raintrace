@@ -68,11 +68,18 @@ function setup() {
   const compare = vi.spyOn(session.collapse, 'compare').mockResolvedValue()
   const cancel = vi.spyOn(session.collapse, 'cancelCompare').mockImplementation(() => {})
   const setView = vi.spyOn(session.collapse, 'setView').mockResolvedValue()
-  return { session, store, compute, compare, cancel, setView }
+  return { session, store, settings, compute, compare, cancel, setView }
 }
 
 const patch = (store: ReturnType<typeof createAppStore>, over: object) =>
   act(() => store.setState((s) => ({ collapse: { ...s.collapse, ...over } })))
+
+const compared: CompareSummary = {
+  before: { maxDepth: 0.5, floodedArea: 1000, storedWater: 100, outflowWater: 50 },
+  after: { maxDepth: 0.98, floodedArea: 2200, storedWater: 160, outflowWater: 20 },
+  damMaxDepthM: 2.5,
+  newWaterAreaM2: 1200,
+}
 
 describe('CollapseSection', () => {
   it('候補の詳しい欄の「崩れたと仮定する」で openCollapse(id)、CollapseSection が出る', async () => {
@@ -246,6 +253,64 @@ describe('CollapseSection', () => {
     expect(table.textContent).toContain('+1200 m²')
     expect(table.textContent).toContain(strings.collapse.newWater('1200 m²'))
     expect(table.textContent).toContain(strings.collapse.table.damMaxDepth)
+  })
+
+  it('表の行の名前は spec 5.3 のとおり（範囲の中に溜まった水の量・範囲の外へ流れ出た水の量）', () => {
+    const { session, store } = setup()
+    store.getState().openCollapse(3)
+    patch(store, { status: 'ready', summary: summary() })
+    render(<CollapseSection session={session} compareMinutes={0} />)
+    patch(store, { compare: { ...IDLE_COMPARE, status: 'done', summary: compared } })
+    const table = screen.getByTestId('compare-result')
+    expect(within(table).getByText('範囲の中に溜まった水の量')).toBeTruthy()
+    expect(within(table).getByText('範囲の外へ流れ出た水の量')).toBeTruthy()
+  })
+
+  it('比べた後に雨の設定・範囲の大きさが変わると、表を残したまま比べ直しを促す', () => {
+    const { session, store, settings } = setup()
+    store.getState().openCollapse(3)
+    patch(store, { status: 'ready', summary: summary() })
+    render(<CollapseSection session={session} compareMinutes={0} />)
+    const { rainfall, area } = settings.getState()
+    patch(store, {
+      compare: {
+        ...IDLE_COMPARE,
+        status: 'done',
+        summary: compared,
+        settings: { ...rainfall, sizeM: area.sizeM },
+      },
+    })
+    expect(screen.queryByTestId('compare-stale')).toBeNull()
+    const change = (
+      next: Partial<typeof rainfall>,
+      sizeM: typeof area.sizeM = area.sizeM,
+    ): string | null => {
+      act(() => {
+        settings.getState().setRainfall({ ...rainfall, ...next })
+        settings.getState().setAreaSize(sizeM)
+      })
+      return screen.queryByTestId('compare-stale')?.textContent ?? null
+    }
+    expect(change({ intensityMmPerH: rainfall.intensityMmPerH + 10 })).toBe(
+      strings.collapse.compareStale,
+    )
+    expect(screen.getByTestId('compare-result').textContent).toContain('+0.48 m')
+    expect(change({})).toBeNull()
+    expect(change({ durationMin: rainfall.durationMin === 60 ? 30 : 60 })).not.toBeNull()
+    expect(change({ radiusM: rainfall.radiusM + 1 })).not.toBeNull()
+    expect(change({ wholeRange: !rainfall.wholeRange })).not.toBeNull()
+    expect(change({}, area.sizeM === 500 ? 1000 : 500)).not.toBeNull()
+    expect(change({})).toBeNull()
+  })
+
+  it('「閉じる」で closeCollapse', async () => {
+    const { session, store } = setup()
+    store.getState().openCollapse(3)
+    patch(store, { status: 'ready', summary: summary() })
+    render(<CollapseSection session={session} compareMinutes={0} />)
+    await userEvent.click(screen.getByRole('button', { name: strings.collapse.close }))
+    expect(store.getState().collapse.candidateId).toBeNull()
+    expect(screen.queryByTestId('collapse-section')).toBeNull()
   })
 
   it('swapping の間は比べるボタンを押せない', () => {
