@@ -13,5 +13,5 @@ export const FILL_THRESHOLD_M = 5
 /** 盛土の候補にするかたまりの面積の下限（m²）。これより小さいかたまりは捨てる */
 export const FILL_MIN_AREA_M2 = 500
 
-/** 候補のセルのうち、この割合以上が A54 の中なら根拠「強い」にする */
+/** 候補のセルのうち、この割合以上が A54（→ 強い）または人工地形（→ 中）の中なら「重なる」とみなす */
 export const EVIDENCE_MIN_FRACTION = 0.1

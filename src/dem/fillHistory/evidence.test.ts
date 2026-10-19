@@ -93,12 +93,14 @@ describe('classifyEvidence', () => {
   it('人工地形だけ → moderate、両方 → strong で sources は 2 つ、無し → limited', () => {
     const { labels, c } = candidate(100)
     const lf = new Int32Array(SIZE * SIZE)
-    lf[5] = 1
+    lf.fill(1, 0, 10) // ちょうど 10%
     expect(classifyEvidence(labels, [c], null, lf).get(1)).toEqual({
       level: 'moderate',
       sources: ['landform'],
     })
-    expect(classifyEvidence(labels, [c], null, new Int32Array(SIZE * SIZE)).get(1)).toEqual({
+    const lf9 = new Int32Array(SIZE * SIZE)
+    lf9.fill(1, 0, 9) // 9% は重ならない
+    expect(classifyEvidence(labels, [c], null, lf9).get(1)).toEqual({
       level: 'limited',
       sources: [],
     })

@@ -85,7 +85,7 @@ export function rasterizePolygons(
 /**
  * 候補ごとに根拠の段階を決める。
  * A54 の中のセルが候補の EVIDENCE_MIN_FRACTION 以上 → strong（a54Type は最も多く重なった型）。
- * そうでなく人工地形の中のセルがある → moderate。それ以外 → limited。
+ * そうでなく人工地形の中のセルが同じ割合以上 → moderate。それ以外 → limited。
  * 両方に重なれば strong で sources は両方。null（読めなかった）は重ならないとみなす。
  */
 export function classifyEvidence(
@@ -120,7 +120,8 @@ export function classifyEvidence(
   const result = new Map<number, CandidateEvidence>()
   candidates.forEach((c, idx) => {
     const hasA54 = c.cellCount > 0 && (a54Cells[idx] ?? 0) / c.cellCount >= EVIDENCE_MIN_FRACTION
-    const hasLandform = (landformCells[idx] ?? 0) > 0
+    const hasLandform =
+      c.cellCount > 0 && (landformCells[idx] ?? 0) / c.cellCount >= EVIDENCE_MIN_FRACTION
     const sources: Array<'a54' | 'landform'> = []
     if (hasA54) sources.push('a54')
     if (hasLandform) sources.push('landform')
