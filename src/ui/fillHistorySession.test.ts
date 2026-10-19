@@ -29,16 +29,17 @@ function setup() {
   const terrainB = { id: 'B' } as unknown as TerrainPayload
   const calls: Array<ReturnType<typeof deferred<FillHistoryPayload>>> = []
   const client = {
-    terrainId: null as number | null,
+    baseTerrainId: null as number | null,
     computeFillHistory: vi.fn(() => {
       const d = deferred<FillHistoryPayload>()
       calls.push(d)
       return d.promise
     }),
   }
-  const terrainListeners: Array<(t: TerrainPayload | null) => void> = []
+  type Listener = (t: TerrainPayload | null, info: { variant: boolean }) => void
+  const terrainListeners: Listener[] = []
   const simulation = {
-    onTerrain: (l: (t: TerrainPayload | null) => void) => {
+    onTerrain: (l: Listener) => {
       terrainListeners.push(l)
       return () => {}
     },
@@ -50,13 +51,17 @@ function setup() {
     simulation as unknown as SimulationSession,
   )
   const load = (terrain: TerrainPayload, id: number) => {
-    client.terrainId = id
-    for (const l of terrainListeners) l(terrain)
+    client.baseTerrainId = id
+    for (const l of terrainListeners) l(terrain, { variant: false })
   }
   const clear = () => {
-    for (const l of terrainListeners) l(null)
+    for (const l of terrainListeners) l(null, { variant: false })
   }
-  return { client, calls, app, session, load, clear, terrainA, terrainB }
+  /** 崩れる前後の切り替え（baseTerrainId は変わらない） */
+  const swap = (terrain: TerrainPayload) => {
+    for (const l of terrainListeners) l(terrain, { variant: true })
+  }
+  return { client, calls, app, session, load, clear, swap, terrainA, terrainB }
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -79,6 +84,30 @@ describe('FillHistorySession', () => {
       status: 'ready',
       summary: { offsetM: 0.4, candidates: [{ id: 1 }], a54Available: true },
     })
+  })
+
+  it('variant の通知では結果を保ち、request しない', async () => {
+    const { client, calls, app, session, load, swap, terrainA, terrainB } = setup()
+    app.getState().setFillHistoryEnabled(true)
+    load(terrainA, 5)
+    const result = payload(5)
+    calls[0]?.resolve(result)
+    await tick()
+    expect(session.result()).toBe(result)
+    swap(terrainB)
+    expect(session.result()).toBe(result)
+    expect(client.computeFillHistory).toHaveBeenCalledTimes(1)
+    expect(app.getState().fillHistory.status).toBe('ready')
+  })
+
+  it('計算中に variant の通知が来ても、依頼は無効にならず結果が通る', async () => {
+    const { calls, app, session, load, swap, terrainA, terrainB } = setup()
+    app.getState().setFillHistoryEnabled(true)
+    load(terrainA, 5)
+    swap(terrainB)
+    calls[0]?.resolve(payload(5))
+    await tick()
+    expect(session.result()?.terrainId).toBe(5)
   })
 
   it('オフのままなら、地形を読み込んでも computeFillHistory を呼ばない', () => {

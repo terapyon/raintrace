@@ -6,6 +6,7 @@ import type { DemId } from '../dem/demSources.ts'
 import type { Corners } from '../dem/gridRange.ts'
 import type { OutflowCells } from '../simulation/outflowCells.ts'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain.ts'
+import type { Depression } from '../simulation/terrain/types.ts'
 import type { RainfallInput, StepStats } from '../simulation/types.ts'
 
 /**
@@ -66,7 +67,20 @@ export type MainToWorkerMessage =
       ratio: CollapseRatio
       presetId: string
     }
+  | ({ type: 'swapTerrain'; requestId: number } & SwapGrid)
   | SimulationCommand
+
+/**
+ * 地形の差し替え（spec 10 §5.2）。タイルを読まずに、エンジンの地形だけを入れ替える。
+ * 崩れる前と後を切り替えるたびに送る。size は格子の一辺（正方形）
+ */
+export interface SwapGrid {
+  elevation: Float32Array
+  validMask: Uint8Array
+  size: number
+  cellSizeM: number
+  depressions: Depression[]
+}
 
 /**
  * no-data: 範囲の全画素が無効値。network: 再試行しても取得に失敗。out-of-range: 対応範囲（日本）の外。
@@ -218,6 +232,7 @@ export type WorkerToMainMessage =
   | { type: 'pong'; id: number }
   | { type: 'terrainProgress'; requestId: number; done: number; started: number }
   | { type: 'terrainLoaded'; requestId: number; terrain: TerrainPayload }
+  | { type: 'terrainSwapped'; requestId: number }
   | { type: 'terrainFailed'; requestId: number; reason: TerrainFailureReason; message: string }
   | { type: 'fillHistoryReady'; requestId: number; result: FillHistoryPayload }
   | {

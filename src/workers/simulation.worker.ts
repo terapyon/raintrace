@@ -50,6 +50,8 @@ let current: AbortController | null = null
 let currentFill: AbortController | null = null
 // 盛土が崩れた後の計算（spec 10）。新しい collapse や loadTerrain が来たら取り消す
 let currentCollapse: AbortController | null = null
+// 読み込み中（タイルの取得から terrainLoaded を送るまで）の loadTerrain。あるあいだは地形の差し替えを受けない
+let loading: AbortController | null = null
 
 self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
   const message = event.data
@@ -65,7 +67,21 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       currentCollapse?.abort()
       const controller = new AbortController()
       current = controller
+      loading = controller
       void loadTerrain(message, controller)
+      break
+    }
+    case 'swapTerrain': {
+      // 読み込み中の loadTerrain が勝つ（差し替えを捨てる。メインも loadTerrain の時点で差し替えの待ちを捨てている）。
+      // fillHistory・collapse は崩れる前の地形の計算なので取り消さない
+      if (loading !== null) break
+      const { requestId, elevation, validMask, size, cellSizeM, depressions } = message
+      runner.loadTerrain(
+        requestId,
+        { elevation, validMask, width: size, height: size, cellSizeM },
+        depressions,
+      )
+      post({ type: 'terrainSwapped', requestId })
       break
     }
     case 'fillHistory': {
@@ -154,6 +170,9 @@ async function loadTerrain(
     post({ type: 'terrainFailed', requestId, reason, message: String(error) })
     // 1 枚の失敗で読み込み全体が失敗したので、残りの取得を止める（計画のレビュー P4）
     controller.abort()
+  } finally {
+    // 置き換わった読み込み（loading が別の controller）は触らない
+    if (loading === controller) loading = null
   }
 }
 

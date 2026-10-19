@@ -11,6 +11,9 @@ import type { SettingsState, SettingsStore } from '../state/settingsStore'
 import type { DisplayStats, SimulationStore } from '../state/simulationStore'
 import { createThrottle, type Throttle } from '../state/throttle'
 
+/** variant: 崩れる前後の切り替え（同じ地点で、エンジンの地形だけが変わった。spec 10 §5.2） */
+export type TerrainListener = (terrain: TerrainPayload | null, info: { variant: boolean }) => void
+
 /** 統計をストアへ入れる間隔（10Hz。tech-spec §5.1） */
 export const STATS_INTERVAL_MS = 100
 
@@ -52,7 +55,7 @@ export class SimulationSession {
   }
   private palette: WaterPalette = 'stepped'
   /** 地形の読み込み・消去の購読者（3D。spec 05 §3.6） */
-  private readonly terrainListeners = new Set<(terrain: TerrainPayload | null) => void>()
+  private readonly terrainListeners = new Set<TerrainListener>()
   /** 今の実行の水深の購読者（3D。Reset の後の古い frame は runId で捨ててから渡す。計画で決めたこと 14） */
   private readonly waterListeners = new Set<(water: Float32Array | null) => void>()
   /** 2D の水深の canvas を出すか（3D の間は隠す。計画で決めたこと 16） */
@@ -108,12 +111,26 @@ export class SimulationSession {
     this.arrowsThrottle.cancel()
     this.overlay?.clear()
     this.store.getState().reset()
-    for (const listener of this.terrainListeners) listener(null)
+    for (const listener of this.terrainListeners) listener(null, { variant: false })
     for (const listener of this.waterListeners) listener(null)
   }
 
-  /** 地形を読み込んだ。center は降雨中心（範囲の中心。R04-2） */
-  terrainReady(terrain: TerrainPayload, center: { lon: number; lat: number }): void {
+  /**
+   * 地形を読み込んだ。center は降雨中心（範囲の中心。R04-2）。
+   * variant: true は崩れる前後の切り替え。再生・水・統計はリセットし、購読者には variant として知らせる
+   */
+  terrainReady(
+    terrain: TerrainPayload,
+    center: { lon: number; lat: number },
+    options: { variant?: boolean } = {},
+  ): void {
+    const variant = options.variant === true
+    if (variant) {
+      // 新しい地形では前の実行の水・統計・矢印は意味を持たない。再生も止まっている（Worker が止める）
+      this.statsThrottle.cancel()
+      this.clearWater()
+      this.store.getState().reset()
+    }
     this.terrain = terrain
     this.center = center
     // Worker は loadTerrain の直後 runId を 0 にする（新しい地形では実行がまだ始まっていない）。
@@ -126,7 +143,7 @@ export class SimulationSession {
     // 流出の帯の表は Worker が地形の読み込みで作って送ってくる（spec 07 §5.1。計画で決めたこと 1）
     this.overlay?.show(terrain.geo, terrain.outflow)
     this.client.setArrows(this.arrowSettings.visible, this.arrowSettings.spacingM)
-    for (const listener of this.terrainListeners) listener(terrain)
+    for (const listener of this.terrainListeners) listener(terrain, { variant })
   }
 
   /** 地図ができたら水深と矢印のレイヤーを置く。戻り値で外す */
@@ -175,7 +192,7 @@ export class SimulationSession {
   }
 
   /** 地形を読み込んだ（地形）・新しい地点の読み込みを始めた（null）を知らせる。戻り値で外す */
-  onTerrain(listener: (terrain: TerrainPayload | null) => void): () => void {
+  onTerrain(listener: TerrainListener): () => void {
     this.terrainListeners.add(listener)
     return () => {
       this.terrainListeners.delete(listener)

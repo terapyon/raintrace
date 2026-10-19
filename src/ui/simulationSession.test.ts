@@ -655,3 +655,32 @@ describe('SimulationSession: 流出の帯（spec 07 §5）', () => {
     expect(overlay.setOutflowVisible).toHaveBeenLastCalledWith(true)
   })
 })
+
+describe('SimulationSession: 崩れる前後の切り替え（variant。spec 10 §5.2）', () => {
+  it('variant の terrainReady で再生の状態がリセットされ、onTerrain に variant: true が届く', () => {
+    const { worker, store, session } = setup()
+    const seen: Array<{ terrain: TerrainPayload | null; variant: boolean }> = []
+    session.onTerrain((t, info) => seen.push({ terrain: t, variant: info.variant }))
+    session.start(RAIN)
+    expect(store.getState().status).toBe('running')
+    const sent = worker.posted.length
+    session.terrainReady(terrain, CENTER, { variant: true })
+    expect(store.getState().status).toBe('idle')
+    expect(seen).toEqual([{ terrain, variant: true }])
+    // 速度と矢印の設定は送り直す
+    expect(worker.posted.slice(sent).map((m) => m.type)).toEqual(['setSpeed', 'setArrows'])
+    // 新しい地形で、また start できる
+    session.start(RAIN)
+    expect(store.getState().status).toBe('running')
+    session.terrainCleared()
+    expect(seen.at(-1)).toEqual({ terrain: null, variant: false })
+  })
+
+  it('variant でない terrainReady は variant: false で知らせる', () => {
+    const { session } = setup()
+    const seen: boolean[] = []
+    session.onTerrain((_t, info) => seen.push(info.variant))
+    session.terrainReady(terrain, CENTER)
+    expect(seen).toEqual([false])
+  })
+})
