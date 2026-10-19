@@ -1,5 +1,6 @@
 import {
   COLLAPSE_DAM_COLOR,
+  COLLAPSE_DAM_FILL_ALPHA,
   COLLAPSE_DEPOSIT_ALPHA,
   COLLAPSE_DEPOSIT_FULL_M,
   COLLAPSE_DEPOSIT_MIN_M,
@@ -58,7 +59,7 @@ export function collapseDepositRgba(
   return rgba
 }
 
-/** せき止められた窪地（labels が ids のどれか）の輪郭のセル（4 近傍に窪地の外がある）を rgba に塗る */
+/** せき止められた窪地（labels が ids のどれか）のセルを薄く塗り、輪郭のセル（4 近傍に窪地の外がある）は濃く塗る */
 export function paintDamOutlines(
   rgba: Uint8ClampedArray,
   labels: Int32Array,
@@ -70,10 +71,16 @@ export function paintDamOutlines(
   for (let row = 0; row < size; row++) {
     for (let col = 0; col < size; col++) {
       if (!inDam(row, col)) continue
+      const o = (row * size + col) * 4
       const edge =
         !inDam(row - 1, col) || !inDam(row + 1, col) || !inDam(row, col - 1) || !inDam(row, col + 1)
-      if (!edge) continue
-      const o = (row * size + col) * 4
+      if (!edge) {
+        rgba[o] = DAM[0]
+        rgba[o + 1] = DAM[1]
+        rgba[o + 2] = DAM[2]
+        rgba[o + 3] = COLLAPSE_DAM_FILL_ALPHA
+        continue
+      }
       rgba[o] = DAM[0]
       rgba[o + 1] = DAM[1]
       rgba[o + 2] = DAM[2]

@@ -57,6 +57,8 @@ export const COLLAPSE_DEPOSIT_ALPHA = 200
 /** 崩れた跡（市松の薄い灰） */
 export const COLLAPSE_SCAR_COLOR = '#9e9e9e'
 export const COLLAPSE_SCAR_ALPHA = 150
+/** せき止められた窪地の塗り（薄い半透明。輪郭は COLLAPSE_DAM_COLOR） */
+export const COLLAPSE_DAM_FILL_ALPHA = 70
 /** せき止められた窪地の輪郭と、あふれ出し点 */
 export const COLLAPSE_DAM_COLOR = '#e65100'
 /** 崩れたせいで新しく溜まった水（濃い青紫） */

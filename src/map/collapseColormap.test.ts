@@ -25,13 +25,14 @@ describe('collapseDepositRgba（spec 10 §5.4）', () => {
 })
 
 describe('paintDamOutlines', () => {
-  it('窪地の縁のセルだけを塗る', () => {
+  it('窪地の中は薄い塗り、縁は不透明', () => {
     const size = 3
     const labels = new Int32Array(9).fill(7)
     const rgba = new Uint8ClampedArray(9 * 4)
     paintDamOutlines(rgba, labels, new Set([7]), size)
-    // 中央は 4 近傍がすべて窪地なので塗らない
-    expect(rgba[4 * 4 + 3]).toBe(0)
+    // 中央は 4 近傍がすべて窪地なので薄い塗り（縁より透明）
+    expect(rgba[4 * 4 + 3]).toBeGreaterThan(0)
+    expect(rgba[4 * 4 + 3]).toBeLessThan(255)
     expect(rgba[3]).toBe(255)
     // 窪地でない label は塗らない
     const other = new Uint8ClampedArray(9 * 4)

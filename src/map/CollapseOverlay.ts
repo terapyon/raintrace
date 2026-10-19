@@ -87,6 +87,7 @@ export class CollapseOverlay {
     const compare = this.compare
     if (result !== null) {
       const { size } = geo
+      // 積もった土の canvas には、せき止められた窪地の塗りと輪郭も一緒に描く
       const rgba = collapseDepositRgba(result.deposit, result.removed, size)
       paintDamOutlines(
         rgba,

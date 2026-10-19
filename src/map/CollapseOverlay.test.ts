@@ -65,6 +65,9 @@ describe('CollapseOverlay（spec 10 §5.4）', () => {
     overlay.show(RESULT, GEO)
     overlay.showCompare(Float32Array.of(0, 0, 0, 0), Float32Array.of(1, 0, 0, 0), GEO)
     for (const id of IDS) expect(fake.layers).toContain(id)
+    expect(fake.sources.get(COLLAPSE_LAYER_IDS.dams)).toMatchObject({
+      data: { features: [{ geometry: { coordinates: [0.5, 0.5] } }] },
+    })
     fake.layers.length = 0
     fake.sources.clear()
     overlay.restore()

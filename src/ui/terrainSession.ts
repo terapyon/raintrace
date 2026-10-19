@@ -13,6 +13,7 @@ import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
+import { syncCollapseOverlay } from './collapseOverlaySync'
 import { CollapseSession } from './collapseSession'
 import { FillHistorySession } from './fillHistorySession'
 import {
@@ -95,20 +96,11 @@ export class TerrainSession {
     const offFillResult = this.fillHistory.onResult(showFill)
     // 崩れた後の積もった土・せき止められた場所・新しい水は、崩れた後の地形を見せている間だけ描く
     const collapseOverlay = new CollapseOverlay(map, (run) => controller.whenLoaded(run))
-    const showCollapse = (): void => {
-      const { collapse } = this.store.getState()
-      const result = this.collapse.result()
-      const geo = result?.after.geo
-      if (collapse.view !== 'after' || collapse.status !== 'ready' || !result || !geo) {
-        collapseOverlay.clear()
-        return
-      }
-      collapseOverlay.show(result, geo)
-      const compared = this.collapse.compareResult()
-      if (collapse.compare.status === 'done' && compared !== null) {
-        collapseOverlay.showCompare(compared.before.depth, compared.after.depth, geo)
-      }
-    }
+    const showCollapse = (): void =>
+      syncCollapseOverlay(collapseOverlay, this.store.getState().collapse, {
+        result: this.collapse.result(),
+        compared: this.collapse.compareResult(),
+      })
     const offCollapseChange = this.collapse.onChange(showCollapse)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
