@@ -32,10 +32,11 @@ export function formatOffsetM(m: number): string {
   const fixed = m.toFixed(1)
   return Number(fixed) === 0 ? '0.0' : fixed.replace('-', '−')
 }
-/** 符号付きの m（差）: 正の値には「+」を付ける */
+/** 符号付きの m（差）: 正の値には「+」、負の値には「−」（formatOffsetM と同じ）を付ける */
 export function formatSignedMeters(value: number): string {
   const fixed = value.toFixed(2)
-  return strings.format.meters(Number(fixed) > 0 ? `+${fixed}` : fixed)
+  const n = Number(fixed)
+  return strings.format.meters(n > 0 ? `+${fixed}` : n < 0 ? fixed.replace('-', '−') : fixed)
 }
 export const formatArea = (m2: number): string => strings.format.area(String(Math.round(m2)))
 export const formatStepsPerSecond = (rate: number): string =>

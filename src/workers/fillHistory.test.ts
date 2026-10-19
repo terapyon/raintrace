@@ -141,6 +141,39 @@ describe('computeFillHistory', () => {
     expect(r.a54Polygons).toHaveLength(1)
   })
 
+  it('境をまたいで複数の A54 タイルに入っている同じ地物は 1 つにまとめる', async () => {
+    // 範囲が z10 タイルの境（z17 で 32768 画素ごと）をまたぐ位置に置く
+    const g = { ...geo(1), originX: 3 * 32768 - SIZE / 2 }
+    const a = pixelToLonLat(g.originX + 10, g.originY + 10, Z)
+    const b = pixelToLonLat(g.originX + 30, g.originY + 30, Z)
+    const feature = {
+      type: 'valley',
+      rings: [
+        [
+          [a.lon, a.lat],
+          [b.lon, a.lat],
+          [b.lon, b.lat],
+          [a.lon, b.lat],
+          [a.lon, a.lat],
+        ],
+      ],
+    }
+    let a54Fetches = 0
+    const r = await computeFillHistory(
+      { ...input(1, []), geo: g },
+      {
+        fetchDem: fetchFlat,
+        fetchJson: async (url) => {
+          if (!url.startsWith('/data/a54/')) return null
+          a54Fetches++
+          return { features: [feature] }
+        },
+      },
+    )
+    expect(a54Fetches).toBe(2) // 2 枚のタイルに同じ地物が入っている
+    expect(r.a54Polygons).toHaveLength(1)
+  })
+
   it('人工地形のタイルがすべて 404 なら landformAvailable は false（A54 は true のまま）', async () => {
     const r = await computeFillHistory(input(1, []), { fetchDem: fetchFlat, fetchJson: noJson })
     expect(r.landformAvailable).toBe(false)

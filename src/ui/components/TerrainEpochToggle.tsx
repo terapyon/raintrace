@@ -10,7 +10,10 @@ import { strings } from '../strings'
  * 3D で、昔との比べ結果があるときだけ出す。2D の重ね描きは変えない
  */
 export function TerrainEpochToggle({ app }: { app: AppStore }) {
-  const visible = useStore(app, (s) => s.viewMode === '3d' && s.fillHistory.status === 'ready')
+  const visible = useStore(
+    app,
+    (s) => s.viewMode === '3d' && s.view3dStatus === '3d' && s.fillHistory.status === 'ready',
+  )
   const epoch = useStore(app, (s) => s.terrainEpoch)
   if (!visible) return null
   return (

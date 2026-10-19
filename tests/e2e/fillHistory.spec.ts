@@ -167,10 +167,12 @@ test.describe('盛土の履歴（spec 09 §7.2）', () => {
     const attribution = page.locator('.maplibregl-ctrl-attrib')
     await expect(attribution).toContainText(strings.attribution.note)
     await expect(attribution).not.toContainText(t.a54Attribution)
+    await expect(attribution).not.toContainText(t.landformAttribution)
     await page.getByLabel(t.enable, { exact: true }).check()
     await expect(page.getByTestId('fill-row-1')).toBeVisible({ timeout: 30_000 })
     await expect(attribution).toContainText(strings.attribution.note)
     await expect(attribution).toContainText(t.a54Attribution)
+    await expect(attribution).toContainText(t.landformAttribution)
   })
 })
 

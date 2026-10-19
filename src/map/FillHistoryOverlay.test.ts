@@ -98,7 +98,7 @@ describe('FillHistoryOverlay（spec 09 §4.2）', () => {
   it('restore で 4 つのレイヤーを足し直す（ベースマップの切り替え）', () => {
     stubCanvas()
     const fake = fakeMap()
-    const overlay = new FillHistoryOverlay(fake.map, (run) => run(), '出典')
+    const overlay = new FillHistoryOverlay(fake.map, (run) => run(), '出典', '人工地形の出典')
     overlay.show(RESULT, GEO, null)
     for (const id of IDS) expect(fake.layers).toContain(id)
     // スタイルの入れ替えでレイヤー・ソース・画像が消える
@@ -116,14 +116,21 @@ describe('FillHistoryOverlay（spec 09 §4.2）', () => {
   it('A54 のソースに出典を渡す', () => {
     stubCanvas()
     const fake = fakeMap()
-    new FillHistoryOverlay(fake.map, (run) => run(), '出典の文言').show(RESULT, GEO, null)
+    new FillHistoryOverlay(fake.map, (run) => run(), '出典の文言', '人工地形の文言').show(
+      RESULT,
+      GEO,
+      null,
+    )
     expect(fake.sources.get(FILL_LAYER_IDS.a54)).toMatchObject({ attribution: '出典の文言' })
+    expect(fake.sources.get(FILL_LAYER_IDS.landform)).toMatchObject({
+      attribution: '人工地形の文言',
+    })
   })
 
   it('clear で 4 つのレイヤーとソースを外し、restore しても戻らない', () => {
     stubCanvas()
     const fake = fakeMap()
-    const overlay = new FillHistoryOverlay(fake.map, (run) => run(), '出典')
+    const overlay = new FillHistoryOverlay(fake.map, (run) => run(), '出典', '人工地形の出典')
     overlay.show(RESULT, GEO, null)
     overlay.clear()
     expect(fake.layers).toEqual([])
@@ -142,6 +149,7 @@ describe('FillHistoryOverlay（spec 09 §4.2）', () => {
         pending = run
       },
       '出典',
+      '人工地形の出典',
     )
     overlay.show(RESULT, GEO, null)
     overlay.clear()
@@ -152,7 +160,7 @@ describe('FillHistoryOverlay（spec 09 §4.2）', () => {
   it('setSelected は印の色を塗り直す', () => {
     stubCanvas()
     const fake = fakeMap()
-    const overlay = new FillHistoryOverlay(fake.map, (run) => run(), '出典')
+    const overlay = new FillHistoryOverlay(fake.map, (run) => run(), '出典', '人工地形の出典')
     overlay.show(RESULT, GEO, null)
     overlay.setSelected(1)
     expect(fake.map.setPaintProperty).toHaveBeenCalledWith(

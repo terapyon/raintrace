@@ -127,7 +127,7 @@ describe('盛土の履歴の数値の書式', () => {
   })
   it('formatSignedMeters: 正に+を付け、0 と負は付けない', () => {
     expect(formatSignedMeters(2)).toBe('+2.00 m')
-    expect(formatSignedMeters(-1.5)).toBe('-1.50 m')
+    expect(formatSignedMeters(-1.5)).toBe('−1.50 m')
     expect(formatSignedMeters(0.001)).toBe('0.00 m')
   })
 })

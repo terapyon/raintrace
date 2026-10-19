@@ -42,8 +42,11 @@ type Rings = Array<Array<[number, number]>>
 const args = process.argv.slice(2)
 const shiftIdx = args.indexOf('--shift-past')
 const limitIdx = args.indexOf('--limit')
-const limit = limitIdx >= 0 ? Number(args.splice(limitIdx, 2)[1]) : 15
-const shiftM = shiftIdx >= 0 ? Number(args.splice(shiftIdx, 2)[1]) : 0
+const limit = limitIdx >= 0 ? Number(args[limitIdx + 1]) : 15
+const shiftM = shiftIdx >= 0 ? Number(args[shiftIdx + 1]) : 0
+// 位置引数だけ残す（後ろの添字から消すので、順序によらず添字がずれない）
+for (const idx of [limitIdx, shiftIdx].filter((i) => i >= 0).sort((a, b) => b - a))
+  args.splice(idx, 2)
 const [lat, lon, sizeM] = args.map(Number) as [number, number, number]
 if (![lat, lon, sizeM].every(Number.isFinite) || !Number.isFinite(shiftM) || !(limit >= 0)) {
   console.error(

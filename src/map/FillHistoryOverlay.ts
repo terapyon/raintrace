@@ -76,6 +76,7 @@ export class FillHistoryOverlay {
   private readonly map: MapLibreMap
   private readonly whenMapLoaded: (run: () => void) => void
   private readonly a54Attribution: string
+  private readonly landformAttribution: string
   private result: FillHistoryPayload | null = null
   private geo: TerrainGeo | null = null
   private selectedId: number | null = null
@@ -83,10 +84,16 @@ export class FillHistoryOverlay {
   private generation = 0
 
   /** a54Attribution は A54 のソースの出典（strings は ui にあり、map は import しないので呼び出し側から渡す） */
-  constructor(map: MapLibreMap, whenMapLoaded: (run: () => void) => void, a54Attribution: string) {
+  constructor(
+    map: MapLibreMap,
+    whenMapLoaded: (run: () => void) => void,
+    a54Attribution: string,
+    landformAttribution: string,
+  ) {
     this.map = map
     this.whenMapLoaded = whenMapLoaded
     this.a54Attribution = a54Attribution
+    this.landformAttribution = landformAttribution
   }
 
   show(result: FillHistoryPayload, geo: TerrainGeo, selectedId: number | null): void {
@@ -188,6 +195,7 @@ export class FillHistoryOverlay {
           polygonFeature(p.rings, { kind: landformKind(p.code) }),
         ),
       },
+      attribution: this.landformAttribution,
     })
     const landformColor: ExpressionSpecification = [
       'match',

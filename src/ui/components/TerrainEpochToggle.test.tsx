@@ -14,6 +14,7 @@ function readyStore() {
   const app = createAppStore()
   app.getState().setFillHistoryEnabled(true)
   app.getState().setFillHistoryResult('ready', summary)
+  app.getState().setView3dStatus('3d')
   return app
 }
 
@@ -27,6 +28,14 @@ describe('TerrainEpochToggle（3D の昔・今の切り替え）', () => {
     expect(screen.getByRole('group', { name: strings.epoch.label })).toBeTruthy()
     // ready でなくなれば消える
     act(() => app.getState().setFillHistoryEnabled(false))
+    expect(screen.queryByRole('group', { name: strings.epoch.label })).toBeNull()
+  })
+
+  it('3D が 2D へ戻された（fallback-2d）間は出ない', () => {
+    const app = readyStore()
+    app.getState().setViewMode('3d')
+    app.getState().setView3dStatus('fallback-2d')
+    render(<TerrainEpochToggle app={app} />)
     expect(screen.queryByRole('group', { name: strings.epoch.label })).toBeNull()
   })
 

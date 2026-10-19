@@ -80,6 +80,7 @@ export class TerrainSession {
       map,
       (run) => controller.whenLoaded(run),
       strings.fillHistory.a54Attribution,
+      strings.fillHistory.landformAttribution,
     )
     const showFill = (result: FillHistoryPayload | null): void => {
       const geo = this.client.terrain?.geo
@@ -268,9 +269,8 @@ export class TerrainSession {
     const terrain = this.client.terrain
     if (terrain === null) return null
     const store = this.store.getState()
-    // 昔の地形を見ている間は、地形そのものが昔の標高なので、比べる値は足さない
-    const result =
-      store.fillHistory.enabled && store.terrainEpoch === 'now' ? this.fillHistory.result() : null
+    // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）
+    const result = store.fillHistory.enabled ? this.fillHistory.result() : null
     const history =
       result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
     return cellInfoAt(terrain, this.client.water, lon, lat, history)

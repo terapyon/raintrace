@@ -171,7 +171,18 @@ async function loadA54(
         return json === null ? [] : parseA54Tile(json) // 404 は地物なし
       }),
     )
-    return tiles.flat().filter((p) => overlapsRange(p.rings, geo))
+    // z10 のタイルの境をまたぐ地物は複数のタイルに入っている。種別と外周の座標で同じものを 1 つにする
+    // （二重に描くと重なりが濃く見える）
+    const seen = new Set<string>()
+    return tiles
+      .flat()
+      .filter((p) => overlapsRange(p.rings, geo))
+      .filter((p) => {
+        const key = `${p.a54Type}:${JSON.stringify(p.rings[0])}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
   } catch {
     return null
   }
