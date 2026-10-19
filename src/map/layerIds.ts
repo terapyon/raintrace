@@ -12,6 +12,14 @@ export const TERRAIN_LAYER_IDS = {
   markers: 'terrain-markers',
 } as const
 
+/** 盛土の履歴（spec 09 §4.2）。標高差の canvas・人工地形・A54 は窪地の上、候補の印は一番上 */
+export const FILL_LAYER_IDS = {
+  delta: 'fill-delta',
+  landform: 'fill-landform',
+  a54: 'fill-a54',
+  markers: 'fill-markers',
+} as const
+
 export const WATER_LAYER_IDS = {
   water: 'water-depth',
   /** 流出の帯（spec 07 §5.2）。2D の水深の直後 */
@@ -28,6 +36,9 @@ export const OVERLAY_LAYER_ORDER: readonly string[] = [
   VIEW3D_LAYER_IDS.hillshade,
   TERRAIN_LAYER_IDS.elevation,
   TERRAIN_LAYER_IDS.depressions,
+  FILL_LAYER_IDS.delta,
+  FILL_LAYER_IDS.landform,
+  FILL_LAYER_IDS.a54,
   WATER_LAYER_IDS.water,
   WATER_LAYER_IDS.outflow,
   VIEW3D_LAYER_IDS.water,
@@ -35,6 +46,7 @@ export const OVERLAY_LAYER_ORDER: readonly string[] = [
   TERRAIN_LAYER_IDS.flow,
   WATER_LAYER_IDS.arrows,
   TERRAIN_LAYER_IDS.markers,
+  FILL_LAYER_IDS.markers,
 ]
 
 /**

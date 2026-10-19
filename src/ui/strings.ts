@@ -1,5 +1,9 @@
 /** 画面に出す文字列（tech-spec §9.4）。コンポーネントに文字列リテラルを直接書かない */
 export const strings = {
+  fillHistory: {
+    a54Attribution:
+      '大規模盛土造成地：国土数値情報（大規模盛土造成地データ）（国土交通省）を加工して作成',
+  },
   attribution: {
     text: '地図・標高データ：国土地理院',
     url: 'https://maps.gsi.go.jp/development/ichiran.html',

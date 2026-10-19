@@ -1,8 +1,10 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { wrapLongitude } from '../dem/tileMath'
+import { FILL_LAYER_IDS, FillHistoryOverlay } from '../map/FillHistoryOverlay'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TERRAIN_LAYER_IDS, TerrainOverlay } from '../map/TerrainOverlay'
+import type { FillHistoryPayload } from '../shared/protocol'
 import { type AppStore, summarizeTerrain } from '../state/appStore'
 import { arrowSpacingForRange } from '../state/arrowSpacing'
 import { type ClickEvent, type ClickTarget, type MarkerRef, reduceClick } from '../state/clickState'
@@ -18,6 +20,7 @@ import {
   markerRefsFromFeatures,
 } from './markerInfo'
 import type { SimulationSession } from './simulationSession'
+import { strings } from './strings'
 import { View3dSession } from './view3dSession'
 
 /**
@@ -72,11 +75,24 @@ export class TerrainSession {
       (run) => controller.whenLoaded(run),
       (lon, lat) => this.dispatchClick({ type: 'marker-drag-end', lon, lat }),
     )
+    // 盛土の履歴は地形の上、水の下（OVERLAY_LAYER_ORDER が位置を決める）。結果の出入りと選択に合わせて描く
+    const fillOverlay = new FillHistoryOverlay(
+      map,
+      (run) => controller.whenLoaded(run),
+      strings.fillHistory.a54Attribution,
+    )
+    const showFill = (result: FillHistoryPayload | null): void => {
+      const geo = this.client.terrain?.geo
+      if (result === null || geo === undefined) fillOverlay.clear()
+      else fillOverlay.show(result, geo, this.store.getState().fillHistory.selectedId)
+    }
+    const offFillResult = this.fillHistory.onResult(showFill)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
     // ベースマップの切り替えの後に、地形 → 水の順に足し直す（水は地形のレイヤーの間に入れる）
     const offRestyle = controller.onRestyle(() => {
       this.overlay?.restore()
+      fillOverlay.restore()
       this.simulation.restoreOverlay()
     })
     // 3D の足し直しは 04 の重ね描きの足し直しの後に行う（onRestyle は登録した順に呼ばれる）
@@ -92,6 +108,12 @@ export class TerrainSession {
       // ○（最低点・あふれ出し点）に当たれば、セル情報の代わりに印の説明を開く（spec 07 §3.1）。
       // 当たりの判定は描画された円に任せ、±4 px の矩形で問い合わせる。3D でも circle は地形に焼かれず直接
       // 描かれ、queryRenderedFeatures は標高を渡して判定する（軽微 m1）
+      // 盛土の候補の印に当たれば、その候補を選ぶ（セル情報は開かない）
+      const candidate = fillCandidateAt(event.point.x, event.point.y)
+      if (candidate !== null) {
+        this.store.getState().selectFillCandidate(candidate)
+        return
+      }
       const markers = markersAt(event.point.x, event.point.y)
       if (markers.length > 0) {
         this.dispatchClick({ type: 'marker-click', markers, lon: lng, lat, x, y })
@@ -114,6 +136,14 @@ export class TerrainSession {
         map.queryRenderedFeatures(markerHitBox(px, py), { layers: [TERRAIN_LAYER_IDS.markers] }),
       )
     }
+    const fillCandidateAt = (px: number, py: number): number | null => {
+      if (map.getLayer(FILL_LAYER_IDS.markers) === undefined) return null
+      const features = map.queryRenderedFeatures(markerHitBox(px, py), {
+        layers: [FILL_LAYER_IDS.markers],
+      })
+      const id = features[0]?.properties?.id
+      return typeof id === 'number' ? id : null
+    }
     // ○ の上では指の形のカーソル（spec 07 §3.5）。レイヤー付きの mouseenter・mouseleave は、レイヤーが無い間は
     // 問い合わせない（maplibre-gl-dev.mjs 24517〜24560 の _createDelegatedListener）。ドラッグ中は MapLibre に任せる
     const onMarkerEnter = (): void => {
@@ -135,6 +165,9 @@ export class TerrainSession {
     }
     const unsubscribe = this.store.subscribe((state, previous) => {
       if (state.display !== previous.display) this.overlay?.setDisplay(this.overlayDisplay())
+      if (state.fillHistory.selectedId !== previous.fillHistory.selectedId) {
+        fillOverlay.setSelected(state.fillHistory.selectedId)
+      }
     })
     const unsubscribeSettings = this.settings.subscribe((state, previous) => {
       // 範囲の大きさの変更は、同じ地点を読み込み直してリセットする（spec 04 §3）
@@ -173,10 +206,12 @@ export class TerrainSession {
       unsubscribe()
       unsubscribeSettings()
       offRestyle()
+      offFillResult()
       detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()
       this.overlay = null
+      fillOverlay.clear()
       this.controller = null
     }
   }
