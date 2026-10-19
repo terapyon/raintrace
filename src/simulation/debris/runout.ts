@@ -192,6 +192,7 @@ export function runout(
           pick -= weight[k]
           if (pick < 0) break
         }
+        if (dir < 0) break // 向きが選べなかった（起きないはずの守り）。今のセルに積む
 
         const next = target[dir]
         if (next < 0) {
