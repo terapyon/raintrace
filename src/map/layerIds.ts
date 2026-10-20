@@ -20,6 +20,14 @@ export const FILL_LAYER_IDS = {
   markers: 'fill-markers',
 } as const
 
+/** 盛土が崩れたら（spec 10 §5.4）。積もった土は A54 の直後、せき止められた場所の点はその後。
+ * 水路の線（spec 10b §4.1）は流出の帯の直後（水の上に線が見える） */
+export const COLLAPSE_LAYER_IDS = {
+  deposit: 'collapse-deposit',
+  dams: 'collapse-dams',
+  culvert: 'collapse-culvert',
+} as const
+
 export const WATER_LAYER_IDS = {
   water: 'water-depth',
   /** 流出の帯（spec 07 §5.2）。2D の水深の直後 */
@@ -39,8 +47,11 @@ export const OVERLAY_LAYER_ORDER: readonly string[] = [
   FILL_LAYER_IDS.delta,
   FILL_LAYER_IDS.landform,
   FILL_LAYER_IDS.a54,
+  COLLAPSE_LAYER_IDS.deposit,
+  COLLAPSE_LAYER_IDS.dams,
   WATER_LAYER_IDS.water,
   WATER_LAYER_IDS.outflow,
+  COLLAPSE_LAYER_IDS.culvert,
   VIEW3D_LAYER_IDS.water,
   TERRAIN_LAYER_IDS.outline,
   TERRAIN_LAYER_IDS.flow,

@@ -70,3 +70,20 @@ describe('cellInfoAt の盛土の履歴（spec 09 §6.6）', () => {
     expect(cellInfoAt(terrain, null, p.lon, p.lat)).not.toHaveProperty('pastM')
   })
 })
+
+describe('cellInfoAt の水路の溝ありの地形（spec 10b §3）', () => {
+  it('標高は溝のない地形から読み、水位は水を流している溝ありの地形の標高 + 水深', () => {
+    const p = at(0, 0)
+    // エンジンの地形は溝の底 10 m、読み込んだ地形は 12 m、水深 1.5 m → 水面は 11.5 m
+    const carved = { ...terrain, elevation: Float32Array.of(10, 5, 7, 8) }
+    const info = cellInfoAt(
+      carved,
+      Float32Array.of(1.5, 0, 0, 0),
+      p.lon,
+      p.lat,
+      undefined,
+      Float32Array.of(12, 5, 7, 8),
+    )
+    expect(info).toMatchObject({ kind: 'value', elevationM: 12, depthM: 1.5, levelM: 11.5 })
+  })
+})

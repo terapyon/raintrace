@@ -16,7 +16,9 @@ export type CellInfo =
 
 /**
  * 地点のセルの標高・水深・水位（base-spec §39）。範囲の外は null。
- * 水深はメインの手元の最新の frame（無ければ 0）。表示は 0.01m 単位（tech-spec §6.6）
+ * 水深はメインの手元の最新の frame（無ければ 0）。表示は 0.01m 単位（tech-spec §6.6）。
+ * terrain は水を流している地形。shownElevation があれば標高だけをそこから読み、水位は terrain の標高 + 水深
+ * （水路の溝ありの崩れる前で、溝は仮定なので読み込んだ地形の標高を出す。spec 10b §3）
  */
 export function cellInfoAt(
   terrain: Pick<TerrainPayload, 'geo' | 'elevation' | 'validMask'>,
@@ -24,15 +26,17 @@ export function cellInfoAt(
   lon: number,
   lat: number,
   history?: { past: Float32Array; delta: Float32Array },
+  shownElevation?: Float32Array,
 ): CellInfo | null {
   // 世界のコピーの上のクリックも、選んだ地点と同じ [−180, 180) の経度で調べる
   const cell = cellAt(terrain.geo, wrapLongitude(lon), lat)
   if (cell === null) return null
   const index = cell.row * terrain.geo.size + cell.col
   if (terrain.validMask[index] !== 1) return { kind: 'no-data' }
-  const elevationM = terrain.elevation[index] ?? 0
+  const groundM = terrain.elevation[index] ?? 0
+  const elevationM = shownElevation?.[index] ?? groundM
   const depthM = water?.[index] ?? 0
-  const info: CellInfo = { kind: 'value', elevationM, depthM, levelM: elevationM + depthM }
+  const info: CellInfo = { kind: 'value', elevationM, depthM, levelM: groundM + depthM }
   if (history !== undefined) {
     const finiteOrNull = (v: number | undefined): number | null =>
       v === undefined || Number.isNaN(v) ? null : v

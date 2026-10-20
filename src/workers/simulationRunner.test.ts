@@ -501,3 +501,24 @@ describe('SimulationRunner: onStepTime（計測用。spec 06 §3）', () => {
     expect(countingNowCalls(true)).toBe(calls)
   })
 })
+
+describe('SimulationRunner: 地形の差し替え（loadTerrain の再呼び出し。spec 10 §5.2）', () => {
+  it('差し替えの後は ZERO_STATS で、start は新しい地形・新しい terrainId で動く', () => {
+    const h = setup()
+    h.runner.loadTerrain(1, basin(), [])
+    h.runner.handle({ type: 'start', rain: RAIN, runId: 1 })
+    h.run(5)
+    h.returnAll()
+    expect(h.frames().length).toBeGreaterThan(0)
+    const before = h.frames().length
+    h.runner.loadTerrain(2, basin(), [])
+    h.runner.handle({ type: 'reset', runId: 2 })
+    h.run(1)
+    const last = h.frames().slice(before).at(-1)
+    expect(last).toMatchObject({ terrainId: 2, step: 0, runId: 2 })
+    expect(last?.stats.totalWater).toBe(0)
+    h.runner.handle({ type: 'start', rain: RAIN, runId: 3 })
+    h.run(5)
+    expect(h.frames().at(-1)).toMatchObject({ terrainId: 2, runId: 3 })
+  })
+})

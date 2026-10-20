@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_DEBRIS_PRESET_ID } from '../shared/debrisPresets'
 import type { TerrainPayload } from '../shared/protocol'
 // state は simulation の型だけを import する（依存規則。makeDepression は値なので使えない）
 import type { Depression } from '../simulation/terrain/types'
-import { type CursorElevation, createAppStore, summarizeTerrain } from './appStore'
+import { CLOSED_COLLAPSE, type CursorElevation, createAppStore, summarizeTerrain } from './appStore'
 
 const depression = (id: number, capacityM3: number, significant: boolean): Depression => ({
   id,
@@ -195,5 +196,123 @@ describe('盛土の履歴の状態', () => {
     const before = store.getState()
     store.getState().setFillHistoryEnabled(true)
     expect(store.getState()).toBe(before)
+  })
+})
+
+describe('collapse（spec 10）', () => {
+  const summary = {
+    candidateId: 4,
+    ratio: 1 as const,
+    presetId: 'near',
+    collapsedM3: 1,
+    depositedM3: 1,
+    outsideM3: 0,
+    dams: [],
+    culvert: null,
+  }
+  /** 候補 4 を開いて結果まで進め、崩れた後を表示している */
+  function opened() {
+    const store = createAppStore()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().selectFillCandidate(4)
+    store.getState().openCollapse(4)
+    store.getState().setCollapseComputing()
+    store.getState().setCollapseResult('ready', summary)
+    store.getState().setCollapseView('after')
+    return store
+  }
+
+  it('開いている候補への openCollapse は何も変えない', () => {
+    const store = createAppStore()
+    store.getState().openCollapse(4)
+    store.getState().setCollapseRatio(0.5)
+    const before = store.getState().collapse
+    store.getState().openCollapse(4)
+    expect(store.getState().collapse).toBe(before)
+    store.getState().openCollapse(5)
+    expect(store.getState().collapse).toEqual({ ...CLOSED_COLLAPSE, candidateId: 5 })
+  })
+
+  it('openCollapse は ratio 1・既定のプリセット・idle・before で開く', () => {
+    const store = createAppStore()
+    store.getState().openCollapse(4)
+    expect(store.getState().collapse).toEqual({
+      ...CLOSED_COLLAPSE,
+      candidateId: 4,
+      ratio: 1,
+      presetId: DEFAULT_DEBRIS_PRESET_ID,
+      status: 'idle',
+      view: 'before',
+    })
+  })
+
+  it('setCollapseRatio・setCollapsePreset は結果を捨てて idle・before に戻す（候補は残る）', () => {
+    const store = opened()
+    store.getState().setCollapseRatio(0.5)
+    expect(store.getState().collapse).toMatchObject({
+      candidateId: 4,
+      ratio: 0.5,
+      status: 'idle',
+      summary: null,
+      view: 'before',
+    })
+    store.getState().setCollapseComputing()
+    store.getState().setCollapseResult('ready', summary)
+    store.getState().setCollapsePreset('far')
+    expect(store.getState().collapse).toMatchObject({
+      candidateId: 4,
+      ratio: 0.5,
+      presetId: 'far',
+      status: 'idle',
+      summary: null,
+    })
+  })
+
+  it('同じ割合を選び直しても結果は捨てない', () => {
+    const store = opened()
+    store.getState().setCollapseRatio(1)
+    expect(store.getState().collapse.status).toBe('ready')
+  })
+
+  it('selectPoint・setFillHistoryEnabled(false)・closeCollapse で閉じる', () => {
+    let store = opened()
+    store.getState().selectPoint(139, 35)
+    expect(store.getState().collapse).toEqual(CLOSED_COLLAPSE)
+    store = opened()
+    store.getState().setFillHistoryEnabled(false)
+    expect(store.getState().collapse).toEqual(CLOSED_COLLAPSE)
+    store = opened()
+    store.getState().closeCollapse()
+    expect(store.getState().collapse).toEqual(CLOSED_COLLAPSE)
+  })
+
+  it('selectFillCandidate は別の id なら閉じ、同じ id なら閉じない', () => {
+    const store = opened()
+    store.getState().selectFillCandidate(4)
+    expect(store.getState().collapse.status).toBe('ready')
+    store.getState().selectFillCandidate(null)
+    expect(store.getState().collapse).toEqual(CLOSED_COLLAPSE)
+  })
+
+  it('setCollapseSwapping は swapping だけを変える', () => {
+    const store = opened()
+    store.getState().setCollapseSwapping(true)
+    expect(store.getState().collapse).toMatchObject({
+      status: 'ready',
+      view: 'after',
+      swapping: true,
+    })
+  })
+
+  it('view が after の間は setTerrainEpoch("past") を無視し、after へ入ると now に戻る', () => {
+    const store = createAppStore()
+    store.getState().setTerrainEpoch('past')
+    store.getState().setCollapseView('after')
+    expect(store.getState().terrainEpoch).toBe('now')
+    store.getState().setTerrainEpoch('past')
+    expect(store.getState().terrainEpoch).toBe('now')
+    store.getState().setCollapseView('before')
+    store.getState().setTerrainEpoch('past')
+    expect(store.getState().terrainEpoch).toBe('past')
   })
 })

@@ -20,7 +20,9 @@ export class FillHistorySession {
   constructor(client: SimulationClient, app: AppStore, simulation: SimulationSession) {
     this.client = client
     this.app = app
-    simulation.onTerrain((terrain) => {
+    simulation.onTerrain((terrain, info) => {
+      // 崩れる前後の切り替えでは、結果は崩れる前の地形のもの。保ち、計算し直さない
+      if (info.variant) return
       this.terrain = terrain
       // 新しい地点の読み込み（null）でも、新しい地形でも、前の結果と進行中の依頼は無効
       this.discard()
@@ -59,14 +61,14 @@ export class FillHistorySession {
 
   private request(): void {
     const terrain = this.terrain
-    const terrainId = this.client.terrainId
+    const terrainId = this.client.baseTerrainId
     if (!this.app.getState().fillHistory.enabled || terrain === null || terrainId === null) return
     const generation = this.generation
     this.app.getState().setFillHistoryResult('loading', null)
     this.client.computeFillHistory(terrainId, terrain).then(
       (result) => {
         // 古い依頼、オフにした後、今の地形と違う地形の応答は描かない
-        if (generation !== this.generation || result.terrainId !== this.client.terrainId) return
+        if (generation !== this.generation || result.terrainId !== this.client.baseTerrainId) return
         this.setPayload(result)
         this.app.getState().setFillHistoryResult('ready', {
           offsetM: result.offsetM,

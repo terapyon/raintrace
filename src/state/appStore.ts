@@ -1,6 +1,13 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { DemId } from '../dem/demSources'
-import type { FillCandidate, TerrainErrorReason, TerrainPayload } from '../shared/protocol'
+import { DEFAULT_DEBRIS_PRESET_ID } from '../shared/debrisPresets'
+import type {
+  CollapseRatio,
+  DammedSiteSummary,
+  FillCandidate,
+  TerrainErrorReason,
+  TerrainPayload,
+} from '../shared/protocol'
 import { CLOSED, type Popover } from './clickState'
 
 /** 読み込みの失敗の理由。superseded（新しい地点に置き換わった）は失敗として置かない */
@@ -67,6 +74,45 @@ export interface FillHistoryState {
   selectedId: number | null
 }
 
+/** 崩れた後の計算の結果のうち、パネルに出す小さな値（spec 10）。大きな配列は CollapseSession が持つ */
+export interface CollapseSummary {
+  candidateId: number
+  ratio: CollapseRatio
+  presetId: string
+  collapsedM3: number
+  depositedM3: number
+  outsideM3: number
+  dams: DammedSiteSummary[]
+  /** 盛土の下の水路を仮定したときだけ。ふさがったか */
+  culvert: { blocked: boolean } | null
+}
+
+/** 崩れたと仮定した場合（spec 10）。保存しない画面の一時状態 */
+export interface CollapseState {
+  /** 「崩れたと仮定する」を押した候補。null は閉じている */
+  candidateId: number | null
+  ratio: CollapseRatio
+  presetId: string
+  status: 'idle' | 'computing' | 'ready' | 'failed'
+  progress: number
+  summary: CollapseSummary | null
+  /** エンジンと地図が表している地形。切り替えが済んでから変わる */
+  view: 'before' | 'after'
+  /** 崩れる前後の地形の切り替えの途中。この間は再生の操作を受けない */
+  swapping: boolean
+}
+
+export const CLOSED_COLLAPSE: CollapseState = {
+  candidateId: null,
+  ratio: 1,
+  presetId: DEFAULT_DEBRIS_PRESET_ID,
+  status: 'idle',
+  progress: 0,
+  summary: null,
+  view: 'before',
+  swapping: false,
+}
+
 export interface AppState {
   selected: { lon: number; lat: number } | null
   load: LoadState
@@ -79,6 +125,7 @@ export interface AppState {
   fillHistory: FillHistoryState
   /** 今の地形か、昔の地形か（盛土の履歴。保存しない） */
   terrainEpoch: 'now' | 'past'
+  collapse: CollapseState
 }
 
 export interface AppActions {
@@ -96,6 +143,19 @@ export interface AppActions {
   setFillHistoryResult(status: FillHistoryStatus, summary: FillHistorySummary | null): void
   selectFillCandidate(id: number | null): void
   setTerrainEpoch(epoch: 'now' | 'past'): void
+  /** ratio 1、presetId 既定、status idle、view before で開く */
+  openCollapse(candidateId: number): void
+  closeCollapse(): void
+  /** 結果があれば捨てる（idle・view before に戻る） */
+  setCollapseRatio(ratio: CollapseRatio): void
+  /** 結果があれば捨てる（idle・view before に戻る） */
+  setCollapsePreset(presetId: string): void
+  // 以下は CollapseSession が使う
+  setCollapseComputing(): void
+  setCollapseProgress(progress: number): void
+  setCollapseResult(status: 'ready' | 'failed', summary: CollapseSummary | null): void
+  setCollapseView(view: 'before' | 'after'): void
+  setCollapseSwapping(swapping: boolean): void
 }
 
 export type AppStore = StoreApi<AppState & AppActions>
@@ -120,6 +180,7 @@ export function createAppStore(): AppStore {
     view3dStatus: 'off',
     fillHistory: { enabled: false, status: 'off', summary: null, selectedId: null },
     terrainEpoch: 'now',
+    collapse: CLOSED_COLLAPSE,
     selectPoint: (lon, lat) =>
       set((state) => ({
         fillHistory: {
@@ -129,6 +190,7 @@ export function createAppStore(): AppStore {
           selectedId: null,
         },
         terrainEpoch: 'now',
+        collapse: CLOSED_COLLAPSE,
         selected: { lon, lat },
         load: { status: 'loading', done: 0, started: 0 },
         summary: null,
@@ -155,16 +217,89 @@ export function createAppStore(): AppStore {
           : {
               fillHistory: { enabled, status: 'off', summary: null, selectedId: null },
               terrainEpoch: 'now',
+              collapse: CLOSED_COLLAPSE,
             },
       ),
+    // 候補の一覧が変わったので、前の候補で開いていた「崩れたと仮定した場合」も閉じる
     setFillHistoryResult: (status, summary) =>
       set((state) => ({
         fillHistory: { ...state.fillHistory, status, summary, selectedId: null },
+        collapse: CLOSED_COLLAPSE,
       })),
+    // 開いている候補と別の候補を選ぶと、「崩れたと仮定した場合」を閉じる
     selectFillCandidate: (selectedId) =>
-      set((state) => ({ fillHistory: { ...state.fillHistory, selectedId } })),
-    setTerrainEpoch: (terrainEpoch) => set({ terrainEpoch }),
+      set((state) => {
+        const open = state.collapse.candidateId
+        return {
+          fillHistory: { ...state.fillHistory, selectedId },
+          ...(open !== null && open !== selectedId ? { collapse: CLOSED_COLLAPSE } : {}),
+        }
+      }),
+    // 崩れた後を表示中は昔の地形を見せない（spec 10 §5.4）
+    setTerrainEpoch: (terrainEpoch) =>
+      set((state) =>
+        terrainEpoch === 'past' && state.collapse.view === 'after' ? state : { terrainEpoch },
+      ),
+    openCollapse: (candidateId) =>
+      set((state) =>
+        // 開いている候補をもう一度押しても、計算の結果や設定を消さない
+        state.collapse.candidateId === candidateId
+          ? state
+          : { collapse: { ...CLOSED_COLLAPSE, candidateId } },
+      ),
+    closeCollapse: () => set({ collapse: CLOSED_COLLAPSE }),
+    setCollapseRatio: (ratio) =>
+      set((state) =>
+        state.collapse.ratio === ratio ? state : { collapse: reopened(state.collapse, { ratio }) },
+      ),
+    setCollapsePreset: (presetId) =>
+      set((state) =>
+        state.collapse.presetId === presetId
+          ? state
+          : { collapse: reopened(state.collapse, { presetId }) },
+      ),
+    setCollapseComputing: () =>
+      set((state) => ({
+        collapse: {
+          ...state.collapse,
+          status: 'computing',
+          progress: 0,
+          summary: null,
+        },
+      })),
+    setCollapseProgress: (progress) =>
+      set((state) => ({ collapse: { ...state.collapse, progress } })),
+    setCollapseResult: (status, summary) =>
+      set((state) => ({
+        collapse: { ...state.collapse, status, summary, progress: status === 'ready' ? 1 : 0 },
+      })),
+    setCollapseView: (view) =>
+      set((state) => ({
+        collapse: { ...state.collapse, view },
+        // 崩れた後へ入るときは今に戻す（3D の昔の標高を、地形の差し替えより先に外す）
+        ...(view === 'after' ? { terrainEpoch: 'now' as const } : {}),
+      })),
+    setCollapseSwapping: (swapping) =>
+      set((state) =>
+        state.collapse.swapping === swapping
+          ? state
+          : { collapse: { ...state.collapse, swapping } },
+      ),
   }))
+}
+
+/** 同じ候補で、結果を捨てて開き直す（割合・プリセットの変更） */
+function reopened(
+  collapse: CollapseState,
+  patch: Partial<Pick<CollapseState, 'ratio' | 'presetId'>>,
+): CollapseState {
+  return {
+    ...CLOSED_COLLAPSE,
+    candidateId: collapse.candidateId,
+    ratio: collapse.ratio,
+    presetId: collapse.presetId,
+    ...patch,
+  }
 }
 
 export function summarizeTerrain(terrain: TerrainPayload): TerrainSummary {

@@ -14,6 +14,7 @@ import type { SettingsStore } from '../../state/settingsStore'
 import { formatCoordinate } from '../format'
 import { strings } from '../strings'
 import type { TerrainSession } from '../terrainSession'
+import { CollapseSection } from './CollapseSection'
 import { ControlsSection } from './ControlsSection'
 import { DisclaimerNotice } from './DisclaimerDialog'
 import { DisplaySettings } from './DisplaySettings'
@@ -56,6 +57,7 @@ export function Panel({
   const selected = useStore(store, (s) => s.selected)
   const load = useStore(store, (s) => s.load)
   const sizeM = useStore(settings, (s) => s.area.sizeM)
+  const swapping = useStore(store, (s) => s.collapse.swapping)
   const hidden = collapsed && !wide
   return (
     <Drawer
@@ -130,6 +132,7 @@ export function Panel({
               hasTerrain={load.status === 'ready'}
               actions={simulation}
               onReload={() => session.retry()}
+              locked={swapping}
             />
             <Divider sx={{ my: 1 }} />
             <Typography variant="subtitle2">{strings.stats.title}</Typography>
@@ -141,6 +144,7 @@ export function Panel({
             <DisplaySettings app={store} settings={settings} />
             <Divider sx={{ my: 1 }} />
             <FillHistorySection session={session} />
+            <CollapseSection session={session} />
             <SpillNotices simulation={simulation.store} />
           </Box>
         )}

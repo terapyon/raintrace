@@ -1,6 +1,7 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 import { type SimulationClient, TerrainLoadError } from '../bridge/SimulationClient'
 import { wrapLongitude } from '../dem/tileMath'
+import { CollapseOverlay } from '../map/CollapseOverlay'
 import { FILL_LAYER_IDS, FillHistoryOverlay } from '../map/FillHistoryOverlay'
 import type { MapController } from '../map/MapController'
 import { type OverlayDisplay, TERRAIN_LAYER_IDS, TerrainOverlay } from '../map/TerrainOverlay'
@@ -12,6 +13,8 @@ import { createDebounce, type Debounce } from '../state/debounce'
 import type { SettingsStore } from '../state/settingsStore'
 import { formatUrlView, parseUrlView } from '../state/urlState'
 import { type CellInfo, cellInfoAt } from './cellInfo'
+import { syncCollapseOverlay } from './collapseOverlaySync'
+import { CollapseSession } from './collapseSession'
 import { FillHistorySession } from './fillHistorySession'
 import {
   type MarkerInfoRow,
@@ -31,11 +34,13 @@ export class TerrainSession {
   readonly store: AppStore
   private readonly client: SimulationClient
   readonly simulation: SimulationSession
-  private readonly settings: SettingsStore
+  readonly settings: SettingsStore
   /** 2D と 3D の切り替えと 3D の表示（spec 05 §3.6） */
   readonly view3d: View3dSession
   /** 盛土の履歴の計算と結果（spec 09 §4.6） */
   readonly fillHistory: FillHistorySession
+  /** 盛土が崩れたと仮定した場合の計算・崩れる前後の切り替え・比べる計算（spec 10） */
+  readonly collapse: CollapseSession
   private overlay: TerrainOverlay | null = null
   private controller: MapController | null = null
   // URL の書き込みは、変更（地点の選択・地図の移動・雨量や範囲の変更）から 300ms 置いてまとめて行う（spec 04 §7）
@@ -54,6 +59,7 @@ export class TerrainSession {
     this.simulation = simulation
     this.settings = settings
     this.fillHistory = new FillHistorySession(client, store, simulation)
+    this.collapse = new CollapseSession(client, store, simulation, this.fillHistory)
     this.view3d = new View3dSession(simulation, store, settings, this.fillHistory)
   }
 
@@ -88,16 +94,29 @@ export class TerrainSession {
       else fillOverlay.show(result, geo, this.store.getState().fillHistory.selectedId)
     }
     const offFillResult = this.fillHistory.onResult(showFill)
+    // 崩れたと仮定した結果（積もった土・せき止め・水路の線）は、結果ができた間、見せている地形に合わせて描く
+    const collapseOverlay = new CollapseOverlay(map, (run) => controller.whenLoaded(run))
+    const showCollapse = (): void =>
+      syncCollapseOverlay(collapseOverlay, this.store.getState().collapse, this.collapse.result())
+    const offCollapseChange = this.collapse.onChange(showCollapse)
     // 水のレイヤーは地形のレイヤーの後に置く（水が上に重なるよう、TerrainOverlay を先に作る）
     const detachWater = this.simulation.attach(controller)
     // ベースマップの切り替えの後に、地形 → 水の順に足し直す（水は地形のレイヤーの間に入れる）
     const offRestyle = controller.onRestyle(() => {
       this.overlay?.restore()
       fillOverlay.restore()
+      collapseOverlay.restore()
       this.simulation.restoreOverlay()
     })
     // 3D の足し直しは 04 の重ね描きの足し直しの後に行う（onRestyle は登録した順に呼ばれる）
     const detach3d = this.view3d.attach(controller)
+    // 崩れる前後の切り替えでは、同じ範囲の地形を地図を動かさずに描き直す（ruling R1）。
+    // パネルの地形の要約は読み込んだ地形のまま（setTerrain は呼ばない）
+    const detachCollapse = this.collapse.attachMap({
+      container: map.getContainer(),
+      showTerrain: (terrain) =>
+        this.overlay?.showTerrain(terrain, this.overlayDisplay(), { fit: false }),
+    })
 
     const onClick = (event: MapMouseEvent): void => {
       const { lng, lat } = event.lngLat
@@ -166,6 +185,11 @@ export class TerrainSession {
     }
     const unsubscribe = this.store.subscribe((state, previous) => {
       if (state.display !== previous.display) this.overlay?.setDisplay(this.overlayDisplay())
+      const { collapse } = state
+      const before = previous.collapse
+      if (collapse.view !== before.view || collapse.status !== before.status) {
+        showCollapse()
+      }
       if (state.fillHistory.selectedId !== previous.fillHistory.selectedId) {
         fillOverlay.setSelected(state.fillHistory.selectedId)
       }
@@ -196,6 +220,7 @@ export class TerrainSession {
     } else if (view.zoom !== null) map.setZoom(view.zoom)
 
     return () => {
+      detachCollapse()
       detach3d()
       map.off('click', onClick)
       map.off('mouseenter', TERRAIN_LAYER_IDS.markers, onMarkerEnter)
@@ -208,11 +233,13 @@ export class TerrainSession {
       unsubscribeSettings()
       offRestyle()
       offFillResult()
+      offCollapseChange()
       detachWater()
       this.overlay?.clearTerrain()
       this.overlay?.destroy()
       this.overlay = null
       fillOverlay.clear()
+      collapseOverlay.clear()
       this.controller = null
     }
   }
@@ -269,11 +296,25 @@ export class TerrainSession {
     const terrain = this.client.terrain
     if (terrain === null) return null
     const store = this.store.getState()
-    // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）
-    const result = store.fillHistory.enabled ? this.fillHistory.result() : null
+    // 盛土の履歴がオンで結果があれば、昔か今かによらず昔の標高・今の標高・差を足す（spec 09 §6.6）。
+    // 崩れた後を表示している間と、差し替えの途中（エンジンの地形がまだ崩れた後でありうる）は足さない
+    // （履歴は崩れる前の地形のもの。ruling R8）
+    const result =
+      store.fillHistory.enabled && store.collapse.view !== 'after' && !store.collapse.swapping
+        ? this.fillHistory.result()
+        : null
     const history =
       result === null ? undefined : { past: result.pastElevation, delta: result.deltaCorrected }
-    return cellInfoAt(terrain, this.client.water, lon, lat, history)
+    // 水路の溝ありの崩れる前を表示している間、標高は溝のない読み込んだ地形から読む（溝は仮定）。
+    // 水位は水を流している溝ありの地形の標高 + 水深
+    return cellInfoAt(
+      terrain,
+      this.client.water,
+      lon,
+      lat,
+      history,
+      this.collapse.uncarvedTerrain()?.elevation,
+    )
   }
 
   /** 一覧で選んだ範囲の中心へ地図を動かす（拡大率は変えない。spec 09 §6.3） */

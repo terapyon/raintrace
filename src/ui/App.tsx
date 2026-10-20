@@ -6,6 +6,7 @@ import { DisclaimerDialog, useDisclaimer } from './components/DisclaimerDialog'
 import { MapView } from './components/MapView'
 import { MarkerInfoHost } from './components/MarkerInfoHost'
 import { Panel } from './components/Panel'
+import { ScenarioToggle } from './components/ScenarioToggle'
 import { TerrainEpochToggle } from './components/TerrainEpochToggle'
 import { TerrainSessionBinder } from './components/TerrainSessionBinder'
 import { ThemeModeBinder } from './components/ThemeModeBinder'
@@ -38,6 +39,7 @@ export function App({ missingFeatures, session, settings }: Props) {
             <>
               <ViewModeToggle app={session.store} />
               <TerrainEpochToggle app={session.store} />
+              <ScenarioToggle session={session} />
               <Panel session={session} settings={settings} onShowDisclaimer={disclaimer.reopen} />
               <CellInfoHost session={session} />
               <MarkerInfoHost session={session} />

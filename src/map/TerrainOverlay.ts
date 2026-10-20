@@ -64,7 +64,15 @@ export class TerrainOverlay {
     return marker
   }
 
-  showTerrain(terrain: TerrainPayload, display: OverlayDisplay): void {
+  /**
+   * 地形を描く。fit: false は地図を動かさない（崩れる前後の切り替えで、同じ範囲の地形を描き直す。ruling R1）
+   */
+  showTerrain(
+    terrain: TerrainPayload,
+    display: OverlayDisplay,
+    options: { fit?: boolean } = {},
+  ): void {
+    const fit = options.fit !== false
     this.display = display
     // 読み込みを待つ間に別の地形が来たり、消されたりしたら、古い方は描かない
     const generation = ++this.generation
@@ -72,8 +80,10 @@ export class TerrainOverlay {
       if (generation !== this.generation) return
       this.removeLayers()
       this.terrain = terrain
-      const { corners } = terrain.geo
-      this.map.fitBounds([corners[3], corners[1]], { padding: 40, duration: 0 })
+      if (fit) {
+        const { corners } = terrain.geo
+        this.map.fitBounds([corners[3], corners[1]], { padding: 40, duration: 0 })
+      }
       // 標高の canvas（1000 m で数十 ms）と残りを別々のタスクで足し、読み込みの終わりの長いタスクを分ける
       // （spec 06 §5.2、Task 17）。重なり順は足す順によらず OVERLAY_LAYER_ORDER で決まる
       this.later(generation, () => {

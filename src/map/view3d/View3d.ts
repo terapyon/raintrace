@@ -74,6 +74,7 @@ export class View3d {
   private readonly marks = { mapZoom: '', mapPitch: '', drawnTileZoom: '' }
   /** 水面を作った回数（E2E の印 data-water-builds。計画で決めたこと 21） */
   private waterBuilds = 0
+  private rangeGeneration = 0
   /**
    * 水面のすべての区画を初めて描いた回数（E2E・計測の印 data-water-ready）。水面は作った後、シェーダのリンクを
    * 待ち、区画を数フレームに分けて見せる（spec 06 §5.2、Task 17a）ので、「水面が見えた」はこちらで待つ
@@ -250,6 +251,11 @@ export class View3d {
         size: geo.size,
         elevation,
       }
+      // E2E が、範囲の地形が作り直されたことを読む（昔・今、崩れる前・後の切り替えでも増える）
+      this.rangeGeneration++
+      this.controller.map.getContainer().dataset.view3dRangeGeneration = String(
+        this.rangeGeneration,
+      )
     }
     return this.range
   }

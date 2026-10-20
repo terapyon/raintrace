@@ -1,5 +1,6 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import ButtonBase from '@mui/material/ButtonBase'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -30,7 +31,13 @@ function candidateLines(c: FillCandidate): string[] {
 }
 
 /** 選んだ範囲の詳しい欄。10 の「崩れたと仮定する」のボタンは、この欄の末尾に入る */
-function CandidateDetail({ candidate }: { candidate: FillCandidate }) {
+function CandidateDetail({
+  candidate,
+  onCollapse,
+}: {
+  candidate: FillCandidate
+  onCollapse: () => void
+}) {
   return (
     <Box
       role="region"
@@ -52,6 +59,9 @@ function CandidateDetail({ candidate }: { candidate: FillCandidate }) {
       {candidate.evidenceSources.includes('landform') && (
         <Typography variant="body2">{t.landformOverlap}</Typography>
       )}
+      <Button size="small" variant="outlined" sx={{ mt: 1 }} onClick={onCollapse}>
+        {strings.collapse.open}
+      </Button>
     </Box>
   )
 }
@@ -160,7 +170,12 @@ export function FillHistorySection({ session }: { session: TerrainSession }) {
                       {[t.rowId(c.id), ...candidateLines(c)].join(t.rowSeparator)}
                     </Typography>
                   </ButtonBase>
-                  {c.id === selectedId && <CandidateDetail candidate={c} />}
+                  {c.id === selectedId && (
+                    <CandidateDetail
+                      candidate={c}
+                      onCollapse={() => store.getState().openCollapse(c.id)}
+                    />
+                  )}
                 </li>
               ))}
             </Box>

@@ -18,10 +18,11 @@ const history = {
 }
 
 /** 地形と結果を持つ TerrainSession（通信は使わない） */
-function sessionWith() {
+function sessionWith(clientTerrain: typeof terrain = terrain) {
   const store = createAppStore()
   const simulation = { onTerrain: () => () => {}, onWater: () => () => {} }
-  const client = { terrain, water: null }
+  const client: { terrain: typeof terrain; water: Float32Array | null; onCrash: () => () => void } =
+    { terrain: clientTerrain, water: null, onCrash: () => () => {} }
   const session = new TerrainSession(
     client as never,
     store,
@@ -29,7 +30,7 @@ function sessionWith() {
     createSettingsStore(memoryStorage()),
   )
   ;(session.fillHistory as { result: () => unknown }).result = () => history
-  return { store, session }
+  return { store, session, client }
 }
 
 describe('TerrainSession.cellInfo の盛土の履歴（spec 09 §6.6）', () => {
@@ -46,5 +47,43 @@ describe('TerrainSession.cellInfo の盛土の履歴（spec 09 §6.6）', () => 
     expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9, deltaM: 3 })
     store.getState().setTerrainEpoch('past')
     expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9, deltaM: 3 })
+  })
+
+  it('崩れた後を表示している間は、昔の標高・差を足さない（ruling R8）', () => {
+    const { store, session } = sessionWith()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().setCollapseView('after')
+    expect(session.cellInfo(p.lon, p.lat)).not.toHaveProperty('pastM')
+    store.getState().setCollapseView('before')
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9 })
+  })
+
+  it('崩れる前へ戻す差し替えの途中（エンジンはまだ崩れた後でありうる）も、昔の標高・差を足さない', () => {
+    const { store, session } = sessionWith()
+    store.getState().setFillHistoryEnabled(true)
+    store.getState().setCollapseSwapping(true)
+    expect(session.cellInfo(p.lon, p.lat)).not.toHaveProperty('pastM')
+    store.getState().setCollapseSwapping(false)
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ pastM: 9 })
+  })
+})
+
+describe('TerrainSession.cellInfo の水路の溝ありの崩れる前', () => {
+  const p = pixelToLonLat(geo.originX + 0.5, geo.originY + 0.5, geo.z)
+
+  it('今の標高は溝のない読み込んだ地形から読み、昔の標高・差も足す。崩れた後は今のエンジンの地形のまま', () => {
+    // エンジンが持つのは溝（−2 m）を掘った地形。読み込んだ地形は 12 m
+    const carved = { ...terrain, elevation: Float32Array.of(10, 10, 10, 10) }
+    const { store, session, client } = sessionWith(carved)
+    store.getState().setFillHistoryEnabled(true)
+    // 溝ありの崩れる前を表示している状態（CollapseSession が基の地形を返す）
+    ;(session.collapse as { uncarvedTerrain: () => unknown }).uncarvedTerrain = () => terrain
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ elevationM: 12, pastM: 9, deltaM: 3 })
+    // 水位は水を流している溝ありの地形の標高 + 水深（溝の深さの分だけ高く出さない）
+    client.water = Float32Array.of(1.5, 0, 0, 0)
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ elevationM: 12, levelM: 11.5 })
+    // 溝ありを表示していなければ、エンジンの地形の標高
+    ;(session.collapse as { uncarvedTerrain: () => unknown }).uncarvedTerrain = () => null
+    expect(session.cellInfo(p.lon, p.lat)).toMatchObject({ elevationM: 10 })
   })
 })

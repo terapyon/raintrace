@@ -6,6 +6,7 @@ import { PERF_CHANNEL } from '../shared/perfProtocol'
 import type { MainToWorkerMessage, TerrainGeo, WorkerToMainMessage } from '../shared/protocol'
 import { buildOutflowCells } from '../simulation/outflowCells'
 import { analyzeTerrain } from '../simulation/terrain/analyzeTerrain'
+import { collapseTransferables, computeCollapse } from './collapse'
 import { createGsiTileFetcher, HttpError, NetworkError } from './demLoader'
 import { computeFillHistory, createJsonFetcher, FillHistoryError } from './fillHistory'
 import type { RunnerPorts } from './simulationRunner'
@@ -47,6 +48,10 @@ const runner = new SimulationRunner(ports)
 let current: AbortController | null = null
 // 盛土の履歴の計算（spec 09）。新しい fillHistory や loadTerrain が来たら取り消す
 let currentFill: AbortController | null = null
+// 盛土が崩れた後の計算（spec 10）。新しい collapse や loadTerrain が来たら取り消す
+let currentCollapse: AbortController | null = null
+// 読み込み中（タイルの取得から terrainLoaded を送るまで）の loadTerrain。あるあいだは地形の差し替えを受けない
+let loading: AbortController | null = null
 
 self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
   const message = event.data
@@ -59,9 +64,24 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       runner.suspend()
       current?.abort()
       currentFill?.abort()
+      currentCollapse?.abort()
       const controller = new AbortController()
       current = controller
+      loading = controller
       void loadTerrain(message, controller)
+      break
+    }
+    case 'swapTerrain': {
+      // 読み込み中の loadTerrain が勝つ（差し替えを捨てる。メインも loadTerrain の時点で差し替えの待ちを捨てている）。
+      // fillHistory・collapse は崩れる前の地形の計算なので取り消さない
+      if (loading !== null) break
+      const { requestId, elevation, validMask, size, cellSizeM, depressions } = message
+      runner.loadTerrain(
+        requestId,
+        { elevation, validMask, width: size, height: size, cellSizeM },
+        depressions,
+      )
+      post({ type: 'terrainSwapped', requestId })
       break
     }
     case 'fillHistory': {
@@ -69,6 +89,13 @@ self.addEventListener('message', (event: MessageEvent<MainToWorkerMessage>) => {
       const controller = new AbortController()
       currentFill = controller
       void runFillHistory(message, controller)
+      break
+    }
+    case 'collapse': {
+      currentCollapse?.abort()
+      const controller = new AbortController()
+      currentCollapse = controller
+      runCollapse(message, controller)
       break
     }
     default:
@@ -143,6 +170,9 @@ async function loadTerrain(
     post({ type: 'terrainFailed', requestId, reason, message: String(error) })
     // 1 枚の失敗で読み込み全体が失敗したので、残りの取得を止める（計画のレビュー P4）
     controller.abort()
+  } finally {
+    // 置き換わった読み込み（loading が別の controller）は触らない
+    if (loading === controller) loading = null
   }
 }
 
@@ -175,5 +205,24 @@ async function runFillHistory(
     post({ type: 'fillHistoryFailed', requestId, reason, message: String(error) })
     // 失敗したので、残りの取得を止める（loadTerrain と同じ）
     controller.abort()
+  }
+}
+
+// 計算は同期なので、実行中に別のメッセージは処理されない。取り消しは「開始前に次の要求が来ていた」場合のみ効く
+function runCollapse(
+  message: Extract<MainToWorkerMessage, { type: 'collapse' }>,
+  controller: AbortController,
+): void {
+  const { requestId } = message
+  const { signal } = controller
+  try {
+    const result = computeCollapse(message, (fraction) => {
+      if (!signal.aborted) post({ type: 'collapseProgress', requestId, fraction })
+    })
+    if (signal.aborted) return
+    post({ type: 'collapseReady', requestId, result }, collapseTransferables(result))
+  } catch (error) {
+    if (signal.aborted) return
+    post({ type: 'collapseFailed', requestId, message: String(error) })
   }
 }

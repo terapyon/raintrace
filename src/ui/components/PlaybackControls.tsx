@@ -11,6 +11,8 @@ const SPEEDS: readonly PlaybackSpeed[] = [1, 10, 60, 600, 'max']
 interface Props {
   status: PlaybackStatus
   canStart: boolean
+  /** 地形の差し替えの途中は、すべての操作を受けない */
+  locked?: boolean
   speed: PlaybackSpeed
   onStart: () => void
   onPause: () => void
@@ -27,6 +29,7 @@ interface Props {
  */
 export function PlaybackControls(props: Props) {
   const { status, canStart, speed } = props
+  const locked = props.locked ?? false
   const primary =
     status === 'idle'
       ? { label: strings.playback.start, onClick: props.onStart }
@@ -39,21 +42,22 @@ export function PlaybackControls(props: Props) {
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         <Button
           variant="contained"
-          disabled={settled || (status === 'idle' && !canStart)}
+          disabled={locked || settled || (status === 'idle' && !canStart)}
           onClick={primary.onClick}
         >
           {primary.label}
         </Button>
-        <Button variant="outlined" disabled={status !== 'paused'} onClick={props.onStep}>
+        <Button variant="outlined" disabled={locked || status !== 'paused'} onClick={props.onStep}>
           {strings.playback.step}
         </Button>
-        <Button variant="outlined" disabled={status === 'idle'} onClick={props.onReset}>
+        <Button variant="outlined" disabled={locked || status === 'idle'} onClick={props.onReset}>
           {strings.playback.reset}
         </Button>
       </Box>
       <ToggleButtonGroup
         size="small"
         exclusive
+        disabled={locked}
         aria-label={strings.playback.speed}
         value={speed}
         onChange={(_, value: PlaybackSpeed | null) => {

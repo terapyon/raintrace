@@ -1,6 +1,35 @@
 /** 画面に出す文字列（tech-spec §9.4）。コンポーネントに文字列リテラルを直接書かない */
 export const strings = {
   epoch: { label: '地形の時期', past: '昔', now: '今' },
+  scenario: { label: '地形の状態', before: '崩れる前', after: '崩れた後' },
+  collapse: {
+    title: '崩れたと仮定した場合',
+    open: '崩れたと仮定する',
+    close: '閉じる',
+    target: (id: string, volume: string, evidence: string) =>
+      `標高差の大きい範囲: ${id}（${volume}、${evidence}）`,
+    ratio: '崩れる量',
+    ratios: { 1: '全部', 0.5: '半分', 0.25: '4分の1' } as Record<1 | 0.5 | 0.25, string>,
+    preset: '流れやすさ',
+    compute: '土砂の行き先を計算する',
+    computing: '土砂の行き先を計算しています',
+    failed: '土砂の行き先を計算できませんでした',
+    collapsed: '崩れた土',
+    deposited: '積もった土',
+    outside: (v: string) => `（範囲の外へ ${v}）`,
+    outsideNotice: (v: string) => `土砂の一部（${v}）が範囲の外へ流れ出ました`,
+    culvertAssumed: '盛土の下に、昔の谷底に沿って水路があったと仮定しています',
+    culvertBlocked: '崩れた土で水路がふさがりました',
+    playbackHint: '崩れる前と崩れた後で、それぞれ雨を降らせて、水の動きを見比べてください',
+    dams: (n: number) => `せき止められた場所: ${n} か所`,
+    damsMore: (n: number) => `ほか ${n} か所`,
+    noDams: 'せき止められた場所はありません',
+    damRow: (n: number, sep: string, area: string) => `場所 ${n}${sep}面積 ${area}`,
+    culvertNotice:
+      '盛土の下に、昔の谷底に沿って水路があったと仮定しています。実際の排水の設備（位置・太さ）は分かりません。地面への浸み込みや排水を考えていないため、実際より多く溜まって見えることがあります。',
+    notice:
+      'これは「この盛土が崩れたと仮定した場合」の地形と水の流れを、簡単なモデルで描いたものです。盛土が崩れる可能性や、実際の災害の起こり方を予測するものではありません。土砂の流れ方は、土の水の含み方などで大きく変わります。せき止めが決壊することや、地面への浸透は考えていません。実際の安全性の評価には、地盤の調査や安定の解析が必要です。',
+  },
   fillHistory: {
     title: '盛土の履歴',
     enable: '昔と今の地形を比べる',

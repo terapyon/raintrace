@@ -40,6 +40,8 @@ interface Props {
   actions: PlaybackActions
   /** 「再読み込み」: 同じ地点を選び直す（spec 04 §10） */
   onReload: () => void
+  /** 崩れる前後の地形の差し替えの途中（spec 10）。再生の操作を受けない */
+  locked?: boolean
 }
 
 /**
@@ -47,7 +49,14 @@ interface Props {
  * 設定のストアに書く（spec 04 の計画で決めたこと 9）。範囲外の値は入力欄にエラーを出し、開始を押せなくする
  * （spec 08 §6.3）。範囲全体に降らせる間は半径を検証しない（開始に渡すのは保存値の半径。Review Focus 5）
  */
-export function ControlsSection({ settings, simulation, hasTerrain, actions, onReload }: Props) {
+export function ControlsSection({
+  settings,
+  simulation,
+  hasTerrain,
+  actions,
+  onReload,
+  locked = false,
+}: Props) {
   const rangeSizeHintId = useId()
   const sizeM = useStore(settings, (s) => s.area.sizeM)
   const durationMin = useStore(settings, (s) => s.rainfall.durationMin)
@@ -132,6 +141,7 @@ export function ControlsSection({ settings, simulation, hasTerrain, actions, onR
       <Typography variant="subtitle2">{strings.playback.title}</Typography>
       <PlaybackControls
         status={status}
+        locked={locked}
         canStart={canStart}
         speed={speed}
         onStart={() => {

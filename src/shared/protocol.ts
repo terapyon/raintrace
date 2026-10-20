@@ -6,6 +6,7 @@ import type { DemId } from '../dem/demSources.ts'
 import type { Corners } from '../dem/gridRange.ts'
 import type { OutflowCells } from '../simulation/outflowCells.ts'
 import type { TerrainAnalysis } from '../simulation/terrain/analyzeTerrain.ts'
+import type { Depression } from '../simulation/terrain/types.ts'
 import type { RainfallInput, StepStats } from '../simulation/types.ts'
 
 /**
@@ -53,7 +54,36 @@ export type MainToWorkerMessage =
       elevation: Float32Array
       validMask: Uint8Array
     }
+  | {
+      // 盛土が崩れた後の地形の計算（spec 10）。fillHistory と同じく、メインが今の標高とマスクの写しを送る
+      type: 'collapse'
+      requestId: number
+      terrainId: number
+      geo: TerrainGeo
+      elevation: Float32Array
+      validMask: Uint8Array
+      removed: Float32Array
+      /** 09 の結果の pastElevation（offsetM を足す前）と offsetM。水路を探すのに使う（spec 10b） */
+      pastElevation: Float32Array
+      offsetM: number
+      candidateId: number
+      ratio: CollapseRatio
+      presetId: string
+    }
+  | ({ type: 'swapTerrain'; requestId: number } & SwapGrid)
   | SimulationCommand
+
+/**
+ * 地形の差し替え（spec 10 §5.2）。タイルを読まずに、エンジンの地形だけを入れ替える。
+ * 崩れる前と後を切り替えるたびに送る。size は格子の一辺（正方形）
+ */
+export interface SwapGrid {
+  elevation: Float32Array
+  validMask: Uint8Array
+  size: number
+  cellSizeM: number
+  depressions: Depression[]
+}
 
 /**
  * no-data: 範囲の全画素が無効値。network: 再試行しても取得に失敗。out-of-range: 対応範囲（日本）の外。
@@ -137,6 +167,49 @@ export interface FillHistoryPayload {
  */
 export type FillHistoryFailureReason = 'unavailable' | 'no-overlap' | 'network' | 'internal'
 
+/** 崩れる量（候補の盛土の厚さに対する割合） */
+export type CollapseRatio = 1 | 0.5 | 0.25
+
+/** 崩れてせき止められた窪地。spill はあふれ出し点の経緯度 */
+export interface DammedSiteSummary {
+  depressionId: number
+  capacityM3: number
+  addedCapacityM3: number
+  maxDepthM: number
+  areaM2: number
+  spillElevation: number
+  spill: { lon: number; lat: number }
+}
+
+/** 盛土の下に仮定した水路（spec 10b） */
+export interface CulvertSummary {
+  /** 水路の線（pit から出口へ。セルの中心の [lon, lat]） */
+  line: Array<[number, number]>
+  lengthM: number
+  /** 崩れた土で端がふさがった */
+  blocked: boolean
+}
+
+/** 盛土が崩れた後の地形と、せき止められた場所（spec 10）。配列は格子と同じ並びで Transferable で送る */
+export interface CollapsePayload {
+  /** 崩れる前の地形の id */
+  terrainId: number
+  candidateId: number
+  ratio: CollapseRatio
+  presetId: string
+  /** 崩れた後の地形（解析・流出の縁・geo は崩れる前と同じ geo） */
+  after: TerrainPayload
+  removed: Float32Array
+  deposit: Float32Array
+  collapsedM3: number
+  depositedM3: number
+  outsideM3: number
+  dams: DammedSiteSummary[]
+  /** 水路を仮定したときの、溝ありの崩れる前の地形（解析・流出の縁つき、geo は入力の geo）。仮定しなければ null */
+  before: TerrainPayload | null
+  culvert: CulvertSummary | null
+}
+
 /** 再生の失敗の理由。no-elevation-at-rain-center は 03 の NoElevationAtRainCenterError（name で判別する） */
 export type SimFailureReason = 'no-elevation-at-rain-center' | 'internal'
 
@@ -174,6 +247,7 @@ export type WorkerToMainMessage =
   | { type: 'pong'; id: number }
   | { type: 'terrainProgress'; requestId: number; done: number; started: number }
   | { type: 'terrainLoaded'; requestId: number; terrain: TerrainPayload }
+  | { type: 'terrainSwapped'; requestId: number }
   | { type: 'terrainFailed'; requestId: number; reason: TerrainFailureReason; message: string }
   | { type: 'fillHistoryReady'; requestId: number; result: FillHistoryPayload }
   | {
@@ -182,5 +256,8 @@ export type WorkerToMainMessage =
       reason: FillHistoryFailureReason
       message: string
     }
+  | { type: 'collapseProgress'; requestId: number; fraction: number }
+  | { type: 'collapseReady'; requestId: number; result: CollapsePayload }
+  | { type: 'collapseFailed'; requestId: number; message: string }
   | FrameMessage
   | SimFailedMessage

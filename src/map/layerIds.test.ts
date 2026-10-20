@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   beforeLayerId,
+  COLLAPSE_LAYER_IDS,
   FILL_LAYER_IDS,
   OVERLAY_LAYER_ORDER,
   TERRAIN_LAYER_IDS,
@@ -19,6 +20,7 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
     const all = [
       ...Object.values(TERRAIN_LAYER_IDS),
       ...Object.values(FILL_LAYER_IDS),
+      ...Object.values(COLLAPSE_LAYER_IDS),
       ...Object.values(WATER_LAYER_IDS),
       ...Object.values(VIEW3D_LAYER_IDS),
     ]
@@ -89,5 +91,19 @@ describe('重ね描きのレイヤーの重なり順（spec 06 §5.2、Task 17�
     expect(at(FILL_LAYER_IDS.a54)).toBeLessThan(at(WATER_LAYER_IDS.water))
     expect(at(FILL_LAYER_IDS.markers)).toBe(order.length - 1)
     expect(at(FILL_LAYER_IDS.markers)).toBe(at(TERRAIN_LAYER_IDS.markers) + 1)
+  })
+
+  it('崩れた後の重ね描き: 積もった土は A54 の直後、点はその後（spec 10 §5.4）', () => {
+    const order = OVERLAY_LAYER_ORDER
+    const at = (id: string): number => order.indexOf(id)
+    expect(at(COLLAPSE_LAYER_IDS.deposit)).toBe(at(FILL_LAYER_IDS.a54) + 1)
+    expect(at(COLLAPSE_LAYER_IDS.dams)).toBe(at(COLLAPSE_LAYER_IDS.deposit) + 1)
+  })
+
+  it('OVERLAY_LAYER_ORDER: collapse-culvert は water-outflow の直後（spec 10b §4.1）', () => {
+    const order = OVERLAY_LAYER_ORDER
+    expect(order.indexOf(COLLAPSE_LAYER_IDS.culvert)).toBe(
+      order.indexOf(WATER_LAYER_IDS.outflow) + 1,
+    )
   })
 })

@@ -45,3 +45,23 @@ export const LANDFORM_COLORS = {
 export const A54_COLOR = '#ff6f00'
 /** 候補の印の色。選んだ候補は黄 */
 export const FILL_MARKER_COLOR = '#37474f'
+
+/** 崩れた土が積もった厚さ（spec 10 §5.4）。0.01 m 以上で茶、5 m で最も濃い（線形） */
+export const COLLAPSE_DEPOSIT_STOPS: ReadonlyArray<readonly [number, number, number]> = [
+  [215, 190, 160],
+  [93, 52, 20],
+]
+export const COLLAPSE_DEPOSIT_MIN_M = 0.01
+export const COLLAPSE_DEPOSIT_FULL_M = 5
+export const COLLAPSE_DEPOSIT_ALPHA = 200
+/** 崩れた跡（市松の薄い灰） */
+export const COLLAPSE_SCAR_COLOR = '#9e9e9e'
+export const COLLAPSE_SCAR_ALPHA = 150
+/** せき止められた窪地の塗り（薄い半透明。輪郭は COLLAPSE_DAM_COLOR） */
+export const COLLAPSE_DAM_FILL_ALPHA = 70
+/** せき止められた窪地の輪郭と、あふれ出し点 */
+export const COLLAPSE_DAM_COLOR = '#e65100'
+/** 盛土の下の水路の線: 通っている（濃い青の実線） */
+export const COLLAPSE_CULVERT_OPEN_COLOR = '#0d47a1'
+/** 盛土の下の水路の線: 崩れた土でふさがった（赤みの灰の破線） */
+export const COLLAPSE_CULVERT_BLOCKED_COLOR = '#a1887f'

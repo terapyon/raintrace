@@ -1,4 +1,6 @@
 import type {
+  CollapsePayload,
+  CollapseRatio,
   FillHistoryFailureReason,
   FillHistoryPayload,
   FrameMessage,
@@ -69,7 +71,7 @@ export interface FrameView {
   runId: number
 }
 
-type RainfallInput = Extract<SimulationCommand, { type: 'start' }>['rain']
+export type RainfallInput = Extract<SimulationCommand, { type: 'start' }>['rain']
 
 interface PendingPing {
   resolve: () => void
@@ -84,6 +86,14 @@ interface PendingTerrain {
   onProgress: ((done: number, started: number) => void) | undefined
 }
 
+interface PendingSwap {
+  requestId: number
+  /** 差し替える地形。成功したら this.terrain になる */
+  terrain: TerrainPayload
+  resolve: () => void
+  reject: (error: TerrainLoadError) => void
+}
+
 interface PendingFillHistory {
   requestId: number
   /** 依頼した時点の地形（loadTerrain の requestId）。応答のときの今の地形と比べる */
@@ -92,21 +102,65 @@ interface PendingFillHistory {
   reject: (error: FillHistoryLoadError) => void
 }
 
+/** 崩れた後の計算の失敗の理由。superseded: 新しい依頼か地形の読み込みに置き換わった。worker: Worker が異常終了した */
+export type CollapseErrorReason = 'internal' | 'superseded' | 'worker'
+
+export class CollapseError extends Error {
+  readonly reason: CollapseErrorReason
+  constructor(reason: CollapseErrorReason, message: string) {
+    super(message)
+    this.reason = reason
+  }
+}
+
+/** 崩れた後の計算の依頼。terrain は崩れる前の（読み込んだ）地形、removed は崩れる厚さ（m） */
+export interface CollapseRequest {
+  terrainId: number
+  terrain: TerrainPayload
+  removed: Float32Array
+  /** 09 の結果の pastElevation（offsetM を足す前）と offsetM */
+  pastElevation: Float32Array
+  offsetM: number
+  candidateId: number
+  ratio: CollapseRatio
+  presetId: string
+}
+
+interface PendingCollapse {
+  requestId: number
+  /** 依頼した時点の読み込んだ地形の id。応答のときの今の地形と比べる（ruling R7） */
+  baseTerrainId: number | null
+  onProgress: ((fraction: number) => void) | undefined
+  resolve: (result: CollapsePayload) => void
+  reject: (error: CollapseError) => void
+}
+
 /**
  * メインスレッドで Worker を所有する（tech-spec §5.1）。アプリで 1 つだけ作る（01 の申し送り H2）。
  * 読み込んだ地形と最新の水深の配列はここに持ち、React やストアには載せない
  */
 export class SimulationClient {
   terrain: TerrainPayload | null = null
-  /** terrain を読み込んだ loadTerrain の requestId。frame・simFailed の terrainId と比べる */
+  /**
+   * エンジンが今持つ地形の id。loadTerrain の requestId、または差し替え（swapTerrain）の requestId。
+   * frame・simFailed の terrainId と比べる。差し替えのたびに新しくなるので、前の地形の frame は捨てられる
+   */
   terrainId: number | null = null
+  /**
+   * 最後に loadTerrain で読み込んだ地形の id（差し替えでは変わらない）。盛土の履歴・崩れた後の計算は
+   * 読み込んだ地形に属するので、その依頼と応答の突き合わせはこちらで行う（terrainId だと、差し替えのたびに
+   * 履歴の結果が古いものとして捨てられてしまう。spec 10 §5.2）
+   */
+  baseTerrainId: number | null = null
   /** 最新の frame の水深。次の frame が届くまで、表示とセル情報に使う（tech-spec §5.2） */
   water: Float32Array<ArrayBuffer> | null = null
   private worker: WorkerPort
   private readonly createWorker: () => WorkerPort
   private readonly pendingPings = new Map<number, PendingPing>()
   private pendingTerrain: PendingTerrain | null = null
+  private pendingSwap: PendingSwap | null = null
   private pendingFillHistory: PendingFillHistory | null = null
+  private pendingCollapse: PendingCollapse | null = null
   private readonly frameListeners = new Set<(frame: FrameView) => void>()
   private readonly simFailedListeners = new Set<(reason: SimFailureReason, runId: number) => void>()
   private readonly crashListeners = new Set<() => void>()
@@ -138,9 +192,21 @@ export class SimulationClient {
         // 持つ地形と同じ「最後に成功した地形」になる。画面の読み込みの状態とは別
         this.terrain = message.terrain
         this.terrainId = message.requestId
+        this.baseTerrainId = message.requestId
         // 前の地形の水深は捨てる（大きさが違いうる。Worker は新しい地形のバッファを 2 枚作る）
         this.water = null
         this.takeTerrain(message.requestId)?.resolve(message.terrain)
+        break
+      }
+      case 'terrainSwapped': {
+        // loadTerrain や新しい差し替えに置き換わった古い要求の返事は、ここで捨てる
+        const pending = this.pendingSwap
+        if (pending === null || pending.requestId !== message.requestId) break
+        this.pendingSwap = null
+        this.terrain = pending.terrain
+        this.terrainId = message.requestId
+        this.water = null
+        pending.resolve()
         break
       }
       case 'terrainFailed':
@@ -153,7 +219,10 @@ export class SimulationClient {
         // 依頼の terrainId と応答の terrainId が、今の地形と同じものだけを通す
         const pending = this.takeFillHistory(message.requestId)
         if (pending === null) break
-        if (message.result.terrainId === this.terrainId && pending.terrainId === this.terrainId) {
+        if (
+          message.result.terrainId === this.baseTerrainId &&
+          pending.terrainId === this.baseTerrainId
+        ) {
           pending.resolve(message.result)
         } else {
           pending.reject(
@@ -165,13 +234,43 @@ export class SimulationClient {
       case 'fillHistoryFailed': {
         const pending = this.takeFillHistory(message.requestId)
         if (pending === null) break
-        if (pending.terrainId === this.terrainId) {
+        if (pending.terrainId === this.baseTerrainId) {
           pending.reject(new FillHistoryLoadError(message.reason, message.message))
         } else {
           pending.reject(
             new FillHistoryLoadError('superseded', '地形が変わったため結果を捨てました'),
           )
         }
+        break
+      }
+      case 'collapseProgress': {
+        const pending = this.pendingCollapse
+        if (pending === null || pending.requestId !== message.requestId) break
+        if (pending.baseTerrainId !== this.baseTerrainId) break
+        pending.onProgress?.(message.fraction)
+        break
+      }
+      case 'collapseReady': {
+        const pending = this.takeCollapse(message.requestId)
+        if (pending === null) break
+        if (
+          pending.baseTerrainId === this.baseTerrainId &&
+          message.result.terrainId === this.baseTerrainId
+        ) {
+          pending.resolve(message.result)
+        } else {
+          pending.reject(new CollapseError('superseded', '地形が変わったため結果を捨てました'))
+        }
+        break
+      }
+      case 'collapseFailed': {
+        const pending = this.takeCollapse(message.requestId)
+        if (pending === null) break
+        pending.reject(
+          pending.baseTerrainId === this.baseTerrainId
+            ? new CollapseError('internal', message.message)
+            : new CollapseError('superseded', '地形が変わったため結果を捨てました'),
+        )
         break
       }
       case 'frame':
@@ -234,6 +333,16 @@ export class SimulationClient {
     )
     // port() が投げた場合に、reject 済みの古い entry を pendingTerrain に残さない
     this.pendingTerrain = null
+    // 読み込みが差し替えに勝つ。返事を待っている差し替えは捨てる
+    this.pendingSwap?.reject(
+      new TerrainLoadError('superseded', '新しい地点の読み込みに置き換わりました'),
+    )
+    this.pendingSwap = null
+    // Worker も loadTerrain で崩れた後の計算を取り消す
+    this.pendingCollapse?.reject(
+      new CollapseError('superseded', '新しい地点の読み込みに置き換わりました'),
+    )
+    this.pendingCollapse = null
     this.clearWatchdog()
     const requestId = this.nextId++
     return new Promise((resolve, reject) => {
@@ -241,6 +350,47 @@ export class SimulationClient {
       this.pendingTerrain = { requestId, resolve, reject, onProgress }
       worker.postMessage({ type: 'loadTerrain', requestId, lon, lat, sizeM })
       this.armWatchdog()
+    })
+  }
+
+  /**
+   * エンジンの地形を渡した地形に差し替える（崩れる前と後の切り替え。spec 10 §5.2）。タイルは読まない。
+   * 成功すると terrain・terrainId が変わり、水深は捨てる（前の地形の frame は terrainId で捨てられる）。
+   * 地点の読み込み中は差し替えず superseded で失敗する。新しい読み込み・差し替えが来たら古い差し替えも superseded。
+   * 地形をまだ読み込んでいなければ、差し替える基が無いので internal で失敗する（Task 6 のレビュー M2）
+   */
+  swapTerrain(terrain: TerrainPayload): Promise<void> {
+    if (this.baseTerrainId === null) {
+      return Promise.reject(
+        new TerrainLoadError('internal', '地形を読み込んでいないため差し替えません'),
+      )
+    }
+    if (this.pendingTerrain !== null) {
+      return Promise.reject(
+        new TerrainLoadError('superseded', '地点の読み込み中のため差し替えません'),
+      )
+    }
+    this.pendingSwap?.reject(new TerrainLoadError('superseded', '新しい差し替えに置き換わりました'))
+    this.pendingSwap = null
+    const requestId = this.nextId++
+    return new Promise((resolve, reject) => {
+      const worker = this.port()
+      this.pendingSwap = { requestId, terrain, resolve, reject }
+      // Worker へは写しを送る（メインの terrain はそのまま残す）
+      const elevation = terrain.elevation.slice()
+      const validMask = terrain.validMask.slice()
+      worker.postMessage(
+        {
+          type: 'swapTerrain',
+          requestId,
+          elevation,
+          validMask,
+          size: terrain.geo.size,
+          cellSizeM: terrain.geo.cellSizeM,
+          depressions: terrain.depressions,
+        },
+        [elevation.buffer, validMask.buffer],
+      )
     })
   }
 
@@ -270,6 +420,56 @@ export class SimulationClient {
       worker.postMessage(
         { type: 'fillHistory', requestId, terrainId, geo: terrain.geo, elevation, validMask },
         [elevation.buffer, validMask.buffer],
+      )
+    })
+  }
+
+  /**
+   * 盛土が崩れた後の地形を頼む（spec 10）。標高・マスク・崩れる厚さの写しを送る（メインの配列はそのまま残す）。
+   * 前の依頼と、依頼の後の地形の読み込みは superseded で失敗させる。応答は baseTerrainId で突き合わせる（ruling R7）
+   */
+  collapse(
+    request: CollapseRequest,
+    onProgress?: (fraction: number) => void,
+  ): Promise<CollapsePayload> {
+    this.pendingCollapse?.reject(new CollapseError('superseded', '新しい依頼に置き換わりました'))
+    this.pendingCollapse = null
+    const requestId = this.nextId++
+    return new Promise((resolve, reject) => {
+      let worker: WorkerPort
+      try {
+        worker = this.port()
+      } catch (error) {
+        throw new CollapseError('worker', error instanceof Error ? error.message : String(error))
+      }
+      this.pendingCollapse = {
+        requestId,
+        baseTerrainId: this.baseTerrainId,
+        onProgress,
+        resolve,
+        reject,
+      }
+      const { terrain } = request
+      const elevation = terrain.elevation.slice()
+      const validMask = terrain.validMask.slice()
+      const removed = request.removed.slice()
+      const pastElevation = request.pastElevation.slice()
+      worker.postMessage(
+        {
+          type: 'collapse',
+          requestId,
+          terrainId: request.terrainId,
+          geo: terrain.geo,
+          elevation,
+          validMask,
+          removed,
+          pastElevation,
+          offsetM: request.offsetM,
+          candidateId: request.candidateId,
+          ratio: request.ratio,
+          presetId: request.presetId,
+        },
+        [elevation.buffer, validMask.buffer, removed.buffer, pastElevation.buffer],
       )
     })
   }
@@ -444,9 +644,20 @@ export class SimulationClient {
     return pending
   }
 
+  private takeCollapse(requestId: number): PendingCollapse | null {
+    const pending = this.pendingCollapse
+    if (pending === null || pending.requestId !== requestId) return null
+    this.pendingCollapse = null
+    return pending
+  }
+
   private failAll(error: TerrainLoadError): void {
+    this.pendingCollapse?.reject(new CollapseError('worker', error.message))
+    this.pendingCollapse = null
     this.pendingFillHistory?.reject(new FillHistoryLoadError('worker', error.message))
     this.pendingFillHistory = null
+    this.pendingSwap?.reject(error)
+    this.pendingSwap = null
     for (const entry of this.pendingPings.values()) {
       clearTimeout(entry.timer)
       entry.reject(error)
